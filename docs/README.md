@@ -18,6 +18,7 @@ agent the user already pays for. Marginal cost per user tends to zero.
 | [04-tech-spec.md](04-tech-spec.md) | Stack argument, architecture, security, recorded decisions |
 | [05-roadmap.md](05-roadmap.md) | Ten phases, each shippable alone |
 | [06-open-questions.md](06-open-questions.md) | Assumptions, questions, unknowns to resolve by experiment |
+| [07-phase-0-findings.md](07-phase-0-findings.md) | What the phase 0 spike proved, and the six things the spec got wrong |
 
 ## The five decisions that shape everything
 
@@ -34,5 +35,8 @@ agent the user already pays for. Marginal cost per user tends to zero.
 
 ## Status
 
-Specification phase. No implementation. Next step is phase 0 of the roadmap,
-which is a risk spike on OAuth plus MCP.
+Phase 0 complete. The OAuth 2.1 authorization server, dynamic client
+registration, the Streamable HTTP MCP endpoint, and row-level security are
+standing and verified. See `07-phase-0-findings.md`.
+
+Next step is phase 1, the manual core loop.

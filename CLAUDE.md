@@ -19,6 +19,7 @@ change as the code, and say so.
 | `docs/04-tech-spec.md` | Stack, architecture, security, recorded decisions |
 | `docs/05-roadmap.md` | Phases. Check which one is current before proposing work |
 | `docs/06-open-questions.md` | Assumptions and unknowns. Add to it, do not silently assume |
+| `docs/07-phase-0-findings.md` | What phase 0 proved about OAuth, MCP, RLS, and Postgres 18. Read before touching any of them |
 
 ## Constraints that must never be broken
 
@@ -39,6 +40,31 @@ change as the code, and say so.
    value. Only a human confirms a fact.
 7. **Every user-owned query is scoped by `user_id`,** with row-level security as
    a second line of defence.
+
+## Local development
+
+Node per `.nvmrc`, Postgres 18 in a container via Podman.
+
+```sh
+npm run db:setup     # container up, role bootstrap, drizzle migrate, auth migrate
+npm run verify       # check:deps, typecheck, test
+npm run dev
+```
+
+Two connection roles, and mixing them up defeats tenancy:
+
+- `DATABASE_URL` is the table owner. Migrations only. Postgres exempts owners
+  from row-level security, so the app must never use it at runtime.
+- `APP_DATABASE_URL` is `cooking_app`, `NOBYPASSRLS`. Everything at runtime.
+
+Every read or write of a user-owned table goes through `withUser()` in
+`src/db/client.ts`. A query that forgets it returns zero rows rather than
+leaking, which is intended, and is what `tests/rls.test.ts` pins down.
+
+Schema ownership is split on purpose: Better Auth migrates its own 12 tables
+(`npm run auth:migrate`), Drizzle owns the domain tables
+(`npm run db:generate` then `db:migrate`). Do not hand-copy auth tables into
+the Drizzle schema. Reasoning in `docs/07-phase-0-findings.md` section 3.1.
 
 ## Conventions
 

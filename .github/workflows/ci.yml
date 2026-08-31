@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: cooking
+          POSTGRES_PASSWORD: cooking
+          POSTGRES_DB: cooking
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cooking -d cooking"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgres://cooking:cooking@localhost:5432/cooking
+      APP_DATABASE_URL: postgres://cooking_app:cooking_app@localhost:5432/cooking
+      BETTER_AUTH_SECRET: ci-secret-not-used-in-production
+      BETTER_AUTH_URL: http://localhost:3000
+      MCP_RESOURCE: http://localhost:3000/api/mcp
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # Constraint 1 from CLAUDE.md. Fails the build if any LLM client reaches
+      # the lockfile, which is the only way the zero-LLM rule stays true.
+      - name: No LLM dependency
+        run: npm run check:deps
+
+      - run: npm run db:bootstrap
+      - run: npm run db:migrate
+      - run: npm run auth:migrate
+
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

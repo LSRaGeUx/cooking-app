@@ -10,14 +10,29 @@ Marginal cost per user tends to zero.
 
 ## Status
 
-Specification phase. No implementation yet.
+**Phase 0 complete.** The OAuth 2.1 authorization server with dynamic client
+registration, the Streamable HTTP MCP endpoint, and row-level security are all
+standing and verified. See [`docs/07-phase-0-findings.md`](docs/07-phase-0-findings.md).
+
+Next: phase 1, the manual core loop.
 
 Full specs live in [`docs/`](docs/README.md). Start with
 [`docs/README.md`](docs/README.md), then read in numbered order.
 
-Next step: roadmap phase 0, a risk spike on OAuth 2.1 with dynamic client
-registration plus a Streamable HTTP MCP endpoint. See
-[`docs/05-roadmap.md`](docs/05-roadmap.md).
+## Getting started
+
+Requires Node (see `.nvmrc`) and Podman.
+
+```sh
+cp .env.example .env        # then set BETTER_AUTH_SECRET
+npm ci
+npm run db:setup            # container, role, migrations, auth tables
+npm run verify              # dep check, typecheck, tests
+npm run dev
+```
+
+The MCP endpoint is at `/api/mcp`. Discovery, registration, and the authorize
+redirects work today; the login and consent screens are phase 1.
 
 ## What makes it different
 

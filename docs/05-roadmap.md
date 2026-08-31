@@ -20,9 +20,11 @@ Two sequencing rules drove the order:
 
 ---
 
-## Phase 0 - Foundation and risk spike
+## Phase 0 - Foundation and risk spike  [DONE 2026-08-31]
 
 Goal: prove the hard part works, and stand up the skeleton.
+
+Outcome, and the six things the spec got wrong: `07-phase-0-findings.md`.
 
 - Next.js project, TypeScript strict, Tailwind, French i18n scaffolding with keys
   externalized from the first screen.
@@ -42,8 +44,9 @@ Goal: prove the hard part works, and stand up the skeleton.
 Ship: nothing user-visible. This phase exists to remove the project's largest
 technical unknown while it is still cheap to change course.
 
-If the spike fails or drags, that is the moment to reconsider the stack, not
-later. Note it in `06-open-questions.md`.
+The spike succeeded, so the stack decision stands. One item carries into phase 1:
+the token-authenticated `whoami` call needs the real login and consent screens
+before it can be exercised end to end.
 
 ---
 

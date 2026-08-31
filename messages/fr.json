@@ -1,0 +1,26 @@
+{
+  "app": {
+    "name": "Cooking App",
+    "tagline": "Votre semaine de cuisine, pilotée par votre agent."
+  },
+  "home": {
+    "status": "Phase 0 : socle technique",
+    "mcpReady": "Point de terminaison MCP",
+    "docs": "La spécification complète se trouve dans le dossier docs."
+  },
+  "login": {
+    "title": "Connexion",
+    "email": "Adresse e-mail",
+    "password": "Mot de passe",
+    "submit": "Se connecter",
+    "pending": "Écran de connexion à construire en phase 0."
+  },
+  "consent": {
+    "title": "Autoriser l'accès",
+    "intro": "Une application demande l'accès à votre compte.",
+    "scopes": "Autorisations demandées",
+    "allow": "Autoriser",
+    "deny": "Refuser",
+    "pending": "Écran de consentement à construire en phase 0."
+  }
+}

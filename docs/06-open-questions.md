@@ -33,7 +33,7 @@ must be decided by.
 
 | # | Unknown | How to resolve | By |
 |---|---|---|---|
-| T1 | Does the chosen auth library's MCP/OIDC provider plugin still cover dynamic client registration, discovery metadata, and the resource metadata document MCP clients look for | The phase 0 spike. This is the single biggest risk in the project | Phase 0 |
+| ~~T1~~ | **RESOLVED 2026-08-31.** Yes, through the separate `@better-auth/mcp` package, where `mcp()` IS the OAuth provider. Two rewrites are needed for RFC 8414 and RFC 9728 discovery, and `requireMcpAuth` needs the resource passed explicitly. Write-up in `07-phase-0-findings.md` | Done |
 | T2 | How large is a realistic profile snapshot in tokens, and does it stay comfortable at 300 facts | Compose a synthetic worst-case profile in phase 3 and measure | Phase 3 |
 | T3 | Do real agents actually respect the required rationale field, or do they emit filler | Test with several clients in phase 5. If filler appears, tighten the tool description and consider rejecting rationales that cite no refs | Phase 5 |
 | T4 | schema.org Recipe coverage on the sites you actually use | Test ten of your bookmarks against the parser before committing to phase 9 | Phase 9 |

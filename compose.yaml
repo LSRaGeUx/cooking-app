@@ -1,0 +1,25 @@
+# Plain Compose spec only. No Docker-only extensions, so this file runs
+# unchanged under Podman (dev) and Docker (self-hosters).
+services:
+  db:
+    image: docker.io/library/postgres:18-alpine
+    environment:
+      POSTGRES_USER: cooking
+      POSTGRES_PASSWORD: cooking
+      POSTGRES_DB: cooking
+      # Needed because the app connects as a non-superuser role for RLS to bite.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    ports:
+      - "5432:5432"
+    volumes:
+      # Postgres 18+ images place data in a major-version subdirectory, so the
+      # mount goes one level up. Mounting /var/lib/postgresql/data fails to boot.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cooking -d cooking"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  pgdata:
