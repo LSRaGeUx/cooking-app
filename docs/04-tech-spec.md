@@ -55,7 +55,7 @@ which is more wiring but still in the same ecosystem.
 | Runtime | Node LTS | Broadest compatibility with the MCP SDK |
 | Framework | Next.js, App Router | Server components suit the read-heavy screens, route handlers host the MCP endpoint, one deployable |
 | Language | TypeScript, `strict` | |
-| Database | PostgreSQL 16+ | JSONB for snapshots and fact evidence, full-text search for recipes, row-level security, arrays. SQLite is tempting for self-hosting but loses RLS and JSONB indexing, and multi-tenancy was an explicit requirement |
+| Database | PostgreSQL 18 | JSONB for snapshots and fact evidence, full-text search for recipes, row-level security, arrays. SQLite is tempting for self-hosting but loses RLS and JSONB indexing, and multi-tenancy was an explicit requirement |
 | ORM | Drizzle | SQL-shaped, typed, migrations are readable files. Matters because the schema here is the product and needs review as SQL |
 | Auth | Better Auth, with the OIDC/MCP provider plugin | Sessions for the UI and the OAuth server for MCP from one library, one user table |
 | MCP | `@modelcontextprotocol/sdk`, Streamable HTTP | |
@@ -66,7 +66,7 @@ which is more wiring but still in the same ecosystem.
 | Background jobs | None in v1 | Grocery generation and snapshot composition are request-time. Adding a queue before there is a job that needs one is premature |
 | Recipe URL parsing | `linkedom` plus a schema.org JSON-LD reader | No LLM. Agent-assisted fallback per `03-agent-interface.md` |
 | Testing | Vitest for units, Playwright for the three critical flows | |
-| Deployment | Docker Compose: app plus Postgres. Also runs on a serverless host with a managed Postgres | Self-host is the stated posture |
+| Deployment | A `compose.yaml` with app plus Postgres 18, run by Podman in dev and by Podman or Docker in prod. Also runs on a serverless host with a managed Postgres | Self-host is the stated posture. Stay on the plain Compose spec, no Docker-only extensions, so either runtime works |
 | Observability | Structured JSON logs, plus the in-app agent activity log | The activity log is a product feature, not just telemetry |
 
 ## 4. Architecture
@@ -179,7 +179,7 @@ the app needs offline support in v1.
     i18n/               message catalogues, fr default
   agent-pack/           published prompt templates and skill pack
   tests/
-  docker-compose.yml
+  compose.yaml
 ```
 
 `src/mcp/tools/` holding schema, description, and handler in one file per tool is

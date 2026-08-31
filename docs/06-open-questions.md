@@ -14,7 +14,7 @@ must be decided by.
 | A2 | Your agent is Claude Desktop or Claude Code, so remote HTTP MCP with OAuth is the right connection story | High. A client without OAuth support would push the stdio wrapper into v1 |
 | A3 | A week runs Monday to Sunday, ISO | Low, but it is in the data model |
 | A4 | Recipe images are nice to have, not required | Low. If required, add storage and an upload path, probably object storage |
-| A5 | Self-hosting means Docker Compose on a small VPS or a home machine, not Kubernetes | Low |
+| A5 | Self-hosting means a Compose file on a small VPS or a home machine, not Kubernetes. Dev uses Podman, so the file stays to the plain Compose spec with no Docker-only extensions | Low |
 | A6 | You are comfortable with the app being French-only at launch | Low, i18n groundwork is in from phase 0 |
 | A7 | Ingredient prices are out of scope, so budget stays advisory | Low. Real cost tracking needs a price source, which is a project of its own |
 

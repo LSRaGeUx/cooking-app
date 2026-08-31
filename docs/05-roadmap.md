@@ -26,7 +26,9 @@ Goal: prove the hard part works, and stand up the skeleton.
 
 - Next.js project, TypeScript strict, Tailwind, French i18n scaffolding with keys
   externalized from the first screen.
-- Postgres via Docker Compose, Drizzle, first migration.
+- Postgres 18 in a container via `compose.yaml`, Drizzle, first migration.
+  Dev runtime is Podman (rootful machine, `/var/run/docker.sock` symlinked to the
+  Podman socket, so Docker-socket clients such as Testcontainers work unchanged).
 - Auth: email sign-in, sessions, user table.
 - Row-level security enabled on the first user-owned table, with the
   request-scoped `user_id` context and a test proving a missing scope returns
