@@ -52,6 +52,22 @@ the context document we hand the agent.
 - **Rate limiting** per client: generous, but present, so a looping agent cannot
   fill the database.
 
+Settled while building phase 4:
+
+- **Revocation is enforced on every call, not only at token issue.** Access
+  tokens are JWTs verified against our JWKS, so revoking a client cannot
+  invalidate a token already in its hands. Each call re-checks that a consent row
+  exists for the (user, client) pair, which is one indexed query for a revoke
+  button that actually revokes. Revoking also deletes the stored access and
+  refresh tokens so nothing can be minted again.
+- **The rate limit is 120 calls per minute per client**, counted from
+  `agent_activity` rather than from process memory, so it survives a restart and
+  holds across instances without a shared cache.
+- **Every tool and resource passes through one guard**, in
+  `src/mcp/tool-runner.ts`. Scopes, revocation, rate limit, audit entry and error
+  shaping are applied there and nowhere else, so a tool added later cannot
+  quietly skip one.
+
 Fallback for local use: a thin stdio wrapper that holds a personal access token
 and proxies to the same HTTP endpoint. Not v1, but the tool layer must not assume
 HTTP-only so this stays cheap to add.
@@ -114,6 +130,27 @@ Rules for the snapshot:
   default for MCP resource reads because it costs fewer tokens and models follow
   prose constraints more reliably than nested JSON.
 
+Settled while building it in phase 3:
+
+- **Every fact category maps to one of the nine sections**, so nothing can be
+  written and then silently never reach an agent. `health`, and any confirmed
+  high-confidence negative fact whatever its category, are lifted into section 2.
+  `equipment` and `technique` go to section 4. `organization`, `pantry_habit` and
+  `social` go to section 5. `taste` and `other` go to section 6.
+- **The budget cannot drop a dangerous fact.** Selection sorts health facts and
+  confirmed high-confidence rejections ahead of everything else, so the cap only
+  ever cuts into the nuanced end of the list.
+- **The cap on facts stored (300) and the budget on facts shown (150) are
+  different numbers.** Measured worst case: roughly 7 400 tokens at 150 facts and
+  14 000 at 300, which is why the document shows fewer than it stores and says
+  so.
+- **Sections the build cannot fill yet are named as unavailable, with a reason,**
+  rather than rendered empty. An agent must not read "no staples listed" as
+  "there are no staples".
+- **`last_referenced_at` is bumped only on a real read.** A user previewing their
+  own snapshot in the UI does not count, or looking at the document would distort
+  the pruning heuristic it feeds.
+
 ## 5. Tools
 
 Names are stable API. Descriptions shown here in condensed form.
@@ -123,7 +160,7 @@ Names are stable API. Descriptions shown here in condensed form.
 | Tool | Purpose | Notes |
 |---|---|---|
 | `get_profile_snapshot` | The composed context document | Params: `format` (markdown, json), `include_history` |
-| `search_recipes` | Find recipes by criteria | Params: text query, tags, max active time, protein, exclude ingredients, `not_cooked_in_weeks`, `min_rating`, limit. The rotation-age filter is what enables "give me something I have not eaten in a while" |
+| `search_recipes` | Find recipes by criteria | Params: text query, tags, max active time, protein, `not_planned_in_weeks`, limit. The rotation filter is what enables "give me something I have not eaten in a while". Shipped in phase 4 as `not_planned_in_weeks`, not `not_cooked_in_weeks`: feedback does not exist until phase 6, so "not cooked" would have been a lie. The two are different filters and phase 6 adds the second rather than redefining the first. `min_rating` waits for the same reason |
 | `get_recipe` | One full recipe | |
 | `get_week` | A plan version with entries, rationales, prep links | Params: year, week, `version` (active, pending, or number) |
 | `get_history` | Cooked and skipped history with ratings | Params: weeks back |
@@ -220,6 +257,15 @@ Warnings (written, surfaced to the user):
 `DIET_MISMATCH`, `EXCLUDED_INGREDIENT`, `EQUIPMENT_MISSING`,
 `REPEAT_RECIPE_THIS_WEEK`, `SERVINGS_SHORTFALL` on a prep link,
 `NOT_BATCH_FRIENDLY` used as a prep source, `BUDGET_EXCEEDED`.
+
+Three codes were added in phase 4, when the agent surface became real. Nothing
+could be rate limited or revoked before there was anything to call:
+
+| Code | Meaning |
+|---|---|
+| `MISSING_SCOPE` | The connection was not granted a scope this tool needs. Names the missing scopes, the granted ones, and how the user reconnects |
+| `CLIENT_REVOKED` | The user revoked this client. The token may still be cryptographically valid; the data is closed anyway |
+| `RATE_LIMITED` | The client exceeded its calls per minute. Names the limit and points at the bulk resource that avoids the loop |
 
 Every error message is written to be actionable by a model, not by a developer.
 Compare:

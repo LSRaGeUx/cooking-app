@@ -35,8 +35,20 @@ agent the user already pays for. Marginal cost per user tends to zero.
 
 ## Status
 
-Phase 0 complete. The OAuth 2.1 authorization server, dynamic client
-registration, the Streamable HTTP MCP endpoint, and row-level security are
-standing and verified. See `07-phase-0-findings.md`.
+Phases 0 to 4 complete. A person with no agent can configure their weekly grid,
+build a recipe library, plan a week with immutable versions and revert, shop
+from a generated grocery list that survives the plan changing under it, and
+maintain a deep structured profile plus an atomic fact store. The strict
+allergen block, slot state validation and slot time budgets are enforced in the
+service layer that both the UI and the MCP endpoint call.
 
-Next step is phase 1, the manual core loop.
+An agent can now connect and read: four tools and eight resources behind OAuth
+2.1, with per-tool scopes, immediate revocation, a per-client rate limit, and an
+activity log the user can read. It cannot write yet, which makes this state safe
+to hand to a stranger.
+
+Phase 0 closed fully alongside phase 1: login and consent screens shipped, so
+the OAuth 2.1 flow now runs end to end into an authenticated MCP call
+(`npm run verify:oauth`).
+
+Next step is phase 5, agent write access.

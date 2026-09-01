@@ -4,7 +4,7 @@ import { defineConfig } from "drizzle-kit";
 // migrates them with its own migrator (scripts/auth-migrate.mjs), so this
 // config deliberately does not see them.
 export default defineConfig({
-  schema: "./src/db/schema.ts",
+  schema: "./src/db/schema",
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: {

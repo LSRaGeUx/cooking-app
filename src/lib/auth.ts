@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { nextCookies } from "better-auth/next-js";
 import { jwt } from "better-auth/plugins";
 import { mcp } from "@better-auth/mcp";
 import { Pool } from "pg";
@@ -41,6 +42,10 @@ export const auth = betterAuth({
       allowDynamicClientRegistration: true,
       allowUnauthenticatedClientRegistration: true,
     }),
+    // Must stay last: it wraps the response so a server action that signs a
+    // user in can set the session cookie. Anything after it would not be
+    // wrapped.
+    nextCookies(),
   ],
 });
 

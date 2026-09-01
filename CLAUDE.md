@@ -49,7 +49,11 @@ Node per `.nvmrc`, Postgres 18 in a container via Podman.
 npm run db:setup     # container up, role bootstrap, drizzle migrate, auth migrate
 npm run verify       # check:deps, typecheck, test
 npm run dev
+npm run verify:oauth # needs a running server: the whole agent connection path
 ```
+
+`npm run verify` needs only Postgres, so it stays CI-runnable. Anything needing
+an HTTP server goes in a script, not in Vitest.
 
 Two connection roles, and mixing them up defeats tenancy:
 
@@ -85,3 +89,13 @@ the Drizzle schema. Reasoning in `docs/07-phase-0-findings.md` section 3.1.
 
 Conventional Commits. No co-author or generated-by trailers. Do not pass
 `--author` or `-c user.email`; the repo config is already correct.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

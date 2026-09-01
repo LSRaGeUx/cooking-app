@@ -10,11 +10,31 @@ Marginal cost per user tends to zero.
 
 ## Status
 
-**Phase 0 complete.** The OAuth 2.1 authorization server with dynamic client
-registration, the Streamable HTTP MCP endpoint, and row-level security are all
-standing and verified. See [`docs/07-phase-0-findings.md`](docs/07-phase-0-findings.md).
+**Phases 0 to 4 complete.** You can configure your weekly grid, build a recipe
+library, plan a week by hand, shop from a grocery list generated out of it, and
+maintain the profile and fact store that make the planning personal. Plan
+versions are immutable and revertible, and the strict allergen block, slot state
+validation and per-slot time budgets are enforced in the service layer both
+entry points share.
 
-Next: phase 1, the manual core loop.
+Your agent can connect and read. Paste one URL into an MCP client, approve the
+consent screen, and it can read your profile snapshot, search your recipes and
+read your planned weeks. It cannot write yet. Access is per client, scoped, rate
+limited, logged, and revocable with immediate effect.
+
+The profile snapshot, the exact document a connected agent reads, is also
+viewable in the app in both Markdown and JSON. Reading it is the fastest way to
+judge whether the context is any good.
+
+Regenerating the grocery list merges rather than wipes: what you already ticked
+off stays ticked, lines you added by hand survive, and the screen tells you what
+moved.
+
+Phase 0 closed alongside phase 1: the login and consent screens shipped, so the
+OAuth 2.1 flow now runs end to end into an authenticated MCP call. See
+[`docs/07-phase-0-findings.md`](docs/07-phase-0-findings.md).
+
+Next: phase 5, agent write access.
 
 Full specs live in [`docs/`](docs/README.md). Start with
 [`docs/README.md`](docs/README.md), then read in numbered order.
@@ -31,8 +51,28 @@ npm run verify              # dep check, typecheck, tests
 npm run dev
 ```
 
-The MCP endpoint is at `/api/mcp`. Discovery, registration, and the authorize
-redirects work today; the login and consent screens are phase 1.
+Then open http://localhost:3000, create an account, and you land on the current
+week. A new account is seeded with three meal types, dinner planned every day,
+and a starter ingredient vocabulary so grocery merging and allergen derivation
+work from the first recipe.
+
+`npm run verify` needs only Postgres. The agent connection path needs a running
+server, so it has its own check:
+
+```sh
+npm run dev                 # in one terminal
+npm run verify:oauth        # in another
+```
+
+That walks what a real MCP client does: cold dynamic client registration, an
+authorization request with PKCE, login, consent, the code exchange, an
+authenticated `whoami`, and a check that an unauthenticated call is still refused
+with RFC 9728 discovery.
+
+The MCP endpoint is at `/api/mcp`, and the app's Agent screen walks you through
+connecting a client to it. It exposes `whoami`, `get_profile_snapshot`,
+`search_recipes`, `get_recipe` and `get_week`, plus resources for the profile,
+the slots, the recipe index and any planned week. Write tools land in phase 5.
 
 ## What makes it different
 
@@ -50,11 +90,17 @@ write results back.
 - **Required rationale** on every agent-proposed meal, citing the facts that
   drove it, so the user can correct the cause rather than the dish.
 
-## Planned stack
+## Stack
 
-TypeScript end to end. Next.js, PostgreSQL, Drizzle, Better Auth acting as an
-OAuth 2.1 provider, and the MCP TypeScript SDK. Reasoning and the rejected
-alternatives are in [`docs/04-tech-spec.md`](docs/04-tech-spec.md).
+TypeScript end to end. Next.js, PostgreSQL 18, Drizzle, Better Auth acting as an
+OAuth 2.1 provider, the MCP TypeScript SDK, Zod as the single source of
+validation, next-intl for French copy, and dnd-kit for the week grid. Reasoning
+and the rejected alternatives are in
+[`docs/04-tech-spec.md`](docs/04-tech-spec.md).
+
+Layout: `src/domain` holds pure rules with no I/O, `src/services` is the one
+service layer both entry points call, `src/app` is the French UI plus the MCP and
+auth routes, `src/db` is the Drizzle schema and the tenancy-scoped client.
 
 ## Non-negotiable constraints
 

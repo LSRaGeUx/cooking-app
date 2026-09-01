@@ -21,6 +21,13 @@ export const db = drizzle(pool, { schema });
 export type Db = typeof db;
 
 /**
+ * The transaction handle every scoped query runs on. Services accept it so a
+ * service can compose another one without opening a second transaction, which
+ * would defeat the atomicity a plan version write depends on.
+ */
+export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+/**
  * Runs `fn` inside a transaction whose `app.user_id` is set, which is what every
  * RLS policy reads. SET LOCAL is transaction-scoped, so a pooled connection
  * cannot leak the setting to the next request.
@@ -31,7 +38,7 @@ export type Db = typeof db;
  */
 export async function withUser<T>(
   userId: string,
-  fn: (tx: Parameters<Parameters<Db["transaction"]>[0]>[0]) => Promise<T>,
+  fn: (tx: Tx) => Promise<T>,
 ): Promise<T> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`select set_config('app.user_id', ${userId}, true)`);

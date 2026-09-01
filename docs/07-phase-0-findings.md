@@ -34,7 +34,7 @@ Verified working, headlessly, against a real server:
 | Dynamic client registration accepts a cold client and issues a `client_id` | OK |
 | `/oauth2/authorize` with a session redirects to the consent page | OK |
 | `/oauth2/authorize` without a session redirects to the login page | OK |
-| Consent POST, code exchange, and a real `whoami` call with a live token | Needs the real login and consent UI, so it lands with phase 1 |
+| Consent POST, code exchange, and a real `whoami` call with a live token | **Closed in phase 1.** `npm run verify:oauth` walks registration, authorize, login, consent, token exchange and an authenticated `whoami` against a running server |
 
 **Verdict: the stack decision in `04-tech-spec.md` holds.** The OAuth plumbing
 that would have been weeks of hand-rolling on the JVM was configuration here.
@@ -169,3 +169,26 @@ between calls, so scaling horizontally needs no shared session store.
 - Two stub screens (`/login`, `/consent`) that the flow already redirects to and
   that must now be built for real. Completing the consent POST is the first thing
   that closes the last open item above.
+
+## 6. What phase 1 found while closing that item
+
+Four more things worth knowing before touching this surface again:
+
+1. **The signed query travels in a `oauth_query` body field.** Posting it to any
+   auth endpoint makes the plugin verify it, stash it, and, when the response
+   sets a session cookie, resume the authorization flow on its own and answer
+   with the URL to continue to. So the login form posts `oauth_query` alongside
+   the credentials and needs no resume logic of its own. It reads the query from
+   `window.location.search`, because anything that parses and re-serializes it
+   breaks the signature.
+2. **Every state-changing auth request needs an `Origin` header.** Browsers send
+   it; a script does not, and Better Auth answers `403 MISSING_OR_NULL_ORIGIN`.
+   This is the CSRF protection working, and it is the first thing to check when
+   driving the flow by hand.
+3. **`/oauth2/authorize` answers a navigation with a redirect and a fetch with
+   JSON.** It decides from `sec-fetch-mode` and `accept`. A test harness has to
+   look like the browser it stands in for, or it sees an empty `location`.
+4. **`/oauth2/public-client` is session-guarded and answers in snake_case.**
+   Calling it from a server component means forwarding the request headers, and
+   the client's name arrives as `client_name`. Both were silent failures: the
+   consent screen simply stopped naming who was asking.

@@ -44,13 +44,14 @@ Outcome, and the six things the spec got wrong: `07-phase-0-findings.md`.
 Ship: nothing user-visible. This phase exists to remove the project's largest
 technical unknown while it is still cheap to change course.
 
-The spike succeeded, so the stack decision stands. One item carries into phase 1:
-the token-authenticated `whoami` call needs the real login and consent screens
-before it can be exercised end to end.
+The spike succeeded, so the stack decision stands. The one item that carried into
+phase 1, the token-authenticated `whoami` call awaiting real login and consent
+screens, is now closed: `npm run verify:oauth` walks the whole path against a
+running server and passes.
 
 ---
 
-## Phase 1 - The manual core loop
+## Phase 1 - The manual core loop  [DONE 2026-08-31]
 
 Goal: a person with no agent can plan a week.
 
@@ -68,9 +69,25 @@ Goal: a person with no agent can plan a week.
 
 Ship: a usable weekly meal planner. Small, honest, and complete.
 
+Built as specified, with four things worth recording:
+
+- **Login and consent screens shipped here**, closing the last phase 0 item. Both
+  hand the HMAC-signed authorization query back untouched, which is why the
+  login/sign-up switch is local state rather than a link.
+- **Diet is not enforced.** No recipe field says what diet a recipe satisfies, so
+  the hard filter in `01-functional-spec.md` section 4 cannot be implemented as
+  written. Allergens, exclusions, slot state, time budgets and repetition are all
+  enforced. See Q7 in `06-open-questions.md`.
+- **Every manual edit creates a version**, so dragging one entry produces one
+  version. That is the immutability rule working, not a bug, but it makes the
+  history long. See Q8.
+- **The whole resulting week is revalidated on every write**, not just the entry
+  that changed, so an allergen added after a week was planned blocks the next
+  edit to that week rather than surviving in it.
+
 ---
 
-## Phase 2 - Grocery list
+## Phase 2 - Grocery list  [DONE 2026-08-31]
 
 Goal: the feature with the highest perceived value per unit of work.
 
@@ -84,9 +101,32 @@ Goal: the feature with the highest perceived value per unit of work.
 
 Ship: plan a week, shop from it.
 
+Built as specified, with five things worth recording:
+
+- **A list belongs to a week, not to a version.** A version is superseded by
+  every edit, so a list pinned to one would be stale the moment the user moved a
+  meal. `plan_version_id` records what the list was last built from and moves
+  forward on regeneration; finding this week's list joins through it to `plan`.
+- **Only units with an unambiguous definition convert.** Grams and litres do; a
+  French tablespoon does, at 15 ml; a "tasse" does not, because it is 200 ml in
+  one kitchen and 250 in another. A total that came from one spoon-like unit is
+  also read back in that unit, so one tablespoon of oil is not shown as 15 ml.
+- **Countable quantities round up.** You cannot buy 1,5 courgette, and rounding
+  down is the one direction that ends a cooking session early.
+- **Regeneration is explicit, never automatic.** The list is a snapshot the user
+  is working from in a shop, and rearranging it under them unasked is the one
+  thing this screen must not do. The button reports what moved.
+- **Highlighting is not persisted.** The service returns which lines were added
+  or changed and the screen highlights those, so a reload clears it. A highlight
+  is about the last regeneration, not a property of the line.
+
+Pantry subtraction from `01-functional-spec.md` section 8 is not here: the
+pantry lands in phase 7. `grocery_line.covered_by_pantry` already exists so that
+phase is a service change rather than a migration.
+
 ---
 
-## Phase 3 - Profile and facts
+## Phase 3 - Profile and facts  [DONE 2026-08-31]
 
 Goal: build the moat, and populate it by hand before an agent touches it.
 
@@ -104,9 +144,42 @@ actually good, and it is testable by reading it.
 
 Ship: a deep personal cooking profile, and the exact document an agent will read.
 
+Built as specified, with six things worth recording:
+
+- **The status of a fact is decided by who wrote it, not by the payload.** A
+  user's fact is confirmed, an agent's is unconfirmed, and `confirmFact` refuses
+  an agent caller outright. There is no request an agent can make that confirms
+  its own claim.
+- **Only filing and certainty move in place.** Category and confidence can be
+  updated; the statement and the polarity are the fact's meaning, and changing
+  those goes through supersede, which retires the old row and links the new one
+  to it.
+- **The cap is checked with headroom, so a replacement works at the cap** while
+  an addition past it does not. A rejected write names the least recently
+  referenced unconfirmed facts as retirement candidates.
+- **Every fact category has a section in the snapshot.** `health` and any
+  confirmed high-confidence rejection are lifted into section 2, equipment and
+  technique go to section 4, organization, pantry habits and social go to
+  section 5, taste and other go to section 6. Nothing can be written and then
+  silently never reach an agent.
+- **The budget cannot cut a dangerous fact.** Selection sorts health facts and
+  confirmed high-confidence rejections to the front, so the cap only ever bites
+  into the nuanced end of the list.
+- **Sections 7 to 9 are stated as unavailable rather than shown empty**, so an
+  agent cannot read "no staples listed" as "there are no staples".
+
+Size, measured against a synthetic worst case (T2 in `06-open-questions.md`):
+26 kB and roughly 7 400 tokens at the default 150-fact budget, 48.5 kB and
+roughly 14 000 tokens at the 300-fact cap. That gap is why the display budget is
+lower than the cap.
+
+Viewing your own snapshot does not bump `last_referenced_at`: previewing the
+document must not tell the pruning heuristic that an agent found those facts
+useful.
+
 ---
 
-## Phase 4 - Agent read access
+## Phase 4 - Agent read access  [DONE 2026-08-31]
 
 Goal: first real agent value, and validation of the connect flow.
 
@@ -122,6 +195,36 @@ Goal: first real agent value, and validation of the connect flow.
 
 Ship: connect your agent and ask it what to cook. It answers with real knowledge
 of you. It cannot write yet, which makes this phase safe to hand to a stranger.
+
+Built as specified, with five things worth recording:
+
+- **One guard wraps every tool and every resource.** Scope check, revocation
+  check, rate limit, audit entry and error shaping all live in
+  `src/mcp/tool-runner.ts`, so a new tool cannot forget one of them. The phase 0
+  `whoami` predated it and was bypassing all five; that is fixed, and it mattered
+  most for `whoami` specifically, since that is the call an agent makes to check
+  its connection.
+- **Revocation is immediate, which a JWT cannot do alone.** Access tokens verify
+  against our JWKS, so a revoked client's token stays cryptographically valid
+  until it expires. Every call therefore re-checks that a consent row still
+  exists. Revoking also deletes the stored access and refresh tokens.
+- **The rate limit is counted from the audit log**, not from memory, so it holds
+  across processes with no shared cache. 120 calls per minute per client.
+- **`not_cooked_in_weeks` shipped as `not_planned_in_weeks`.** Feedback does not
+  exist until phase 6, so "not cooked" would have been a lie. The two are
+  genuinely different filters and phase 6 adds the other rather than changing
+  what this one means. Same reasoning for `min_rating`, which is not here at all.
+- **Unbuilt resources answer, rather than being absent.** `cooking://pantry` and
+  `cooking://history/recent` return `{available: false, reason}`, so an agent
+  learns why a section is empty instead of concluding there is nothing to know.
+
+Two bugs found by testing, both of the same kind and both invisible from
+outside: the rate limiter and the connected-clients screen queried
+`agent_activity` without `withUser`. Row-level security did exactly what it is
+designed to do and returned zero rows, so the limiter counted zero calls forever
+and the screen said every client had never called. Any raw query touching a
+domain table has to go through `inScope`, and `tests/services/mcp-guards.test.ts`
+now pins both behaviours down.
 
 ---
 

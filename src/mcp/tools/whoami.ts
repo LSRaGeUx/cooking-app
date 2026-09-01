@@ -1,51 +1,51 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpCallerContext } from "../server";
-import { logAgentActivity } from "@/lib/activity-log";
+import { runTool } from "../tool-runner";
 
 /**
- * Phase 0 spike tool. Its only job is to prove the whole chain works end to end:
- * OAuth consent, an audience-bound access token, Streamable HTTP transport,
- * scope enforcement, a user-scoped database write under RLS, and the audit log.
+ * The connection test. It began as the phase 0 spike tool, proving the whole
+ * chain worked end to end: OAuth consent, an audience-bound token, Streamable
+ * HTTP, a user-scoped write under RLS, and the audit log.
  *
- * Tool and parameter descriptions are product copy: they are the only way to
- * steer an agent we do not run. See docs/03-agent-interface.md.
+ * It now runs through the same guard as every other tool. That matters more
+ * than it looks: this is the call an agent makes to check its connection, so it
+ * is exactly the call that must notice a revoked client rather than cheerfully
+ * reporting that everything is fine.
  */
-export function registerWhoami(server: McpServer, ctx: McpCallerContext): void {
+export function registerWhoami(
+  server: McpServer,
+  caller: McpCallerContext,
+): void {
   server.registerTool(
     "whoami",
     {
-      title: "Who am I",
+      title: "Vérifier la connexion",
       description:
-        "Returns the Cooking App account this connection is authorized for, " +
-        "and the scopes it was granted. Call this once after connecting to " +
-        "confirm the connection works and to see what you are allowed to do.",
+        "Renvoie le compte auquel cette connexion est rattachée et les " +
+        "autorisations accordées. Appelez-le une fois après la connexion pour " +
+        "confirmer que tout fonctionne et voir ce que vous avez le droit de faire.",
     },
-    async () => {
-      await logAgentActivity({
-        userId: ctx.userId,
-        oauthClientId: ctx.clientId,
-        toolName: "whoami",
-        direction: "read",
-        result: "ok",
-        payloadSummary: { scopes: [...ctx.scopes] },
-      });
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              {
-                userId: ctx.userId,
-                clientId: ctx.clientId ?? null,
-                scopes: [...ctx.scopes].sort(),
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-      };
-    },
+    async () =>
+      runTool(
+        caller,
+        {
+          name: "whoami",
+          direction: "read",
+          // The floor the endpoint already enforces. Named here anyway so the
+          // tool states its own requirement rather than inheriting it silently.
+          requiredScopes: ["profile:read"],
+          payloadSummary: { scopes: [...caller.scopes].length },
+        },
+        async () =>
+          JSON.stringify(
+            {
+              userId: caller.userId,
+              clientId: caller.clientId ?? null,
+              scopes: [...caller.scopes].sort(),
+            },
+            null,
+            2,
+          ),
+      ),
   );
 }

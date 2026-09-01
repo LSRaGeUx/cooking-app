@@ -20,12 +20,14 @@
     "test": "vitest run",
     "check:deps": "node scripts/check-no-llm-deps.mjs",
     "verify": "npm run check:deps && npm run typecheck && npm run test",
+    "verify:oauth": "node scripts/verify-oauth-flow.mjs",
     "db:bootstrap": "node scripts/db-bootstrap.mjs",
     "auth:migrate": "tsx scripts/auth-migrate.ts",
     "db:setup": "npm run db:up && npm run db:bootstrap && npm run db:migrate && npm run auth:migrate"
   },
   "dependencies": {
     "@better-auth/mcp": "^1.7.2",
+    "@dnd-kit/core": "^6.3.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "better-auth": "^1.7.2",
     "drizzle-orm": "^0.45.2",

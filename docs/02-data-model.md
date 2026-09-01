@@ -8,6 +8,23 @@ Target: PostgreSQL. Conventions: `id` is uuid v7 (time-sortable), every
 user-owned table carries `user_id` with an index and a row-level scoping rule,
 timestamps are `timestamptz`, soft deletes use `deleted_at`.
 
+Three conventions were corrected against reality when phase 1 built the schema,
+and the corrections apply to every table below:
+
+- **`id` defaults to `uuidv7()`**, which PostgreSQL 18 ships in core. No
+  extension and no application-side id generation.
+- **`user_id` is `text`, not `uuid`.** Better Auth owns the `user` table and
+  types its `id` as text, so a uuid column here would reject every real user id
+  on insert. There is no foreign key to `user` either: the two migrators run in
+  sequence and Drizzle's runs first, so the referenced table does not exist yet.
+  Deleting an account therefore has to delete domain rows explicitly, which is
+  part of the phase 10 account-deletion work.
+- **Child tables carry a denormalized `user_id`**, including
+  `recipe_ingredient`, `recipe_step`, `recipe_revision`, `plan_version` and
+  `plan_entry`. Their row-level security policy is then a column comparison
+  rather than a subquery up the parent chain, and a forgotten join cannot leak
+  across tenants.
+
 ## 1. Entity overview
 
 ```
@@ -47,20 +64,24 @@ oauth_client (MCP clients)   agent_activity
 ## 2. Identity and access
 
 ### `user`
-| Column | Type | Notes |
-|---|---|---|
-| id | uuid | PK |
-| email | text | unique, citext |
-| name | text | |
-| locale | text | default `fr-FR` |
-| unit_system | text | `metric` |
-| created_at, updated_at | timestamptz | |
+Owned and migrated by Better Auth, not by us. Its actual shape is `id` (text),
+`name`, `email`, `emailVerified`, `image`, `createdAt`, `updatedAt`.
 
-Auth-adjacent tables (`session`, `account`, `verification`) follow the auth
-library's schema and are not hand-designed here. See `04-tech-spec.md`.
+The `locale` and `unit_system` fields originally specified here were never added
+to it, because extending a table another migrator owns means re-syncing on every
+upgrade. Both are per-user preferences that belong on `profile` when they are
+needed; the app is French and metric until then.
+
+Auth-adjacent tables (`session`, `account`, `verification`, and the eight OAuth
+tables) follow the auth library's schema and are not hand-designed here. See
+`04-tech-spec.md` and `07-phase-0-findings.md` section 3.1.
 
 ### `oauth_client`
-Registered MCP clients, created by dynamic client registration.
+Registered MCP clients, created by dynamic client registration. Also owned by
+Better Auth, as `oauthClient`, with a text `id`. Everywhere the domain schema
+refers to a client (`agent_activity.oauth_client_id`, `recipe.source_client_id`,
+`fact.source_client_id`, `plan_version.created_by_client_id`) it stores that text
+id with no foreign key, for the reason given at the top of this document.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -157,6 +178,19 @@ Invariants:
 - The `statement` length cap exists to keep facts atomic. Without it the field
   degrades into the free-text blob that was explicitly rejected.
 
+Enforced in the schema rather than only in the service, because these are the
+invariants that make the store trustworthy:
+
+- `char_length(statement) between 1 and 280`, so no code path can write a blob.
+- `(status = 'retired') = (retired_at is not null)`, so a retired fact always
+  carries its date and a live one never does.
+- Check constraints on category, polarity, confidence, source and status.
+
+In the service, `status` is derived from the caller rather than read from the
+payload, and only `category` and `confidence` are updatable in place. Changing a
+statement or a polarity goes through the supersede path, which is what keeps
+"used to hate mushrooms, now eats them" legible.
+
 ## 4. Slot configuration
 
 ### `meal_type`
@@ -226,7 +260,13 @@ seeded starter set ships with the app.
 | equipment_keys | text[] | required equipment |
 | allergen_ids | uuid[] | derived from ingredients, user-overridable |
 | revision | integer | bumped on edit |
+| search_vector | tsvector | generated, `to_tsvector('french', title || description)`, GIN indexed |
 | created_at, updated_at, deleted_at | timestamptz | |
+
+`search_vector` is a stored generated column so search can never drift from the
+row. Tags are deliberately not in it: `array_to_string` is `STABLE` rather than
+`IMMUTABLE`, so PostgreSQL refuses it in a generated column, and tags are a set
+filter anyway. They get their own GIN index and are matched with `&&`.
 
 ### `recipe_ingredient`
 | Column | Type | Notes |
@@ -347,9 +387,17 @@ knowingly stretch a dish).
 | user_id | uuid | FK |
 | plan_version_id | uuid | FK |
 | state | text | `draft`, `active`, `archived` |
-| generated_at | timestamptz | |
+| generated_at, updated_at | timestamptz | |
 
 A snapshot, not a view. The user shops from it while the plan may still move.
+
+`plan_version_id` records the version the list was last generated from, and it
+moves forward on every regeneration. The list belongs to a **week**, not to a
+version: a version is superseded by every plan edit, so a list pinned to one
+would be stale as soon as the user moved a meal. Finding this week's list joins
+through `plan_version` to `plan`, which is why there is no second key. A partial
+unique index on `plan_version_id` where the state is not `archived` keeps it to
+one live list per version.
 
 ### `grocery_line`
 | Column | Type | Notes |
@@ -366,6 +414,16 @@ A snapshot, not a view. The user shops from it while the plan may still move.
 | covered_by_pantry | boolean | |
 | checked | boolean | |
 | unmergeable_group | text | nullable, groups lines for the same ingredient in incompatible units |
+
+Notes from the implementation:
+
+- `covered_by_pantry` is written by phase 7 and is false until then. The column
+  exists now so the pantry is a service change rather than a migration.
+- A regeneration recognises a stored line by ingredient, name and unit together.
+  The unit is part of it because one ingredient can legitimately hold several
+  lines that could not be summed.
+- Only lines with an `ingredient_id` ever merge. Two unlinked names that look
+  alike are not evidence that they are the same thing, so each keeps its line.
 
 ## 8. Pantry
 
