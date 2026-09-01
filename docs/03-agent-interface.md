@@ -86,7 +86,7 @@ rarely.
 | `cooking://plan/current` | Active version of the current ISO week |
 | `cooking://plan/{year}-W{week}` | Active version of a given week |
 | `cooking://pantry` | Staples and use-soon items |
-| `cooking://history/recent` | Last 8 weeks: what was planned, what was cooked, ratings |
+| `cooking://history/recent` | Last 8 weeks: what was planned, what was cooked, ratings, plus the unresolved signals |
 
 The recipe index being compact and the full recipe being separate is a
 deliberate context-budget decision: a 200-recipe library must be surveyable in a
@@ -163,7 +163,7 @@ Names are stable API. Descriptions shown here in condensed form.
 | `search_recipes` | Find recipes by criteria | Params: text query, tags, max active time, protein, `not_planned_in_weeks`, limit. The rotation filter is what enables "give me something I have not eaten in a while". Shipped in phase 4 as `not_planned_in_weeks`, not `not_cooked_in_weeks`: feedback does not exist until phase 6, so "not cooked" would have been a lie. The two are different filters and phase 6 adds the second rather than redefining the first. `min_rating` waits for the same reason |
 | `get_recipe` | One full recipe | |
 | `get_week` | A plan version with entries, rationales, prep links | Params: year, week, `version` (active, pending, or number) |
-| `get_history` | Cooked and skipped history with ratings | Params: weeks back |
+| `get_history` | Cooked and skipped history with ratings | Params: weeks back. Also returns the unresolved signals and any slot time budget the data disagrees with. A meal with no `outcome` is unjudged, not failed, and the tool says so |
 | `get_pantry` | Staples and use-soon | |
 | `check_feasibility` | Dry-run a proposed week without writing | Returns the same validation result `propose_week` would, with no side effect. Lets an agent iterate before committing |
 

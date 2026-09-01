@@ -4,6 +4,7 @@ import {
 } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { DomainError } from "@/domain/errors";
 import { currentIsoWeek, formatIsoWeek, parseIsoWeek } from "@/domain/week";
+import { loadHistory, loadSignals } from "@/services/history-service";
 import { getWeekView } from "@/services/plan-service";
 import { getRecipe, loadRecipeIndex } from "@/services/recipe-service";
 import { loadSlotDefinitions } from "@/services/slot-service";
@@ -132,7 +133,7 @@ export function registerResources(
               return JSON.stringify(
                 {
                   count: index.length,
-                  note: "weeks_since_last_planned porte sur ce qui a été planifié, pas sur ce qui a été cuisiné. Les retours après cuisson arrivent en phase 6.",
+                  note: "weeks_since_last_planned porte sur ce qui a été planifié ; weeks_since_last_cooked sur ce qui a été réellement cuisiné, d'après les retours saisis. Une recette sans retour n'apparaît pas comme cuisinée.",
                   recipes: index.map((row) => ({
                     id: row.id,
                     title: row.title,
@@ -142,7 +143,10 @@ export function registerResources(
                     main_protein: row.mainProtein,
                     batch_friendly: row.batchFriendly,
                     times_planned: row.timesPlanned,
+                    times_cooked: row.timesCooked,
+                    average_rating: row.averageRating,
                     weeks_since_last_planned: row.weeksSinceLastPlanned,
+                    weeks_since_last_cooked: row.weeksSinceLastCooked,
                   })),
                 },
                 null,
@@ -266,14 +270,46 @@ export function registerResources(
     "La gestion des placards arrive en phase 7. Ne supposez pas que les placards sont vides : cette information n'est pas encore collectée.",
   );
 
-  registerPlaceholder(
-    server,
-    caller,
+  server.registerResource(
     "history-recent",
     "cooking://history/recent",
-    "Historique récent",
-    "feedback:read",
-    "Les retours après cuisson arrivent en phase 6. Rien n'est encore connu sur ce qui a été réellement cuisiné, noté, ou sauté. Les plans passés restent lisibles via `get_week`.",
+    {
+      title: "Historique récent",
+      description:
+        "Les huit dernières semaines : ce qui était planifié, ce qui a été " +
+        "cuisiné, sauté ou remplacé, et les notes. Un repas sans retour n'a pas " +
+        "été jugé, ce qui n'est pas la même chose qu'un repas raté.",
+      mimeType: "application/json",
+    },
+    async (uri) => ({
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: "application/json",
+          text: await runResource(
+            caller,
+            {
+              name: "resource:history/recent",
+              direction: "read",
+              requiredScopes: ["feedback:read"],
+            },
+            async (ctx) => {
+              const history = await loadHistory(ctx, 8);
+              const { signals } = await loadSignals(ctx);
+              return JSON.stringify(
+                {
+                  weeks: history,
+                  unresolved_signals: signals,
+                  note: "Un repas sans `outcome` n'a pas été jugé, pas raté.",
+                },
+                null,
+                2,
+              );
+            },
+          ),
+        },
+      ],
+    }),
   );
 }
 

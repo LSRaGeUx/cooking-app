@@ -68,6 +68,29 @@ export function registerSearchRecipes(
               "planifié, pas sur ce qui a été réellement cuisiné. Les retours après " +
               "cuisson n'existent pas encore dans cette version.",
           ),
+        not_cooked_in_weeks: z
+          .number()
+          .int()
+          .min(1)
+          .max(104)
+          .optional()
+          .describe(
+            "Exclut les recettes réellement cuisinées depuis moins de N " +
+              "semaines, d'après les retours saisis. Une recette jamais " +
+              "cuisinée passe le filtre. C'est le filtre à utiliser pour « quelque " +
+              "chose que je n'ai pas mangé depuis longtemps » ; " +
+              "`not_planned_in_weeks` porte sur l'intention, celui-ci sur les faits.",
+          ),
+        min_rating: z
+          .number()
+          .int()
+          .min(1)
+          .max(5)
+          .optional()
+          .describe(
+            "Note moyenne minimale. Une recette jamais notée est exclue : " +
+              "l'absence de note n'est pas une bonne note.",
+          ),
         limit: z.number().int().min(1).max(100).default(20),
         offset: z.number().int().min(0).default(0),
       },
@@ -98,6 +121,12 @@ export function registerSearchRecipes(
               : {}),
             ...(args.not_planned_in_weeks !== undefined
               ? { notPlannedInWeeks: args.not_planned_in_weeks }
+              : {}),
+            ...(args.not_cooked_in_weeks !== undefined
+              ? { notCookedInWeeks: args.not_cooked_in_weeks }
+              : {}),
+            ...(args.min_rating !== undefined
+              ? { minRating: args.min_rating }
               : {}),
             limit: args.limit,
             offset: args.offset,

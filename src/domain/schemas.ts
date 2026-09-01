@@ -8,7 +8,9 @@ import {
   FACT_POLARITIES,
   FACT_STATEMENT_MAX_LENGTH,
   FACT_STATUSES,
+  FEEDBACK_OUTCOMES,
   INGREDIENT_CATEGORIES,
+  PORTION_ISSUES,
   SLOT_STATES,
 } from "./vocabulary";
 import { CANONICAL_UNITS } from "./ingredient-parser";
@@ -200,6 +202,42 @@ export const factFilterSchema = z.object({
 
 export type FactFilter = z.infer<typeof factFilterSchema>;
 
+/**
+ * Only the outcome is required. Everything else is optional because a prompt
+ * that demands a rating and a note is a prompt people stop answering, and an
+ * unanswered prompt teaches nothing.
+ */
+export const feedbackInputSchema = z.object({
+  outcome: z
+    .enum(FEEDBACK_OUTCOMES)
+    .describe(
+      "`cooked` si le plat a été cuisiné, `skipped` s'il a été sauté, `swapped` si autre chose a été mangé à la place.",
+    ),
+  swappedFor: z
+    .string()
+    .max(200)
+    .nullable()
+    .default(null)
+    .describe(
+      "Ce qui a été mangé à la place. Souvent plus instructif qu'une note : c'est vers quoi la personne se tourne quand le plan ne tient pas.",
+    ),
+  rating: z.number().int().min(1).max(5).nullable().default(null),
+  note: z.string().max(1000).nullable().default(null),
+  tookLonger: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Le plat a pris plus de temps que prévu. C'est ce drapeau qui, répété, fait proposer un budget de temps plus réaliste pour ce créneau.",
+    ),
+  portionIssue: z
+    .enum(PORTION_ISSUES)
+    .nullable()
+    .default(null)
+    .describe("`too_much` ou `too_little` si les quantités étaient à côté."),
+});
+
+export type FeedbackInput = z.infer<typeof feedbackInputSchema>;
+
 export const ingredientInputSchema = z.object({
   canonicalName: z.string().min(1).max(120),
   aliases: z.array(z.string().min(1).max(120)).max(50).default([]),
@@ -302,6 +340,24 @@ export const recipeSearchSchema = z.object({
     .optional()
     .describe(
       "Ne renvoie que les recettes absentes des plans actifs des N dernières semaines. C'est le filtre qui répond à « propose-moi quelque chose que je n'ai pas mangé depuis longtemps ». Il porte sur ce qui a été planifié, pas sur ce qui a été réellement cuisiné : les retours après cuisson n'existent pas encore.",
+    ),
+  notCookedInWeeks: z
+    .number()
+    .int()
+    .min(1)
+    .max(104)
+    .optional()
+    .describe(
+      "Ne renvoie que les recettes qui n'ont pas été réellement cuisinées depuis N semaines, d'après les retours enregistrés. Une recette jamais cuisinée passe le filtre. À distinguer de `notPlannedInWeeks`, qui porte sur ce qui a été planifié.",
+    ),
+  minRating: z
+    .number()
+    .int()
+    .min(1)
+    .max(5)
+    .optional()
+    .describe(
+      "Note moyenne minimale, sur les repas notés. Une recette jamais notée est exclue : l'absence de note n'est pas une bonne note.",
     ),
   limit: z.number().int().min(1).max(100).default(20),
   offset: z.number().int().min(0).default(0),

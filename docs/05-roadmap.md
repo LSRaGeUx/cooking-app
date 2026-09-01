@@ -279,7 +279,7 @@ strict allergen leaves no orphaned recipes behind, which
 
 ---
 
-## Phase 6 - Feedback loop
+## Phase 6 - Feedback loop  [DONE 2026-09-01]
 
 Goal: make week 20 better than week 1.
 
@@ -294,6 +294,32 @@ Goal: make week 20 better than week 1.
 
 Ship: personalization that compounds. This is the phase that makes the product
 defensible rather than merely nice.
+
+Built as specified, with five things worth recording:
+
+- **Only the outcome is required.** A form demanding a rating and a note for
+  seven meals is a form nobody fills twice, and an unanswered prompt teaches
+  nothing. The outcome alone already carries the strongest signal.
+- **A meal with no feedback is unjudged, not failed.** Every read path says so
+  explicitly, in the tool description, the resource note and the snapshot,
+  because an agent that treats silence as failure will draw confident
+  conclusions from nothing.
+- **Feedback follows the slot, not the entry row.** Plan versions are immutable,
+  so editing a week rewrites its entries; without carrying feedback forward, a
+  user who tidied a week after cooking would silently lose every verdict. The
+  planning service re-points it when it copies a slot forward.
+- **The app derives signals, never facts.** It will say a dish was planned three
+  times and never cooked. Concluding that the person dislikes it is the agent's
+  job, with low confidence and cited evidence, which keeps the fact store honest
+  about where its claims came from.
+- **Budget suggestions are a button, never an automatic change.** The data can
+  see that Saturday keeps running over; only the person living the Saturday
+  knows whether the answer is a bigger budget or a simpler dish. This answers Q5.
+
+`search_recipes` gained the two filters phase 4 deferred for want of data:
+`not_cooked_in_weeks`, which is about what happened rather than what was
+intended, and `min_rating`, which excludes never-rated recipes because an absent
+rating is not a good one.
 
 ---
 

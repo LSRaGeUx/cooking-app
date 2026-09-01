@@ -13,6 +13,7 @@ import {
 } from "@/domain/week";
 import { locale } from "@/i18n/request";
 import { requireUser } from "@/lib/session";
+import { pendingFeedback } from "@/services/feedback-service";
 import { getWeekView, listVersions } from "@/services/plan-service";
 import { loadRecipeSummaries, searchRecipes } from "@/services/recipe-service";
 
@@ -34,6 +35,7 @@ export default async function WeekPage({
 
   const view = await getWeekView(ctx, isoWeek);
   const versions = await listVersions(ctx, isoWeek);
+  const awaiting = await pendingFeedback(ctx, isoWeek);
   const library = await searchRecipes(ctx, { limit: 30 });
 
   // Titles come from the entry snapshots, but the attended time has to come
@@ -91,6 +93,26 @@ export default async function WeekPage({
           </Link>
         </nav>
       </header>
+
+      {awaiting.length > 0 ? (
+        // A strip, never a modal: the spec is explicit that this prompt must
+        // not block, and a prompt that blocks is a prompt people learn to
+        // dismiss without reading.
+        <aside className="flex flex-wrap items-center gap-3 rounded-md border border-black/10 px-3 py-2 dark:border-white/15">
+          <div className="flex flex-col">
+            <span className="text-sm">
+              {t("feedbackPrompt", { count: awaiting.length })}
+            </span>
+            <span className="text-xs opacity-60">{t("feedbackPromptHelp")}</span>
+          </div>
+          <Link
+            href={`/semaine/${formatIsoWeek(isoWeek)}/bilan`}
+            className="ml-auto rounded-md border border-black/15 px-3 py-1.5 text-sm dark:border-white/20"
+          >
+            {t("feedbackFill")}
+          </Link>
+        </aside>
+      ) : null}
 
       {view.pendingVersion ? (
         <aside className="flex flex-wrap items-center gap-3 rounded-md border border-amber-500/50 bg-amber-500/5 px-3 py-2">

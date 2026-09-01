@@ -291,6 +291,37 @@ export async function searchRecipes(
       )`);
     }
 
+    if (search.notCookedInWeeks !== undefined) {
+      const cutoff = shiftIsoWeek(
+        isoWeekOf(new Date()),
+        -(search.notCookedInWeeks - 1),
+      );
+      const cutoffKey = cutoff.year * 100 + cutoff.week;
+      // A recipe never cooked passes: "not cooked in six weeks" is true of a
+      // dish nobody has ever made.
+      conditions.push(sql`not exists (
+        select 1 from plan_entry pe
+        join plan_version pv on pv.id = pe.plan_version_id
+        join plan p on p.id = pv.plan_id
+        join entry_feedback f on f.plan_entry_id = pe.id
+        where pe.recipe_id = ${recipe.id}
+          and pv.state = 'active'
+          and f.outcome = 'cooked'
+          and (p.iso_year * 100 + p.iso_week) >= ${cutoffKey}
+      )`);
+    }
+
+    if (search.minRating !== undefined) {
+      // Never rated is excluded rather than treated as neutral: an absent
+      // rating is not a good one.
+      conditions.push(sql`coalesce((
+        select avg(f.rating)
+        from plan_entry pe
+        join entry_feedback f on f.plan_entry_id = pe.id
+        where pe.recipe_id = ${recipe.id} and f.rating is not null
+      ), -1) >= ${search.minRating}`);
+    }
+
     if (search.maxActiveTimeMin !== undefined) {
       // The same fallback the time budget rule uses: attended time when it is
       // recorded, prep plus cook when it is not.
@@ -336,6 +367,10 @@ export interface RecipeIndexEntry {
   readonly batchFriendly: boolean;
   /** How many active plan versions have ever carried this recipe. */
   readonly timesPlanned: number;
+  readonly timesCooked: number;
+  readonly averageRating: number | null;
+  /** Weeks since it was actually cooked, from recorded feedback. */
+  readonly weeksSinceLastCooked: number | null;
   /**
    * Weeks since this recipe last appeared in an active plan. Null when it has
    * never been planned. Deliberately not called "rotation age": until feedback
@@ -378,14 +413,22 @@ export async function loadRecipeIndex(
     const planned = await tx.execute<{
       recipe_id: string;
       times_planned: number;
+      times_cooked: number;
+      average_rating: string | null;
       last_key: number | null;
+      last_cooked_key: number | null;
     }>(sql`
       select pe.recipe_id,
              count(*)::int as times_planned,
-             max(p.iso_year * 100 + p.iso_week) as last_key
+             count(*) filter (where f.outcome = 'cooked')::int as times_cooked,
+             avg(f.rating) filter (where f.rating is not null) as average_rating,
+             max(p.iso_year * 100 + p.iso_week) as last_key,
+             max(p.iso_year * 100 + p.iso_week)
+               filter (where f.outcome = 'cooked') as last_cooked_key
       from plan_entry pe
       join plan_version pv on pv.id = pe.plan_version_id
       join plan p on p.id = pv.plan_id
+      left join entry_feedback f on f.plan_entry_id = pe.id
       where pe.user_id = ${ctx.userId}
         and pv.state = 'active'
         and pe.recipe_id is not null
@@ -395,7 +438,14 @@ export async function loadRecipeIndex(
     const history = new Map(
       planned.rows.map((row) => [
         row.recipe_id,
-        { timesPlanned: row.times_planned, lastKey: row.last_key },
+        {
+          timesPlanned: row.times_planned,
+          timesCooked: row.times_cooked,
+          averageRating:
+            row.average_rating === null ? null : Number(row.average_rating),
+          lastKey: row.last_key,
+          lastCookedKey: row.last_cooked_key,
+        },
       ]),
     );
     const thisWeek = isoWeekOf(now);
@@ -417,16 +467,25 @@ export async function loadRecipeIndex(
         cuisine: row.cuisine,
         batchFriendly: row.batchFriendly,
         timesPlanned: seen?.timesPlanned ?? 0,
-        weeksSinceLastPlanned:
-          lastKey === null
-            ? null
-            : weeksBetween(
-                { year: Math.floor(lastKey / 100), week: lastKey % 100 },
-                thisWeek,
-              ),
+        timesCooked: seen?.timesCooked ?? 0,
+        averageRating: seen?.averageRating ?? null,
+        weeksSinceLastPlanned: weeksSince(lastKey, thisWeek),
+        weeksSinceLastCooked: weeksSince(seen?.lastCookedKey ?? null, thisWeek),
       };
     });
   });
+}
+
+/** Weeks from a stored `year * 100 + week` key to now, or null if never. */
+function weeksSince(
+  key: number | null,
+  thisWeek: { year: number; week: number },
+): number | null {
+  if (key === null) return null;
+  return weeksBetween(
+    { year: Math.floor(key / 100), week: key % 100 },
+    thisWeek,
+  );
 }
 
 export interface RecipeBasketLine {

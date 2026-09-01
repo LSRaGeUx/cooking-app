@@ -168,13 +168,24 @@ describe("the composed document", () => {
 
   it("says which sections are not yet measured, instead of showing them empty", async () => {
     const { markdown, snapshot } = await composeProfileSnapshot(ctx);
+    // History and signals became real in phase 6; only the pantry is still to
+    // come, and it still says so rather than rendering empty.
     expect(snapshot.unavailable.map((row) => row.section)).toEqual([
       "Placards",
-      "Historique récent",
-      "Signaux non résolus",
     ]);
     // An agent must not read a missing section as "nothing to report".
     expect(markdown).toContain("Ne supposez pas que les placards sont vides.");
+  });
+
+  it("carries the history and signal sections, empty but explained", async () => {
+    const { markdown } = await composeProfileSnapshot(ctx);
+    expect(markdown).toContain("## 7. Historique récent");
+    expect(markdown).toContain("## 8. Signaux non résolus");
+    // No feedback has been recorded for this user, and the document says what
+    // that does and does not mean.
+    expect(markdown).toContain(
+      "Absence de retour ne veut pas dire que rien n'a été cuisiné.",
+    );
   });
 });
 

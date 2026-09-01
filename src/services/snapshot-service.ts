@@ -12,6 +12,7 @@ import {
 import { DEFAULT_FACT_CAP } from "@/domain/vocabulary";
 import { inScope, type ServiceContext } from "./context";
 import { listFacts, markFactsReferenced } from "./fact-service";
+import { loadHistory, loadSignals } from "./history-service";
 import { loadEnforcementContext } from "./profile-service";
 import { loadSlotDefinitions } from "./slot-service";
 
@@ -51,6 +52,10 @@ export async function composeProfileSnapshot(
     const enforcement = await loadEnforcementContext(scoped);
     const slots = await loadSlotDefinitions(scoped);
     const activeFacts = await listFacts(scoped, {});
+    // Four weeks, per the section ordering: enough to see a pattern, short
+    // enough that the document stays readable.
+    const history = await loadHistory(scoped, 4);
+    const { signals } = await loadSignals(scoped);
 
     const ranked: RankedFact[] = activeFacts.map((row) => ({
       id: row.id,
@@ -142,6 +147,21 @@ export async function composeProfileSnapshot(
       },
       organizationFacts: organization,
       tasteFacts: orderTasteFacts(taste),
+      recentHistory: history.map((historyWeek) => ({
+        year: historyWeek.year,
+        week: historyWeek.week,
+        meals: historyWeek.entries.map((entry) => ({
+          dayOfWeek: entry.dayOfWeek,
+          title: entry.recipeTitle,
+          outcome: entry.outcome,
+          rating: entry.rating,
+          swappedFor: entry.swappedFor,
+        })),
+      })),
+      unresolvedSignals: signals.map((signal) => ({
+        code: signal.code,
+        message: signal.message,
+      })),
       // Saying so beats a silently empty section: an agent must not read
       // "no staples listed" as "there are no staples".
       unavailable: [
@@ -149,16 +169,6 @@ export async function composeProfileSnapshot(
           section: "Placards",
           reason:
             "la gestion des placards arrive en phase 7. Ne supposez pas que les placards sont vides.",
-        },
-        {
-          section: "Historique récent",
-          reason:
-            "les retours après cuisson arrivent en phase 6. Aucune information sur ce qui a été réellement cuisiné n'est encore disponible.",
-        },
-        {
-          section: "Signaux non résolus",
-          reason:
-            "les signaux dérivés (recettes jamais cuisinées, dépassements de budget) arrivent en phase 6.",
         },
       ],
     };

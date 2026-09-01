@@ -127,6 +127,17 @@ export const DEFAULT_FACT_CAP = 300;
 export const GROCERY_LIST_STATES = ["draft", "active", "archived"] as const;
 export type GroceryListState = (typeof GROCERY_LIST_STATES)[number];
 
+/**
+ * What actually happened in a slot. `swapped` carries what was eaten instead,
+ * which is often more informative than a rating: it says what the person
+ * reached for when the plan did not survive the day.
+ */
+export const FEEDBACK_OUTCOMES = ["cooked", "skipped", "swapped"] as const;
+export type FeedbackOutcome = (typeof FEEDBACK_OUTCOMES)[number];
+
+export const PORTION_ISSUES = ["too_much", "too_little"] as const;
+export type PortionIssue = (typeof PORTION_ISSUES)[number];
+
 /** `derived` lines come from the plan, `manual` ones the user typed. */
 export const GROCERY_LINE_ORIGINS = ["derived", "manual"] as const;
 export type GroceryLineOrigin = (typeof GROCERY_LINE_ORIGINS)[number];

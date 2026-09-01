@@ -10,7 +10,7 @@ Marginal cost per user tends to zero.
 
 ## Status
 
-**Phases 0 to 5 complete.** The product as pitched. You can configure your weekly grid, build a recipe
+**Phases 0 to 6 complete.** The product as pitched, with the loop closed. You can configure your weekly grid, build a recipe
 library, plan a week by hand, shop from a grocery list generated out of it, and
 maintain the profile and fact store that make the planning personal. Plan
 versions are immutable and revertible, and the strict allergen block, slot state
@@ -22,6 +22,11 @@ week". Your agent reads a deep profile of you, proposes a week, and hands back a
 link. You see it slot by slot against what is planned today, with the reason for
 each dish and the facts it cited, and you accept all of it, part of it, or none
 of it with a reason that is kept and fed back.
+
+Afterwards you say what actually happened, in one screen for the whole week and
+never through a modal. That feeds cook rates, rotation ages and slot overruns
+back into search, into the profile an agent reads, and into a suggestion when a
+time budget stops matching your kitchen.
 
 Access is per client, scoped, rate limited, logged, and revocable with immediate
 effect. Nothing an agent does is irreversible.
@@ -38,7 +43,7 @@ Phase 0 closed alongside phase 1: the login and consent screens shipped, so the
 OAuth 2.1 flow now runs end to end into an authenticated MCP call. See
 [`docs/07-phase-0-findings.md`](docs/07-phase-0-findings.md).
 
-Next: phase 6, the feedback loop.
+Next: phase 7, the pantry.
 
 Full specs live in [`docs/`](docs/README.md). Start with
 [`docs/README.md`](docs/README.md), then read in numbered order.

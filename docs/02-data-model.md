@@ -379,6 +379,15 @@ knowingly stretch a dish).
 | portion_issue | text | nullable, `too_much` or `too_little` |
 | created_at | timestamptz | |
 
+`plan_entry_id` is unique, so recording again corrects the previous answer
+rather than stacking a second one.
+
+One thing the original spec did not account for: a plan entry belongs to an
+immutable version, so editing a week rewrites its entries and would orphan every
+verdict attached to them. The planning service therefore re-points existing
+feedback at the new entry when it copies a slot forward. Feedback belongs to
+what happened in that slot this week, not to one revision of the plan.
+
 ## 7. Grocery lists
 
 ### `grocery_list`

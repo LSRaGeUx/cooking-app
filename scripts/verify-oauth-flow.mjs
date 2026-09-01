@@ -485,6 +485,45 @@ step(
   retiredPayload.retirement_reason,
 );
 
+const history = await rpc("tools/call", {
+  name: "get_history",
+  arguments: { weeks_back: 8 },
+});
+const historyPayload = safeJson(toolText(history.payload));
+step(
+  "get_history returns weeks, signals and budget suggestions",
+  Array.isArray(historyPayload.weeks) &&
+    Array.isArray(historyPayload.unresolved_signals) &&
+    Array.isArray(historyPayload.budget_suggestions) &&
+    typeof historyPayload.note === "string",
+  `${historyPayload.weeks?.length ?? "?"} weeks`,
+);
+
+const historyResource = await rpc("resources/read", {
+  uri: "cooking://history/recent",
+});
+const historyResourcePayload = safeJson(
+  historyResource.payload?.result?.contents?.[0]?.text ?? "",
+);
+step(
+  "the history resource is real, not a placeholder",
+  historyResourcePayload.available !== false &&
+    Array.isArray(historyResourcePayload.weeks),
+  `${historyResourcePayload.weeks?.length ?? "?"} weeks`,
+);
+
+const snapshotWithHistory = await rpc("tools/call", {
+  name: "get_profile_snapshot",
+  arguments: { format: "markdown" },
+});
+const snapshotHistoryText = toolText(snapshotWithHistory.payload);
+step(
+  "the snapshot now carries the history and signal sections",
+  snapshotHistoryText.includes("## 7. Historique récent") &&
+    snapshotHistoryText.includes("## 8. Signaux non résolus"),
+  `${snapshotHistoryText.length} characters`,
+);
+
 const prompts = await rpc("prompts/list", {});
 const promptNames = (prompts.payload?.result?.prompts ?? []).map(
   (prompt) => prompt.name,

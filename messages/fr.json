@@ -119,6 +119,9 @@
     "notePlaceholder": "Doubler pour les restes, prévoir du pain…",
     "dragHint": "Glissez un repas pour le déplacer. Au clavier : espace pour saisir, flèches pour déplacer, espace pour déposer.",
     "warnings": "À savoir",
+    "feedbackPrompt": "{count, plural, one {# repas passé attend votre retour} other {# repas passés attendent votre retour}}.",
+    "feedbackPromptHelp": "Répondre est facultatif, et un repas sans retour n'est pas un repas raté. Mais c'est ce qui rend la semaine 20 meilleure que la semaine 1.",
+    "feedbackFill": "Faire le bilan",
     "pendingBanner": "Votre agent propose une semaine.",
     "pendingReview": "Examiner la proposition",
     "days": {
@@ -130,6 +133,41 @@
       "6": "Samedi",
       "7": "Dimanche"
     }
+  },
+  "feedback": {
+    "title": "Bilan de la semaine {week} de {year}",
+    "intro": "Ce qui était prévu, et ce qui s'est réellement passé. Tout est facultatif : l'issue seule suffit déjà, et vous pouvez ne rien dire d'un repas.",
+    "backToWeek": "Retour à la semaine",
+    "empty": "Rien n'était planifié cette semaine.",
+    "outcome": "Issue",
+    "outcomes": {
+      "cooked": "Cuisiné",
+      "skipped": "Sauté",
+      "swapped": "Remplacé"
+    },
+    "notAnswered": "Pas de retour",
+    "swappedFor": "Remplacé par",
+    "swappedForPlaceholder": "Pizza, restes, restaurant…",
+    "rating": "Note",
+    "note": "Note libre",
+    "notePlaceholder": "Trop salé, à refaire avec moins de crème…",
+    "tookLonger": "A pris plus de temps que prévu",
+    "portionIssue": "Quantités",
+    "portions": {
+      "none": "Justes",
+      "too_much": "Trop",
+      "too_little": "Pas assez"
+    },
+    "save": "Enregistrer ce repas",
+    "clear": "Effacer le retour",
+    "saved": "Enregistré.",
+    "quickAsk": "{title}, {day} : qu'en avez-vous fait ?",
+    "signals": "Ce que les données disent",
+    "signalsHelp": "Des observations, pas des conclusions. Votre agent peut les transformer en faits, que vous confirmerez.",
+    "noSignals": "Rien à signaler pour l'instant.",
+    "budgetSuggestion": "{day} {meal} : {overruns} repas ont dépassé le budget de {current} min. Passer à {suggested} min ?",
+    "budgetApply": "Appliquer",
+    "budgetApplied": "Budget mis à jour."
   },
   "proposal": {
     "title": "Proposition pour la semaine {week} de {year}",

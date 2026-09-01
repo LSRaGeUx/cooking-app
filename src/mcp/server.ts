@@ -5,6 +5,7 @@ import { registerResources } from "./resources";
 import { registerCheckFeasibility } from "./tools/check-feasibility";
 import { registerFactWrites } from "./tools/fact-writes";
 import { registerGetProfileSnapshot } from "./tools/get-profile-snapshot";
+import { registerGetHistory } from "./tools/get-history";
 import { registerGetRecipe } from "./tools/get-recipe";
 import { registerGetWeek } from "./tools/get-week";
 import { registerProposeWeek } from "./tools/propose-week";
@@ -34,6 +35,7 @@ export function buildServer(ctx: McpCallerContext): McpServer {
   registerSearchRecipes(server, ctx);
   registerGetRecipe(server, ctx);
   registerGetWeek(server, ctx);
+  registerGetHistory(server, ctx);
 
   registerCheckFeasibility(server, ctx);
   registerProposeWeek(server, ctx);

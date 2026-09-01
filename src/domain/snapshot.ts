@@ -72,8 +72,27 @@ export interface ProfileSnapshot {
   };
   readonly organizationFacts: SnapshotFact[];
   readonly tasteFacts: SnapshotFact[];
+  readonly recentHistory: SnapshotHistoryWeek[];
+  readonly unresolvedSignals: SnapshotSignal[];
   /** Sections the spec defines that this build cannot fill yet. */
   readonly unavailable: UnavailableSection[];
+}
+
+export interface SnapshotHistoryWeek {
+  readonly year: number;
+  readonly week: number;
+  readonly meals: Array<{
+    readonly dayOfWeek: number;
+    readonly title: string;
+    readonly outcome: string | null;
+    readonly rating: number | null;
+    readonly swappedFor: string | null;
+  }>;
+}
+
+export interface SnapshotSignal {
+  readonly code: string;
+  readonly message: string;
 }
 
 export const DEFAULT_SNAPSHOT_FACT_BUDGET = 150;
@@ -321,6 +340,48 @@ export function renderSnapshotMarkdown(snapshot: ProfileSnapshot): string {
   out.push("");
   if (snapshot.tasteFacts.length === 0) out.push("Rien de connu.");
   pushFacts(out, snapshot.tasteFacts);
+  out.push("");
+
+  out.push("## 7. Historique récent");
+  out.push("");
+  if (snapshot.recentHistory.length === 0) {
+    out.push(
+      "Aucun repas planifié récemment, ou aucun retour enregistré. Absence de retour ne veut pas dire que rien n'a été cuisiné.",
+    );
+  } else {
+    out.push(
+      "Ce qui a été planifié, et ce qui en a été fait. Un repas sans retour n'a pas été jugé, ce qui n'est pas la même chose qu'un repas raté :",
+    );
+    for (const historyWeek of snapshot.recentHistory) {
+      out.push("");
+      out.push(`Semaine ${historyWeek.week} de ${historyWeek.year} :`);
+      for (const meal of historyWeek.meals) {
+        const verdict =
+          meal.outcome === null
+            ? "pas de retour"
+            : meal.outcome === "cooked"
+              ? `cuisiné${meal.rating === null ? "" : `, noté ${meal.rating}/5`}`
+              : meal.outcome === "skipped"
+                ? "sauté"
+                : `remplacé${meal.swappedFor ? ` par ${meal.swappedFor}` : ""}`;
+        out.push(`- ${dayName(meal.dayOfWeek)} : ${meal.title} (${verdict})`);
+      }
+    }
+  }
+  out.push("");
+
+  out.push("## 8. Signaux non résolus");
+  out.push("");
+  if (snapshot.unresolvedSignals.length === 0) {
+    out.push("Rien à signaler.");
+  } else {
+    out.push(
+      "Ce que les données disent et que personne n'a encore traité. Ce sont des observations, pas des conclusions : c'est à vous d'en tirer des faits, avec une confiance basse et les preuves citées.",
+    );
+    for (const signal of snapshot.unresolvedSignals) {
+      out.push(`- ${signal.message}`);
+    }
+  }
   out.push("");
 
   if (snapshot.unavailable.length > 0) {

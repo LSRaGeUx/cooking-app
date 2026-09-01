@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, sql } from "drizzle-orm";
-import { fact, plan, planEntry, planVersion } from "@/db/schema";
+import { entryFeedback, fact, plan, planEntry, planVersion } from "@/db/schema";
 import {
   assertNoStrictAllergen,
   collectIngredientWarnings,
@@ -1138,7 +1138,7 @@ async function mutateWeek(
     const created = createdRows[0]!;
 
     if (next.length > 0) {
-      await tx.insert(planEntry).values(
+      const insertedEntries = await tx.insert(planEntry).values(
         next.map((draft) => ({
           userId: ctx.userId,
           planVersionId: created.id,
@@ -1153,7 +1153,19 @@ async function mutateWeek(
           rationaleRefs: draft.rationaleRefs ?? null,
           position: draft.position,
         })),
-      );
+      ).returning({ id: planEntry.id });
+
+      // Feedback belongs to what happened in a slot this week, not to one
+      // revision of the plan. Without this, editing a week after cooking would
+      // silently orphan every verdict the user recorded.
+      for (const [index, draft] of next.entries()) {
+        const newId = insertedEntries[index]?.id;
+        if (!draft.sourceEntryId || !newId) continue;
+        await tx
+          .update(entryFeedback)
+          .set({ planEntryId: newId })
+          .where(eq(entryFeedback.planEntryId, draft.sourceEntryId));
+      }
     }
 
     return {

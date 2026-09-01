@@ -35,7 +35,7 @@ agent the user already pays for. Marginal cost per user tends to zero.
 
 ## Status
 
-Phases 0 to 5 complete. A person with no agent can configure their weekly grid,
+Phases 0 to 6 complete. A person with no agent can configure their weekly grid,
 build a recipe library, plan a week with immutable versions and revert, shop
 from a generated grocery list that survives the plan changing under it, and
 maintain a deep structured profile plus an atomic fact store. The strict
@@ -48,8 +48,12 @@ per-client rate limit and an activity log. It proposes a week, the user reviews
 it slot by slot against what is planned today, and accepts all of it, part of
 it, or none of it with a reason that is kept.
 
+The loop closes: recording what actually happened feeds cook rates, rotation
+ages and slot overruns back into search, the snapshot and the agent's reading of
+the week.
+
 Phase 0 closed fully alongside phase 1: login and consent screens shipped, so
 the OAuth 2.1 flow now runs end to end into an authenticated MCP call
 (`npm run verify:oauth`).
 
-Next step is phase 6, the feedback loop.
+Next step is phase 7, the pantry.
