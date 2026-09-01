@@ -32,6 +32,11 @@ export const BLOCKING_CODES = [
   "MISSING_SCOPE",
   "CLIENT_REVOKED",
   "RATE_LIMITED",
+  // The account itself lost access to the instance. Distinct from
+  // CLIENT_REVOKED on purpose: reconnecting the client fixes that one and does
+  // nothing for this one, and an agent that cannot tell them apart will loop
+  // through the authorization dance forever.
+  "ACCESS_REVOKED",
 ] as const;
 
 export type BlockingCode = (typeof BLOCKING_CODES)[number];

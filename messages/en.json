@@ -56,6 +56,8 @@
     "googleFailed": "Could not open Google sign-in. Try again.",
     "accessDenied": "This address has no access to this instance. Ask to be added.",
     "accessNotConfigured": "No access list is configured on this instance, so nobody can sign in. Set ALLOWED_EMAILS.",
+    "signOutToSwitch": "Sign out and try another address",
+    "signOutPending": "Signing out…",
     "signInFailed": "Sign-in failed. Try again.",
     "passwordNotice": "Password sign-in, enabled for local development."
   },
@@ -82,6 +84,7 @@
     "submitting": "Working…",
     "failed": "The authorisation could not be processed. Start the connection again from your client.",
     "missingRequest": "No authorisation request in progress. Start the connection again from your client.",
+    "notAllowed": "This address no longer has access to this instance, so no authorisation can be granted. Ask to be added, then start the connection again from your client.",
     "reversible": "You can revoke this access at any time from your account.",
     "scopeNames": {
       "openid": "Identify you",

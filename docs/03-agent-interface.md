@@ -253,6 +253,7 @@ Blocking errors (nothing is written):
 | `RECIPE_NOT_FOUND` | Reference does not resolve |
 | `TIME_BUDGET_EXCEEDED` | Active time exceeds the slot budget plus tolerance. Names slot, budget, and actual |
 | `VERSION_CONFLICT` | `expected_base_version` is stale. Returns current version |
+| `ACCESS_REVOKED` | The account behind the token no longer has access to this instance. Not a client problem: reconnecting grants nothing, and `details.retryable` is `false` so an agent does not loop through the authorization dance |
 | `PREP_LINK_ORDER` | Source slot is after the dependent slot |
 | `MISSING_RATIONALE` | An entry has no rationale |
 | `FACT_CAP_REACHED` | Names the cap and lists the least recently referenced facts as retirement candidates |

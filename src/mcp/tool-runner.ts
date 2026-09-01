@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { db, withUser } from "@/db/client";
 import { DomainError, isDomainError } from "@/domain/errors";
+import { checkAccess } from "@/lib/access";
 import { logAgentActivity } from "@/lib/activity-log";
 import { agentContext, type ServiceContext } from "@/services/context";
 import { ensureUserSetup } from "@/services/onboarding-service";
@@ -49,6 +50,7 @@ async function guardedCall(
   const ctx = agentContext(caller.userId, caller.clientId ?? null);
 
   assertScopes(caller, options.requiredScopes);
+  await assertAccountStillAllowed(caller);
   await assertClientStillAuthorized(caller);
   await assertWithinRateLimit(caller);
 
@@ -147,6 +149,36 @@ function assertScopes(
     "MISSING_SCOPE",
     `Cette connexion n'a pas les autorisations nécessaires : ${missing.join(", ")}. L'utilisateur doit reconnecter le client depuis l'écran « Agent » de l'application pour accorder ces autorisations. Autorisations actuelles : ${[...caller.scopes].sort().join(", ") || "aucune"}.`,
     { missing, granted: [...caller.scopes].sort() },
+  );
+}
+
+/**
+ * The allowlist decides who may hold an account, and until now it was read only
+ * when a person signed in. That is the wrong moment for this surface. An access
+ * token is a JWT valid for an hour whatever we later think of its holder, the
+ * session cookie behind it outlives a removal too, and a surviving cookie can
+ * authorize a fresh client and mint another hour on demand. So dropping an
+ * address blocked the next sign-in and left every agent already connected to
+ * that account working, indefinitely. Re-checking here makes removal effective
+ * on the next call, the same way the consent check below makes a revoke
+ * effective on the next call.
+ *
+ * A second indexed lookup rather than a join onto that check: the consent query
+ * returns early for a caller with no client id, and this one must run for every
+ * caller. Better Auth owns the table, so it is read with raw SQL.
+ */
+async function assertAccountStillAllowed(caller: McpCallerContext): Promise<void> {
+  const rows = await db.execute<{ email: string }>(
+    sql`select email from "user" where id = ${caller.userId} limit 1`,
+  );
+
+  const email = rows.rows[0]?.email;
+  if (email !== undefined && checkAccess(email).allowed) return;
+
+  throw new DomainError(
+    "ACCESS_REVOKED",
+    "Le compte associé à ce jeton n'a plus accès à cette instance. Ce n'est pas un problème d'autorisation du client : reconnecter le client ou demander d'autres autorisations ne changera rien, et il ne faut pas réessayer. L'utilisateur doit demander à l'administrateur de l'instance de rétablir son adresse dans la liste d'accès.",
+    { retryable: false, userId: caller.userId },
   );
 }
 
