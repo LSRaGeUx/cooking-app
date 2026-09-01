@@ -22,8 +22,9 @@
     "verify:oauth": "node scripts/verify-oauth-flow.mjs",
     "db:bootstrap": "node scripts/db-bootstrap.mjs",
     "auth:migrate": "tsx scripts/auth-migrate.ts",
-    "db:setup": "npm run db:up && npm run db:bootstrap && npm run db:migrate && npm run auth:migrate && npm run db:setup:test",
-    "db:setup:test": "node scripts/test-db-setup.mjs",
+    "db:setup": "npm run db:up && npm run db:bootstrap && npm run db:migrate && npm run auth:migrate && npm run db:setup:test && npm run db:setup:verify",
+    "db:setup:test": "node scripts/db-setup-sibling.mjs test",
+    "db:setup:verify": "node scripts/db-setup-sibling.mjs verify",
     "dev:test": "node scripts/dev-test-server.mjs"
   },
   "dependencies": {

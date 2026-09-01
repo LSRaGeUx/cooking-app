@@ -61,7 +61,7 @@ Requires Node (see `.nvmrc`) and Podman.
 ```sh
 cp .env.example .env        # then set BETTER_AUTH_SECRET
 npm ci
-npm run db:setup            # container, roles, migrations, auth tables, test database
+npm run db:setup            # container, roles, migrations, auth tables, side databases
 npm run verify              # dep check, typecheck, tests
 npm run dev
 ```
@@ -85,8 +85,9 @@ npm run verify:oauth        # in another
 ```
 
 `dev:test`, not `dev`: the script signs up, registers OAuth clients and writes a
-plan, and `dev:test` is the server that puts all of that in the test database
-rather than in yours. It serves on port 3100, loopback only.
+plan, and `dev:test` is the server that puts all of that in `cooking_verify`
+rather than in yours. It serves on port 3100, loopback only, and runs happily
+alongside `npm test`, which has a database of its own.
 
 That walks what a real MCP client does: cold dynamic client registration, an
 authorization request with PKCE, login, consent, the code exchange, an

@@ -46,7 +46,7 @@ change as the code, and say so.
 Node per `.nvmrc`, Postgres 18 in a container via Podman.
 
 ```sh
-npm run db:setup     # container up, both databases, role bootstrap, both migrators
+npm run db:setup     # container up, all three databases, role bootstrap, migrators
 npm run verify       # check:deps, typecheck, test
 npm run dev
 npm run dev:test     # the same server on the test database, port 3100
@@ -56,17 +56,24 @@ npm run verify:oauth # needs `npm run dev:test` running: the agent connection pa
 `npm run verify` needs only Postgres, so it stays CI-runnable. Anything needing
 an HTTP server goes in a script, not in Vitest.
 
-Two databases. `npm test` runs against `cooking_test`, never against the database
-you develop in, and the suite truncates it before every run so a failed run
-cannot decide what the next one sees. The names are derived by appending `_test`,
-so a clone needs no extra configuration, and `TEST_DATABASE_URL` and
-`TEST_APP_DATABASE_URL` override them. Anything not named with a `_test` suffix
-is refused rather than truncated.
+Three databases on the one instance: `cooking` to develop in, `cooking_test` for
+`npm test`, `cooking_verify` for `npm run dev:test` and therefore for
+`verify:oauth`. Names are derived by appending a suffix, so a clone needs no
+extra configuration, and `TEST_*` / `VERIFY_*` override them. A name without the
+right suffix is refused rather than used, which is what keeps the three apart.
 
-What counts as the test database is decided in one place, `scripts/lib/db.mjs`,
-which the setup script and both Vitest setup files call. Both URLs are checked,
-not only the owner one, because the pool the tests query through is built from
-the app URL.
+The suite truncates `cooking_test` before every run, so a failed run cannot
+decide what the next one sees. That is also why `verify:oauth` does not share
+it: `dev:test` holds sessions and OAuth consents for as long as it runs, and a
+truncate underneath it would delete the session a half-finished verification
+depends on. With the split they run at the same time. `npm run dev:test --
+--fresh` empties the verification database first, for when a long run of
+verifications has piled up OAuth clients.
+
+What counts as each database is decided in one place, `scripts/lib/db.mjs`,
+which the setup script, the dev:test server and both Vitest setup files call.
+Both URLs of a pair are checked, not only the owner one, because the pool that
+gets queried is built from the app URL.
 
 `verify:oauth` drives a real server, so isolating it is a matter of which server
 you start: `npm run dev:test` serves on the test database with the allowlist open
@@ -77,10 +84,10 @@ on a network interface, and a port of its own is what stops `next dev` from
 quietly incrementing past a busy 3000 while `verify:oauth` drives the
 development server. `DEV_TEST_PORT` moves it, and both sides read it.
 
-`npm run dev:test` and `npm test` share `cooking_test`, so do not run them at the
-same time: the suite truncates that database on the way in. It will not corrupt
-anything silently, it fails with a message naming dev:test, but the running
-server loses its session and the verification has to start over.
+A schema behind the migrations on disk is refused, by the suite and by
+`dev:test`, with the command that fixes it: `npm run db:setup:test` or
+`npm run db:setup:verify`. Neither is re-migrated by `npm run db:migrate`, which
+migrates the development database.
 
 Two connection roles, and mixing them up defeats tenancy:
 

@@ -1,10 +1,16 @@
-// Boots the development server against the test database, which is what
+// Boots the development server against the verification database, which is what
 // `npm run verify:oauth` should be pointed at.
 //
 // verify:oauth drives a real HTTP server rather than a module, so it writes
 // wherever that server writes. Isolating it is therefore a matter of which
 // server you start, not of changing the script: run this in one terminal and
 // `npm run verify:oauth` in another.
+//
+// A database of its own, separate from the suite's as well as from development:
+// this server holds sessions and OAuth consents for as long as it runs, and the
+// suite truncates on the way in. Sharing one meant `npm test` deleting the
+// session a half-finished verification depended on. `-- --fresh` empties it
+// first, for when a long run of verifications has piled up clients.
 //
 // Two overrides beyond the database. The allowlist is emptied, because the
 // script signs in as VERIFY_EMAIL and an instance allowlist would refuse it, and
@@ -20,16 +26,32 @@
 import "dotenv/config";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { assertTestUrls, testUrls } from "./lib/db.mjs";
+import {
+  assertDatabaseReady,
+  assertSiblingUrls,
+  setupCommandFor,
+  siblingUrls,
+  truncatePublicTables,
+} from "./lib/db.mjs";
 import { DEV_TEST_HOST, devTestOrigin, devTestPort } from "./lib/dev-test.mjs";
 
+const KIND = "verify";
 const PORT = devTestPort();
 const ORIGIN = devTestOrigin();
+const fresh = process.argv.includes("--fresh");
 
-const urls = testUrls();
+const urls = siblingUrls(KIND);
 let name;
 try {
-  name = assertTestUrls(urls);
+  name = assertSiblingUrls(KIND, urls);
+  // Refuse to serve a schema behind the migrations on disk. verify:oauth would
+  // otherwise fail somewhere in the middle with a raw Postgres error naming a
+  // column, rather than the command that fixes it.
+  if (fresh) {
+    await truncatePublicTables(urls.owner, name, setupCommandFor(KIND));
+  } else {
+    await assertDatabaseReady(urls.owner, name, setupCommandFor(KIND));
+  }
 } catch (error) {
   console.error(error.message);
   process.exit(1);
@@ -51,7 +73,8 @@ const env = {
 };
 
 console.log(
-  `dev:test: ${ORIGIN}, database ${name}, allowlist open, password sign-in on`,
+  `dev:test: ${ORIGIN}, database ${name}${fresh ? " (emptied)" : ""}, ` +
+    "allowlist open, password sign-in on",
 );
 
 const next = fileURLToPath(new URL("../node_modules/.bin/next", import.meta.url));

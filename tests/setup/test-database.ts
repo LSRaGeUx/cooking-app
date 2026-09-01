@@ -1,4 +1,4 @@
-import { assertTestUrls, testUrls } from "../../scripts/lib/db.mjs";
+import { assertSiblingUrls, siblingUrls } from "../../scripts/lib/db.mjs";
 
 /**
  * Points every test at the test database, before any test file imports
@@ -13,8 +13,8 @@ import { assertTestUrls, testUrls } from "../../scripts/lib/db.mjs";
  * script and the globalSetup also call. Deriving them twice is how the truncated
  * database and the queried one came to be able to differ.
  */
-const target = testUrls();
-assertTestUrls(target);
+const target = siblingUrls("test");
+assertSiblingUrls("test", target);
 
 process.env.DATABASE_URL = target.owner;
 process.env.APP_DATABASE_URL = target.app;
