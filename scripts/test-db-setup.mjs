@@ -11,38 +11,76 @@
 import "dotenv/config";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { applyBootstrap, databaseNameOf, ensureDatabase, testUrls } from "./lib/db.mjs";
+import {
+  adminUrlFor,
+  applyBootstrap,
+  assertTestUrls,
+  ensureDatabase,
+  passwordOf,
+  redactUrl,
+  testUrls,
+} from "./lib/db.mjs";
 
-const { owner, app } = testUrls();
-const name = databaseNameOf(owner);
+const urls = testUrls();
 
-// The guard that makes everything downstream safe to truncate. Deriving the name
-// cannot produce this, so it only fires on a hand-written TEST_DATABASE_URL.
-if (!name.endsWith("_test")) {
+// The guard that makes everything downstream safe to truncate, shared with the
+// Vitest setup so the two cannot disagree about what the test database is.
+let name;
+try {
+  name = assertTestUrls(urls);
+} catch (error) {
+  console.error(error.message);
+  process.exit(1);
+}
+
+// The runtime role is cluster-wide: one role, one password, whichever database
+// it is reached through. bootstrap.sql re-applies that password on every call,
+// so it has to come from the application's own URL. Taking it from the test URL
+// is how `npm run db:setup` used to end by locking the development database out.
+const appUrl = process.env.APP_DATABASE_URL;
+if (!appUrl) {
+  console.error("APP_DATABASE_URL must be set. Copy .env.example to .env.");
+  process.exit(1);
+}
+
+const password = passwordOf(appUrl);
+if (!password) {
+  console.error("APP_DATABASE_URL carries no credential for the runtime role.");
+  process.exit(1);
+}
+
+if (passwordOf(urls.app) !== password) {
   console.error(
-    `refusing to set up "${name}" as a test database: the name must end in _test, ` +
-      "because the suite truncates every table in it before running.",
+    "TEST_APP_DATABASE_URL and APP_DATABASE_URL carry different passwords for " +
+      "cooking_app. The role is cluster-wide, so it has one password: give both " +
+      "URLs the same one, or setting up the test database locks the development " +
+      "one out.",
   );
   process.exit(1);
 }
 
-const password = new URL(app).password;
-if (!password) {
-  console.error("TEST_APP_DATABASE_URL carries no credential for the runtime role.");
+// Connects through the development database beside the target, derived from the
+// target itself: the same instance and the same credentials, which is not what
+// a raw DATABASE_URL gives when the test database was pointed elsewhere.
+const adminUrl = adminUrlFor(urls.owner);
+let state;
+try {
+  state = await ensureDatabase(adminUrl, name);
+} catch (error) {
+  console.error(
+    `test-db: cannot reach the instance that should hold ${name} via ` +
+      `${redactUrl(adminUrl)}: ${error.message}`,
+  );
   process.exit(1);
 }
-
-// Connects through the development database: an instance may not let you reach
-// `postgres`, and by this point DATABASE_URL is known to work.
-const state = await ensureDatabase(process.env.DATABASE_URL, name);
 console.log(`test-db: database ${name} ${state}`);
 
-await applyBootstrap(owner, password);
+await applyBootstrap(urls.owner, password);
 console.log("test-db: role cooking_app and grants are in place");
 
 // Both migrators read DATABASE_URL, so pointing them at the test database is a
 // matter of the environment they are spawned with rather than a second config.
-const env = { ...process.env, DATABASE_URL: owner, APP_DATABASE_URL: app };
+const env = { ...process.env, DATABASE_URL: urls.owner, APP_DATABASE_URL: urls.app };
 
 run("drizzle-kit", ["migrate"], env);
 run("tsx", ["scripts/auth-migrate.ts"], env);

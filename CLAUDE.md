@@ -49,8 +49,8 @@ Node per `.nvmrc`, Postgres 18 in a container via Podman.
 npm run db:setup     # container up, both databases, role bootstrap, both migrators
 npm run verify       # check:deps, typecheck, test
 npm run dev
-npm run dev:test     # the same server on the test database, for verify:oauth
-npm run verify:oauth # needs a running server: the whole agent connection path
+npm run dev:test     # the same server on the test database, port 3100
+npm run verify:oauth # needs `npm run dev:test` running: the agent connection path
 ```
 
 `npm run verify` needs only Postgres, so it stays CI-runnable. Anything needing
@@ -63,9 +63,24 @@ so a clone needs no extra configuration, and `TEST_DATABASE_URL` and
 `TEST_APP_DATABASE_URL` override them. Anything not named with a `_test` suffix
 is refused rather than truncated.
 
+What counts as the test database is decided in one place, `scripts/lib/db.mjs`,
+which the setup script and both Vitest setup files call. Both URLs are checked,
+not only the owner one, because the pool the tests query through is built from
+the app URL.
+
 `verify:oauth` drives a real server, so isolating it is a matter of which server
 you start: `npm run dev:test` serves on the test database with the allowlist open
-and password sign-in on, which is what the script needs to sign itself in.
+and password sign-in on, which is what the script needs to sign itself in. It
+takes port 3100 and binds loopback only, both deliberately. An open allowlist
+plus password sign-in is an unauthenticated sign-up door, which has no business
+on a network interface, and a port of its own is what stops `next dev` from
+quietly incrementing past a busy 3000 while `verify:oauth` drives the
+development server. `DEV_TEST_PORT` moves it, and both sides read it.
+
+`npm run dev:test` and `npm test` share `cooking_test`, so do not run them at the
+same time: the suite truncates that database on the way in. It will not corrupt
+anything silently, it fails with a message naming dev:test, but the running
+server loses its session and the verification has to start over.
 
 Two connection roles, and mixing them up defeats tenancy:
 

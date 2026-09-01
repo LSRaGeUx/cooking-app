@@ -1,8 +1,12 @@
 /**
  * End-to-end check of the agent connection path, against a running server:
  *
- *   npm run dev            # in one terminal
+ *   npm run dev:test       # in one terminal
  *   npm run verify:oauth   # in another
+ *
+ * dev:test, not dev: this script signs up, registers OAuth clients and writes a
+ * recipe and a plan, and dev:test is the server that puts all of that in the
+ * test database. Both agree on the port through scripts/lib/dev-test.mjs.
  *
  * It walks the whole thing the way a real MCP client does: cold dynamic client
  * registration, an authorization request with PKCE, the login and consent
@@ -19,9 +23,11 @@
  * request must look like a navigation or the provider answers with JSON instead
  * of a redirect.
  */
+import "dotenv/config";
 import { createHash, randomBytes } from "node:crypto";
+import { devTestOrigin } from "./lib/dev-test.mjs";
 
-const BASE = process.env.VERIFY_BASE_URL ?? "http://localhost:3000";
+const BASE = process.env.VERIFY_BASE_URL || devTestOrigin();
 const REDIRECT = "http://localhost:9999/callback";
 const EMAIL = process.env.VERIFY_EMAIL ?? "cook@example.test";
 const PASSWORD = process.env.VERIFY_PASSWORD ?? "motdepasse123";
@@ -78,21 +84,12 @@ const signIn = await post("/api/auth/sign-in/email", {
   password: PASSWORD,
 });
 step("sign in", signIn.status === 200, `status ${signIn.status}`);
-
-// A real user reaches the browser before they reach an agent, and the first page
-// load is what seeds the account: meal types, the weekly slots and the starter
-// ingredient vocabulary all come from ensureUserSetup() behind requireUser().
-// Nothing on the MCP path runs it, so a script that skipped straight to the
-// token used to plan against whatever the developer's own account happened to
-// hold. See T6 in docs/06-open-questions.md.
-const firstVisit = await fetch(`${BASE}/`, {
-  headers: { cookie: cookieHeader() },
-  redirect: "manual",
-});
+// Checked separately, because every request from here on carries the jar and a
+// silently empty one turns into an unrelated failure five steps later.
 step(
-  "the first page load seeds the account",
-  firstVisit.status < 400,
-  `status ${firstVisit.status}`,
+  "the session cookie is captured",
+  cookieJar.size > 0,
+  `${cookieJar.size} cookie(s)`,
 );
 
 // 2. Dynamic client registration, cold, with no credentials at all.

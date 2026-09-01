@@ -67,6 +67,12 @@ Settled while building phase 4:
   `src/mcp/tool-runner.ts`. Scopes, revocation, rate limit, audit entry and error
   shaping are applied there and nowhere else, so a tool added later cannot
   quietly skip one.
+- **First-run seeding happens on the first tool call**, through the same
+  idempotent `ensureUserSetup()` the web entry point runs. An agent may well be
+  the first thing an account ever talks to, and an unseeded account has no meal
+  types and no slots: `get_week` would answer with an empty grid and
+  `propose_week` would refuse every entry with `SLOT_UNKNOWN` and an empty list
+  of valid keys, which is an error naming no way out and repairable by no tool.
 
 Fallback for local use: a thin stdio wrapper that holds a personal access token
 and proxies to the same HTTP endpoint. Not v1, but the tool layer must not assume

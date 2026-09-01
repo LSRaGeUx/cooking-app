@@ -3,6 +3,7 @@ import { db, withUser } from "@/db/client";
 import { DomainError, isDomainError } from "@/domain/errors";
 import { logAgentActivity } from "@/lib/activity-log";
 import { agentContext, type ServiceContext } from "@/services/context";
+import { ensureUserSetup } from "@/services/onboarding-service";
 import type { McpCallerContext } from "./server";
 
 /**
@@ -50,6 +51,15 @@ async function guardedCall(
   assertScopes(caller, options.requiredScopes);
   await assertClientStillAuthorized(caller);
   await assertWithinRateLimit(caller);
+
+  // The agent may well be the first thing this account ever talks to, which is
+  // the persona the product is built around. First-run seeding used to sit only
+  // behind requireUser(), so a user who authorized a client before opening the
+  // app had no meal types and no slots: get_week answered with an empty grid and
+  // propose_week refused every entry with SLOT_UNKNOWN and an empty list of
+  // valid keys, an error naming no way out and repairable by no tool. Idempotent,
+  // and three indexed reads once the account is set up.
+  await ensureUserSetup(ctx);
 
   const text = await fn(ctx);
   await log(caller, options, "ok");
