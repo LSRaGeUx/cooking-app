@@ -343,7 +343,161 @@ step(
   pantryPayload.reason?.slice(0, 60),
 );
 
-// 9. A token granted narrower scopes must be refused, with the fix named.
+// 9. The phase 5 write surface, driven the way an agent would.
+const someRecipeId = searchPayload.recipes?.[0]?.id;
+const dinnerKey =
+  weekPayload.slots?.find((slot) => slot.meal_type_key === "dinner")
+    ?.meal_type_key ?? "dinner";
+const PROPOSAL_WEEK = { year: 2026, week: 50 };
+
+// Read the week before writing to it, exactly as an agent must: the script is
+// re-runnable, so the target may already carry an accepted plan from last time.
+const targetWeek = await rpc("tools/call", {
+  name: "get_week",
+  arguments: PROPOSAL_WEEK,
+});
+const baseVersion =
+  safeJson(toolText(targetWeek.payload)).expected_base_version ?? null;
+
+function proposal(overrides = {}) {
+  return {
+    year: PROPOSAL_WEEK.year,
+    week: PROPOSAL_WEEK.week,
+    expectedBaseVersion: baseVersion,
+    summary: "Une semaine légère, deux plats seulement pour la vérification.",
+    entries: [
+      {
+        dayOfWeek: 1,
+        mealType: dinnerKey,
+        recipeRef: someRecipeId,
+        rationale:
+          "Court en temps actif, et le créneau du lundi est le plus contraint.",
+      },
+    ],
+    ...overrides,
+  };
+}
+
+const infeasible = await rpc("tools/call", {
+  name: "check_feasibility",
+  arguments: proposal({
+    entries: [
+      {
+        dayOfWeek: 1,
+        mealType: dinnerKey,
+        recipeRef: someRecipeId,
+        rationale: "   ",
+      },
+    ],
+  }),
+});
+const infeasiblePayload = safeJson(toolText(infeasible.payload));
+step(
+  "check_feasibility reports a missing rationale without writing",
+  infeasiblePayload.feasible === false &&
+    infeasiblePayload.errors?.some(
+      (error) => error.code === "MISSING_RATIONALE",
+    ),
+  infeasiblePayload.errors?.[0]?.code,
+);
+
+const feasible = await rpc("tools/call", {
+  name: "check_feasibility",
+  arguments: proposal(),
+});
+const feasiblePayload = safeJson(toolText(feasible.payload));
+step(
+  "check_feasibility passes a well-formed week",
+  feasiblePayload.feasible === true,
+  JSON.stringify(feasiblePayload.errors ?? []).slice(0, 120),
+);
+
+const proposed = await rpc("tools/call", {
+  name: "propose_week",
+  arguments: proposal(),
+});
+const proposedPayload = safeJson(toolText(proposed.payload));
+step(
+  "propose_week writes a proposal and hands back a review link",
+  proposedPayload.state === "pending" &&
+    typeof proposedPayload.review_url === "string" &&
+    proposedPayload.review_url.includes("/proposition"),
+  `${proposedPayload.state ?? "?"} ${proposedPayload.review_url ?? ""}`,
+);
+
+const pendingWeek = await rpc("tools/call", {
+  name: "get_week",
+  arguments: { ...PROPOSAL_WEEK, version: "pending" },
+});
+const pendingPayload = safeJson(toolText(pendingWeek.payload));
+step(
+  "the proposal is readable, with its rationale intact",
+  pendingPayload.version?.state === "pending" &&
+    typeof pendingPayload.entries?.[0]?.rationale === "string",
+  pendingPayload.entries?.[0]?.rationale?.slice(0, 50),
+);
+
+const staleProposal = await rpc("tools/call", {
+  name: "propose_week",
+  arguments: proposal({ expectedBaseVersion: (baseVersion ?? 0) + 99 }),
+});
+const stalePayload = safeJson(toolText(staleProposal.payload));
+step(
+  "a proposal built on a stale version is refused with the current state",
+  staleProposal.payload?.result?.isError === true &&
+    stalePayload.error === "VERSION_CONFLICT",
+  stalePayload.error ?? "no error",
+);
+
+const recorded = await rpc("tools/call", {
+  name: "record_facts",
+  arguments: {
+    facts: [
+      {
+        category: "organization",
+        statement: "Vérification automatique : cuisine surtout en semaine",
+        polarity: "neutral",
+        confidence: "low",
+        evidence: ["verify-oauth-flow"],
+      },
+    ],
+  },
+});
+const recordedPayload = safeJson(toolText(recorded.payload));
+step(
+  "an agent's fact enters unconfirmed, whatever it asked for",
+  recordedPayload.created?.[0]?.status === "unconfirmed",
+  recordedPayload.created?.[0]?.status,
+);
+
+const retired = await rpc("tools/call", {
+  name: "retire_fact",
+  arguments: {
+    fact_id: recordedPayload.created?.[0]?.id,
+    reason: "Fin de la vérification automatique.",
+  },
+});
+const retiredPayload = safeJson(toolText(retired.payload));
+step(
+  "retiring keeps the fact and its reason instead of deleting it",
+  retiredPayload.status === "retired" &&
+    typeof retiredPayload.retirement_reason === "string",
+  retiredPayload.retirement_reason,
+);
+
+const prompts = await rpc("prompts/list", {});
+const promptNames = (prompts.payload?.result?.prompts ?? []).map(
+  (prompt) => prompt.name,
+);
+step(
+  "the prompt pack is served over MCP",
+  ["plan_my_week", "weekly_review"].every((name) =>
+    promptNames.includes(name),
+  ),
+  promptNames.join(", "),
+);
+
+// 10. A token granted narrower scopes must be refused, with the fix named.
 const narrowClient = await (
   await fetch(`${BASE}/api/auth/oauth2/register`, {
     method: "POST",
@@ -429,7 +583,7 @@ step(
   refusedPayload.message?.slice(0, 80),
 );
 
-// 10. Revocation is immediate, even for a token that is still cryptographically
+// 11. Revocation is immediate, even for a token that is still cryptographically
 //     valid. This is the property a JWT cannot give on its own.
 const consents = await (
   await fetch(`${BASE}/api/auth/oauth2/get-consents`, {
@@ -454,7 +608,7 @@ step(
   afterRevokePayload.error ?? "no error code",
 );
 
-// 11. And an unauthenticated call is still refused with the discovery header.
+// 12. And an unauthenticated call is still refused with the discovery header.
 const anonymous = await fetch(`${BASE}/api/mcp`, {
   method: "POST",
   headers: {

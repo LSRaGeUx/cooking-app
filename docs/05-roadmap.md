@@ -228,7 +228,7 @@ now pins both behaviours down.
 
 ---
 
-## Phase 5 - Agent write access
+## Phase 5 - Agent write access  [DONE 2026-09-01]
 
 Goal: the actual pitch, delivered.
 
@@ -249,6 +249,33 @@ Goal: the actual pitch, delivered.
 
 Ship: the product as pitched. Say "plan my week", get a reviewed, personalized,
 explained plan.
+
+Built as specified, with six things worth recording:
+
+- **`check_feasibility` returns every problem at once.** The validator was
+  refactored to collect rather than throw, and the write path throws the first
+  of the collected errors. One validator, two behaviours, no chance of the dry
+  run disagreeing with the real thing.
+- **A rationale is required of the entries a write introduces, not of the whole
+  week.** Requiring it everywhere would stop an agent touching a week the user
+  planned by hand, since a person owes nobody an explanation for their own
+  dinner.
+- **Authority is read from the profile, never from the payload.** An agent that
+  could choose between proposing and applying would be escalating its own
+  permission.
+- **Accepting a proposal is a state transition, not a new version**, so the
+  version the user reviewed is the one that becomes active. It is revalidated
+  first: a proposal written before an allergen was declared must not activate
+  after it.
+- **Accepting part of a proposal builds a new version** merging the chosen slots
+  onto the active week, and consumes the proposal.
+- **A rejection keeps its reason**, and so does a retired fact, which needed a
+  new column. Both are the user saying in their own words what was wrong, which
+  is the best signal this product ever gets.
+
+The `propose_week` transaction covers invented recipes too: a week refused for a
+strict allergen leaves no orphaned recipes behind, which
+`tests/services/proposals.test.ts` checks explicitly.
 
 ---
 

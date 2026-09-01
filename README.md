@@ -10,17 +10,21 @@ Marginal cost per user tends to zero.
 
 ## Status
 
-**Phases 0 to 4 complete.** You can configure your weekly grid, build a recipe
+**Phases 0 to 5 complete.** The product as pitched. You can configure your weekly grid, build a recipe
 library, plan a week by hand, shop from a grocery list generated out of it, and
 maintain the profile and fact store that make the planning personal. Plan
 versions are immutable and revertible, and the strict allergen block, slot state
 validation and per-slot time budgets are enforced in the service layer both
 entry points share.
 
-Your agent can connect and read. Paste one URL into an MCP client, approve the
-consent screen, and it can read your profile snapshot, search your recipes and
-read your planned weeks. It cannot write yet. Access is per client, scoped, rate
-limited, logged, and revocable with immediate effect.
+Paste one URL into an MCP client, approve the consent screen, and say "plan my
+week". Your agent reads a deep profile of you, proposes a week, and hands back a
+link. You see it slot by slot against what is planned today, with the reason for
+each dish and the facts it cited, and you accept all of it, part of it, or none
+of it with a reason that is kept and fed back.
+
+Access is per client, scoped, rate limited, logged, and revocable with immediate
+effect. Nothing an agent does is irreversible.
 
 The profile snapshot, the exact document a connected agent reads, is also
 viewable in the app in both Markdown and JSON. Reading it is the fastest way to
@@ -34,7 +38,7 @@ Phase 0 closed alongside phase 1: the login and consent screens shipped, so the
 OAuth 2.1 flow now runs end to end into an authenticated MCP call. See
 [`docs/07-phase-0-findings.md`](docs/07-phase-0-findings.md).
 
-Next: phase 5, agent write access.
+Next: phase 6, the feedback loop.
 
 Full specs live in [`docs/`](docs/README.md). Start with
 [`docs/README.md`](docs/README.md), then read in numbered order.
@@ -70,9 +74,11 @@ authenticated `whoami`, and a check that an unauthenticated call is still refuse
 with RFC 9728 discovery.
 
 The MCP endpoint is at `/api/mcp`, and the app's Agent screen walks you through
-connecting a client to it. It exposes `whoami`, `get_profile_snapshot`,
-`search_recipes`, `get_recipe` and `get_week`, plus resources for the profile,
-the slots, the recipe index and any planned week. Write tools land in phase 5.
+connecting a client to it. It exposes read tools (`get_profile_snapshot`,
+`search_recipes`, `get_recipe`, `get_week`), write tools (`check_feasibility`,
+`propose_week`, `update_slot`, `create_recipe`, `update_recipe`, `record_facts`,
+`retire_fact`), resources for the profile, slots, recipe index and any planned
+week, and two prompts that carry the recommended call sequence.
 
 ## What makes it different
 

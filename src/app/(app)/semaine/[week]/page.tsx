@@ -92,6 +92,18 @@ export default async function WeekPage({
         </nav>
       </header>
 
+      {view.pendingVersion ? (
+        <aside className="flex flex-wrap items-center gap-3 rounded-md border border-amber-500/50 bg-amber-500/5 px-3 py-2">
+          <span className="text-sm">{t("pendingBanner")}</span>
+          <Link
+            href={`/semaine/${formatIsoWeek(isoWeek)}/proposition`}
+            className="rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white dark:bg-white dark:text-black"
+          >
+            {t("pendingReview")}
+          </Link>
+        </aside>
+      ) : null}
+
       <WeekGrid
         week={isoWeek}
         slots={view.slots}

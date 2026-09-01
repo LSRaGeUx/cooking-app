@@ -37,6 +37,18 @@ export default async function AgentPage() {
       <section className="flex flex-col gap-2">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-medium uppercase tracking-wide opacity-60">
+            {t("reviewFacts")}
+          </h2>
+          <Link href="/faits?status=unconfirmed" className="text-sm underline">
+            {t("reviewFacts")}
+          </Link>
+        </div>
+        <p className="max-w-2xl text-xs opacity-70">{t("reviewFactsHelp")}</p>
+      </section>
+
+      <section className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-sm font-medium uppercase tracking-wide opacity-60">
             {t("activity")}
           </h2>
           <Link href="/agent/activite" className="text-sm underline">

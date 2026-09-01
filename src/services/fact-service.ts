@@ -38,6 +38,7 @@ export interface FactView {
   readonly createdAt: Date;
   readonly lastReferencedAt: Date | null;
   readonly retiredAt: Date | null;
+  readonly retirementReason: string | null;
 }
 
 export async function listFacts(
@@ -201,11 +202,16 @@ export async function updateFactMetadata(
 export async function retireFact(
   ctx: ServiceContext,
   factId: string,
+  reason?: string | null,
 ): Promise<FactView> {
   return inScope(ctx, async (tx) => {
     const rows = await tx
       .update(fact)
-      .set({ status: "retired", retiredAt: new Date() })
+      .set({
+        status: "retired",
+        retiredAt: new Date(),
+        retirementReason: reason?.trim() ? reason.trim() : null,
+      })
       .where(and(eq(fact.id, factId), ne(fact.status, "retired")))
       .returning();
     if (!rows[0]) {
@@ -331,5 +337,6 @@ function toFactView(row: typeof fact.$inferSelect): FactView {
     createdAt: row.createdAt,
     lastReferencedAt: row.lastReferencedAt,
     retiredAt: row.retiredAt,
+    retirementReason: row.retirementReason,
   };
 }

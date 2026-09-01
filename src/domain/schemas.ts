@@ -314,9 +314,102 @@ export const planEntryInputSchema = slotRefSchema.extend({
   servings: z.number().int().min(1).max(50).nullable().default(null),
   note: z.string().max(500).nullable().default(null),
   position: z.number().int().min(0).max(10).default(0),
+  // Optional here because a person editing their own week owes nobody an
+  // explanation. The service requires it of an agent.
+  rationale: z.string().max(1000).nullable().default(null),
+  rationaleRefs: z.array(z.string().min(1).max(100)).max(20).default([]),
 });
 
 export type PlanEntryInput = z.infer<typeof planEntryInputSchema>;
+
+/**
+ * One meal an agent proposes. `rationale` is required by the schema rather than
+ * by a later check, because an agent that cannot say why a dish is there has
+ * not personalized anything, and the user is left with nothing to correct but
+ * the dish itself.
+ */
+export const proposedEntrySchema = z.object({
+  dayOfWeek: z
+    .number()
+    .int()
+    .min(1)
+    .max(7)
+    .describe("Jour ISO : 1 = lundi, 7 = dimanche."),
+  mealType: z
+    .string()
+    .min(1)
+    .max(40)
+    .describe(
+      "Clé du type de repas, par exemple `dinner`. Les clés valides sont dans la ressource `cooking://slots`.",
+    ),
+  recipeRef: z
+    .string()
+    .min(1)
+    .max(100)
+    .describe(
+      "Identifiant d'une recette existante, ou `temp_id` d'une recette décrite dans `newRecipes` du même appel.",
+    ),
+  servings: z.number().int().min(1).max(50).nullable().default(null),
+  note: z.string().max(500).nullable().default(null),
+  rationale: z
+    .string()
+    .min(1)
+    .max(1000)
+    .describe(
+      "Pourquoi ce plat, à ce créneau, pour cette personne. Citez ce qui l'a motivé : un fait, un budget de temps, un reste à finir. « Rapide et bon » n'est pas une justification ; « 20 min de temps actif pour le créneau du mardi qui en autorise 25, et elle a noté aimer les plats mijotés » en est une.",
+    ),
+  rationaleRefs: z
+    .array(z.string().min(1).max(100))
+    .max(20)
+    .default([])
+    .describe(
+      "Identifiants des faits, retours ou produits de placard cités dans la justification. Ils sont affichés à l'utilisateur comme des liens, ce qui lui permet de corriger la cause plutôt que le plat.",
+    ),
+});
+
+export type ProposedEntryInput = z.infer<typeof proposedEntrySchema>;
+
+export const newRecipeSchema = recipeInputSchema.extend({
+  tempId: z
+    .string()
+    .min(1)
+    .max(100)
+    .describe(
+      "Identifiant temporaire, utilisé par `recipeRef` dans les entrées du même appel. Il n'est pas conservé.",
+    ),
+});
+
+export const proposeWeekSchema = z.object({
+  year: z.number().int().min(1970).max(9999),
+  week: z.number().int().min(1).max(53),
+  expectedBaseVersion: z
+    .number()
+    .int()
+    .min(1)
+    .nullable()
+    .default(null)
+    .describe(
+      "Numéro de la version active au moment de votre lecture, tel que renvoyé par `get_week`. S'il ne correspond plus, l'écriture est refusée : quelqu'un a modifié la semaine entre-temps et vous devez relire avant de reproposer. `null` pour une semaine encore vierge.",
+    ),
+  summary: z
+    .string()
+    .max(2000)
+    .nullable()
+    .default(null)
+    .describe(
+      "Un paragraphe expliquant la semaine dans son ensemble : l'équilibre visé, les contraintes prises en compte.",
+    ),
+  newRecipes: z
+    .array(newRecipeSchema)
+    .max(20)
+    .default([])
+    .describe(
+      "Recettes à créer dans le même appel. Elles sont créées et assignées en une seule transaction : si une entrée est refusée, aucune recette n'est créée.",
+    ),
+  entries: z.array(proposedEntrySchema).min(1).max(50),
+});
+
+export type ProposeWeekInput = z.infer<typeof proposeWeekSchema>;
 
 /**
  * The grid as it was when a version was created, stored on the version so that

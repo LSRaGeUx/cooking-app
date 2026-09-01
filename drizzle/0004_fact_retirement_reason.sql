@@ -1,0 +1,1 @@
+ALTER TABLE "fact" ADD COLUMN "retirement_reason" text;

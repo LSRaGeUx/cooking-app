@@ -186,6 +186,30 @@ export function ConnectionPanel({
 
         <p className="text-xs opacity-70">{t("revokeHelp")}</p>
       </section>
+
+      <section className="flex flex-col gap-2">
+        <h2 className="text-sm font-medium uppercase tracking-wide opacity-60">
+          {t("promptPack")}
+        </h2>
+        <p className="max-w-2xl text-xs opacity-70">{t("promptPackHelp")}</p>
+        <ul className="flex flex-wrap gap-3 text-sm">
+          <li>
+            <a href="/agent-pack/house-rules.md" className="underline">
+              {t("promptPackRules")}
+            </a>
+          </li>
+          <li>
+            <a href="/agent-pack/plan-week.md" className="underline">
+              {t("promptPackPlan")}
+            </a>
+          </li>
+          <li>
+            <a href="/agent-pack/weekly-review.md" className="underline">
+              {t("promptPackReview")}
+            </a>
+          </li>
+        </ul>
+      </section>
     </div>
   );
 }

@@ -168,6 +168,7 @@ The learning store. Central to the product.
 | created_at | timestamptz | |
 | last_referenced_at | timestamptz | bumped when included in a profile snapshot |
 | retired_at | timestamptz | nullable |
+| retirement_reason | text | nullable, why it stopped being true. Added in phase 5 |
 
 Invariants:
 - Agent-written facts must be created with `status = 'unconfirmed'`. Server

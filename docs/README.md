@@ -35,20 +35,21 @@ agent the user already pays for. Marginal cost per user tends to zero.
 
 ## Status
 
-Phases 0 to 4 complete. A person with no agent can configure their weekly grid,
+Phases 0 to 5 complete. A person with no agent can configure their weekly grid,
 build a recipe library, plan a week with immutable versions and revert, shop
 from a generated grocery list that survives the plan changing under it, and
 maintain a deep structured profile plus an atomic fact store. The strict
 allergen block, slot state validation and slot time budgets are enforced in the
 service layer that both the UI and the MCP endpoint call.
 
-An agent can now connect and read: four tools and eight resources behind OAuth
-2.1, with per-tool scopes, immediate revocation, a per-client rate limit, and an
-activity log the user can read. It cannot write yet, which makes this state safe
-to hand to a stranger.
+An agent can connect, read and write: twelve tools, eight resources and two
+prompts behind OAuth 2.1, with per-tool scopes, immediate revocation, a
+per-client rate limit and an activity log. It proposes a week, the user reviews
+it slot by slot against what is planned today, and accepts all of it, part of
+it, or none of it with a reason that is kept.
 
 Phase 0 closed fully alongside phase 1: login and consent screens shipped, so
 the OAuth 2.1 flow now runs end to end into an authenticated MCP call
 (`npm run verify:oauth`).
 
-Next step is phase 5, agent write access.
+Next step is phase 6, the feedback loop.

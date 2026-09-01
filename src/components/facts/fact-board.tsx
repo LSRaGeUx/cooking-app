@@ -172,6 +172,12 @@ export function FactBoard({
                 ) : null}
               </div>
 
+              {fact.retirementReason ? (
+                <p className="text-xs opacity-60">
+                  {t("retirementReason", { reason: fact.retirementReason })}
+                </p>
+              ) : null}
+
               {fact.status !== "retired" ? (
                 <div className="flex flex-wrap gap-3 text-xs">
                   {fact.status === "unconfirmed" ? (

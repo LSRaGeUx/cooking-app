@@ -29,6 +29,13 @@
       "when": 1788195259291,
       "tag": "0003_facts",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788249198758,
+      "tag": "0004_fact_retirement_reason",
+      "breakpoints": true
     }
   ]
 }

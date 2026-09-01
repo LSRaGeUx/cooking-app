@@ -1,10 +1,16 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { registerPrompts } from "./prompts";
 import { registerResources } from "./resources";
+import { registerCheckFeasibility } from "./tools/check-feasibility";
+import { registerFactWrites } from "./tools/fact-writes";
 import { registerGetProfileSnapshot } from "./tools/get-profile-snapshot";
 import { registerGetRecipe } from "./tools/get-recipe";
 import { registerGetWeek } from "./tools/get-week";
+import { registerProposeWeek } from "./tools/propose-week";
+import { registerRecipeWrites } from "./tools/recipe-writes";
 import { registerSearchRecipes } from "./tools/search-recipes";
+import { registerUpdateSlot } from "./tools/update-slot";
 import { registerWhoami } from "./tools/whoami";
 
 export interface McpCallerContext {
@@ -28,7 +34,15 @@ export function buildServer(ctx: McpCallerContext): McpServer {
   registerSearchRecipes(server, ctx);
   registerGetRecipe(server, ctx);
   registerGetWeek(server, ctx);
+
+  registerCheckFeasibility(server, ctx);
+  registerProposeWeek(server, ctx);
+  registerUpdateSlot(server, ctx);
+  registerRecipeWrites(server, ctx);
+  registerFactWrites(server, ctx);
+
   registerResources(server, ctx);
+  registerPrompts(server, ctx);
 
   return server;
 }

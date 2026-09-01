@@ -58,6 +58,10 @@ export const fact = pgTable(
     // makes the pruning heuristic work.
     lastReferencedAt: timestamp("last_referenced_at", { withTimezone: true }),
     retiredAt: timestamp("retired_at", { withTimezone: true }),
+    // Why it stopped being true. Kept for the same reason a rejected plan keeps
+    // its reason: "she changed her mind about mushrooms" is signal, and a
+    // retirement with no explanation loses it.
+    retirementReason: text("retirement_reason"),
   },
   (t) => [
     index("fact_user_status_idx").on(t.userId, t.status),
