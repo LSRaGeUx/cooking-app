@@ -1,19 +1,870 @@
 @import "tailwindcss";
 
+/*
+ * "Bloc": the visual language of the app.
+ *
+ * The previous language was a paper document, and every screen was a page: a
+ * centred column with a heading on top. This one is not a document, it is a
+ * board. Four rules hold it together.
+ *
+ * 1. Everything is a rectangle on a lattice. A 2px ink rule separates cells,
+ *    edge to edge, with no gaps, no rounded corners and no shadows. Structure
+ *    comes from the grid, not from floating objects.
+ *
+ * 2. Colour is structural. A filled block means something is planned, bought,
+ *    confirmed, or today. Empty is white. There is no decorative colour.
+ *
+ * 3. Every recipe owns one flat colour, derived from its id (see
+ *    src/lib/recipe-seal.ts), and wears it everywhere.
+ *
+ * 4. One typeface, Bricolage Grotesque, doing everything through width and
+ *    size rather than through a second family. Monospace is a stamp reserved
+ *    for strings a machine wrote exactly.
+ */
+
 :root {
-  --background: #fbfaf7;
-  --foreground: #1c1917;
+  color-scheme: light;
+
+  --ground: #f2f1ec;
+  --panel: #ffffff;
+  --sunk: #e4e2da;
+
+  --ink: #0d0d0d;
+  --ink-2: #55534d;
+  --ink-3: #8a877f;
+  --on-ink: #f7f6f2;
+
+  /* The rule is the design. It is ink, at full strength, never a hairline. */
+  --rule: #0d0d0d;
+  --rule-soft: #cfccc2;
+  --rule-w: 2px;
+
+  /* The cook. */
+  --tomato: #e63a0b;
+  --on-tomato: #ffffff;
+  /* The agent, and only the agent. */
+  --cobalt: #1b44dc;
+  --on-cobalt: #ffffff;
+
+  --mint: #00c08b;
+  --yellow: #ffc300;
+  --red: #d92b04;
+
+  --grain-opacity: 0.035;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #14120f;
-    --foreground: #f5f4f1;
+/*
+ * Opt in, never automatic. See src/lib/theme.ts: following the system meant
+ * most people never saw the design, they saw its inversion.
+ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --ground: #0d0d0d;
+  --panel: #171716;
+  --sunk: #070707;
+
+  --ink: #f4f3ee;
+  --ink-2: #a9a69d;
+  --ink-3: #77746c;
+  --on-ink: #0d0d0d;
+
+  --rule: #f4f3ee;
+  --rule-soft: #3a3834;
+
+  --tomato: #ff5a2b;
+  --on-tomato: #120500;
+  --cobalt: #6f8dff;
+  --on-cobalt: #06102e;
+
+  --mint: #21d69f;
+  --yellow: #ffcf2e;
+  --red: #ff5c3d;
+
+  --grain-opacity: 0.045;
+}
+
+@theme inline {
+  --font-sans: var(--font-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono-face), ui-monospace, SFMono-Regular, monospace;
+
+  --color-ground: var(--ground);
+  --color-panel: var(--panel);
+  --color-sunk: var(--sunk);
+
+  --color-ink: var(--ink);
+  --color-muted: var(--ink-2);
+  --color-faint: var(--ink-3);
+  --color-on-ink: var(--on-ink);
+
+  --color-rule: var(--rule);
+  --color-rule-soft: var(--rule-soft);
+
+  --color-tomato: var(--tomato);
+  --color-on-tomato: var(--on-tomato);
+  --color-cobalt: var(--cobalt);
+  --color-on-cobalt: var(--on-cobalt);
+  --color-mint: var(--mint);
+  --color-yellow: var(--yellow);
+  --color-red: var(--red);
+
+  --color-seal: var(--seal-bg);
+  --color-on-seal: var(--seal-fg);
+
+  /*
+   * Aliases. The screens built in the previous language still name colours as
+   * ember/agent/olive/amber; each one is mapped onto a real value here rather
+   * than edited across forty files, so nothing renders unstyled.
+   */
+  --color-paper: var(--ground);
+  --color-surface: var(--panel);
+  --color-ember: var(--tomato);
+  --color-ember-ink: var(--tomato);
+  --color-ember-on: var(--on-tomato);
+  --color-agent: var(--cobalt);
+  --color-agent-ink: var(--cobalt);
+  --color-olive: var(--mint);
+  --color-olive-ink: var(--ink);
+  --color-amber-ink: var(--ink);
+  --color-danger: var(--red);
+  --color-danger-ink: var(--red);
+  --color-rule-strong: var(--rule);
+  --color-ember-soft: color-mix(in srgb, var(--tomato) 18%, var(--panel));
+  --color-ember-line: var(--tomato);
+  --color-agent-soft: color-mix(in srgb, var(--cobalt) 16%, var(--panel));
+  --color-agent-line: var(--cobalt);
+  --color-olive-soft: color-mix(in srgb, var(--mint) 30%, var(--panel));
+  --color-olive-line: var(--rule);
+  --color-amber-soft: color-mix(in srgb, var(--yellow) 40%, var(--panel));
+  --color-amber-line: var(--rule);
+  --color-danger-soft: color-mix(in srgb, var(--red) 15%, var(--panel));
+  --color-danger-line: var(--red);
+  --color-seal-fill: var(--seal-bg);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    font-variation-settings: "wdth" 100, "opsz" 14;
+    accent-color: var(--tomato);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Just enough tooth to keep the flat fields from looking printed by a laser. */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    pointer-events: none;
+    opacity: var(--grain-opacity);
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  :root[data-theme="dark"] body::after {
+    mix-blend-mode: screen;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+  }
+
+  ::selection {
+    background: var(--tomato);
+    color: var(--on-tomato);
+  }
+
+  :focus-visible {
+    outline: var(--rule-w) solid var(--tomato);
+    outline-offset: 2px;
+  }
+
+  /*
+   * Controls are blocks like everything else: square, ink-ruled, and they take
+   * the accent when they are the thing you are working in.
+   */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  select,
+  textarea {
+    background-color: var(--panel);
+    color: var(--ink);
+    border: var(--rule-w) solid var(--rule);
+    border-radius: 0;
+    padding: 0.5rem 0.65rem;
+    font: inherit;
+    font-size: 0.9375rem;
+    line-height: 1.4;
+    transition: background-color 90ms linear;
+  }
+
+  textarea {
+    resize: vertical;
+  }
+
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: none;
+    background-color: color-mix(in srgb, var(--yellow) 35%, var(--panel));
+  }
+
+  ::placeholder {
+    color: var(--ink-3);
+    opacity: 1;
+  }
+
+  select {
+    appearance: none;
+    padding-right: 1.6rem;
+    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+      linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position: right 0.7rem top 56%, right 0.4rem top 56%;
+    background-size: 0.32rem 0.32rem, 0.32rem 0.32rem;
+    background-repeat: no-repeat;
+  }
+
+  input[type="checkbox"] {
+    appearance: none;
+    width: 1.4rem;
+    height: 1.4rem;
+    flex: none;
+    border: var(--rule-w) solid var(--rule);
+    background: var(--panel);
+    display: inline-grid;
+    place-content: center;
+  }
+
+  input[type="checkbox"]:checked {
+    background: var(--tomato);
+  }
+
+  input[type="checkbox"]:checked::after {
+    content: "";
+    width: 0.7rem;
+    height: 0.4rem;
+    border-left: 2.5px solid var(--on-tomato);
+    border-bottom: 2.5px solid var(--on-tomato);
+    transform: translateY(-1px) rotate(-45deg);
+  }
+
+  code,
+  pre,
+  kbd {
+    font-family: var(--font-mono);
+    font-size: 0.8125em;
+  }
+
+  table {
+    border-collapse: collapse;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: ui-sans-serif, system-ui, sans-serif;
+@layer components {
+  /* ================================================================ seals */
+
+  /*
+   * Ten flat colours, each with the ink that survives on top of it. Flat and
+   * chosen, not generated: a gradient would soften exactly the thing this
+   * language is made of.
+   */
+  .seal-0 { --seal-bg: #e63a0b; --seal-fg: #ffffff; }
+  .seal-1 { --seal-bg: #f08c00; --seal-fg: #0d0d0d; }
+  .seal-2 { --seal-bg: #ffc300; --seal-fg: #0d0d0d; }
+  .seal-3 { --seal-bg: #cfe80b; --seal-fg: #0d0d0d; }
+  .seal-4 { --seal-bg: #00c08b; --seal-fg: #0d0d0d; }
+  .seal-5 { --seal-bg: #00a3b5; --seal-fg: #0d0d0d; }
+  .seal-6 { --seal-bg: #2f8fd0; --seal-fg: #0d0d0d; }
+  .seal-7 { --seal-bg: #9b7bff; --seal-fg: #0d0d0d; }
+  .seal-8 { --seal-bg: #ff5c8a; --seal-fg: #0d0d0d; }
+  .seal-9 { --seal-bg: #8b2f5f; --seal-fg: #ffffff; }
+
+  .seal-field {
+    background: var(--seal-bg, var(--tomato));
+    color: var(--seal-fg, var(--on-tomato));
+  }
+
+  .seal-mark {
+    display: inline-block;
+    width: 0.7rem;
+    height: 0.7rem;
+    flex: none;
+    border: 1.5px solid var(--rule);
+    background: var(--seal-bg, var(--tomato));
+  }
+
+  /* ================================================================= type */
+
+  /* Poster scale. Condensed and tight, because it has to hold a whole band. */
+  .mega {
+    font-weight: 700;
+    font-size: clamp(3.25rem, 11vw, 9rem);
+    font-variation-settings: "wdth" 78, "opsz" 96;
+    line-height: 0.82;
+    letter-spacing: -0.035em;
+    text-transform: uppercase;
+  }
+
+  .big {
+    font-weight: 700;
+    font-size: clamp(1.75rem, 4vw, 3rem);
+    font-variation-settings: "wdth" 84, "opsz" 40;
+    line-height: 0.95;
+    letter-spacing: -0.025em;
+    text-transform: uppercase;
+  }
+
+  /* A name inside a block: a recipe, a meal, a client. */
+  .name {
+    font-weight: 700;
+    font-variation-settings: "wdth" 88, "opsz" 24;
+    line-height: 1.08;
+    letter-spacing: -0.015em;
+  }
+
+  .numeral {
+    font-weight: 700;
+    font-variation-settings: "wdth" 82, "opsz" 96;
+    line-height: 0.85;
+    letter-spacing: -0.035em;
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+
+  .numeral-outline {
+    color: transparent;
+    -webkit-text-stroke: 2px var(--rule);
+  }
+
+  /* The label that sits on a rule, in a cell corner, above a field. */
+  .label-text {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    line-height: 1.2;
+  }
+
+  .micro {
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    color: var(--ink-2);
+  }
+
+  .hint {
+    font-size: 0.875rem;
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: 64ch;
+  }
+
+  .lede {
+    font-size: 1.0625rem;
+    line-height: 1.5;
+    max-width: 56ch;
+  }
+
+  .prose {
+    font-size: 1rem;
+    line-height: 1.65;
+  }
+
+  /* Reserved for machine strings: endpoints, tool names, shell commands. */
+  .mono {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    letter-spacing: 0.01em;
+  }
+
+  .link {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
+    text-decoration-color: var(--tomato);
+  }
+
+  .link:hover {
+    background: var(--tomato);
+    color: var(--on-tomato);
+    text-decoration-color: transparent;
+  }
+
+  /* ============================================================== lattice */
+
+  /*
+   * The lattice. A container draws its top and left rule, every child draws
+   * its right and bottom, so any grid becomes a continuous 2px mesh with no
+   * doubled lines and no gaps to collapse.
+   */
+  .wall {
+    display: grid;
+    gap: 0;
+    border-top: var(--rule-w) solid var(--rule);
+    border-left: var(--rule-w) solid var(--rule);
+  }
+
+  .wall > * {
+    border-right: var(--rule-w) solid var(--rule);
+    border-bottom: var(--rule-w) solid var(--rule);
+    min-width: 0;
+  }
+
+  /* A stack of full-width rows on the same lattice. */
+  .stack {
+    border-top: var(--rule-w) solid var(--rule);
+  }
+
+  .stack > * {
+    border-bottom: var(--rule-w) solid var(--rule);
+  }
+
+  /* A band that runs the full width and carries a title or a set of figures. */
+  .band {
+    border-bottom: var(--rule-w) solid var(--rule);
+  }
+
+  .block {
+    background: var(--panel);
+  }
+
+  .block-ink {
+    background: var(--ink);
+    color: var(--on-ink);
+  }
+
+  .block-tomato {
+    background: var(--tomato);
+    color: var(--on-tomato);
+  }
+
+  .block-cobalt {
+    background: var(--cobalt);
+    color: var(--on-cobalt);
+  }
+
+  .block-mint {
+    background: var(--mint);
+    color: var(--ink);
+  }
+
+  .block-yellow {
+    background: var(--yellow);
+    color: var(--ink);
+  }
+
+  /* Not in play: skipped slots, retired facts. */
+  .void {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      var(--rule-soft) 0 1px,
+      transparent 1px 8px
+    );
+  }
+
+  /* Anything that fills with ink when the pointer lands on it. */
+  .fillable {
+    transition: background-color 90ms linear, color 90ms linear;
+  }
+
+  .fillable:hover:not(:disabled) {
+    background: var(--ink);
+    color: var(--on-ink);
+  }
+
+  /* ============================================================= controls */
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    border: var(--rule-w) solid var(--rule);
+    border-radius: 0;
+    background: var(--panel);
+    color: var(--ink);
+    padding: 0.45rem 0.85rem;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    line-height: 1.25;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 90ms linear, color 90ms linear;
+  }
+
+  .btn:hover:not(:disabled) {
+    background: var(--ink);
+    color: var(--on-ink);
+  }
+
+  .btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background: var(--tomato);
+    color: var(--on-tomato);
+  }
+
+  .btn-quiet {
+    background: transparent;
+  }
+
+  .btn-ghost {
+    border-color: transparent;
+    background: transparent;
+    color: var(--ink-2);
+  }
+
+  .btn-danger {
+    background: transparent;
+    border-color: var(--red);
+    color: var(--red);
+  }
+
+  .btn-danger:hover:not(:disabled) {
+    background: var(--red);
+    color: var(--panel);
+  }
+
+  .btn-sm {
+    padding: 0.28rem 0.55rem;
+    font-size: 0.6875rem;
+  }
+
+  /* A welded row of blocks. */
+  .segmented {
+    display: inline-flex;
+    max-width: 100%;
+    border: var(--rule-w) solid var(--rule);
+  }
+
+  .segmented > * {
+    padding: 0.32rem 0.6rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    background: transparent;
+    border-right: var(--rule-w) solid var(--rule);
+    transition: background-color 90ms linear, color 90ms linear;
+  }
+
+  .segmented > *:last-child {
+    border-right: 0;
+  }
+
+  .segmented > *:hover:not(:disabled) {
+    background: var(--ink);
+    color: var(--on-ink);
+  }
+
+  .segmented > [aria-current] {
+    background: var(--tomato);
+    color: var(--on-tomato);
+  }
+
+  .label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    font-size: 0.875rem;
+  }
+
+  .label > span:first-child {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+
+  .field {
+    width: 100%;
+  }
+
+  /* ================================================================ marks */
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border: 1.5px solid var(--rule);
+    border-radius: 0;
+    padding: 0.05rem 0.4rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .chip-agent {
+    background: var(--cobalt);
+    color: var(--on-cobalt);
+    border-color: var(--cobalt);
+  }
+
+  .chip-ok {
+    background: var(--mint);
+    color: var(--ink);
+    border-color: var(--rule);
+  }
+
+  .chip-warn {
+    background: var(--yellow);
+    color: var(--ink);
+    border-color: var(--rule);
+  }
+
+  .chip-danger {
+    background: var(--red);
+    color: var(--panel);
+    border-color: var(--red);
+  }
+
+  .chip-ember {
+    background: var(--tomato);
+    color: var(--on-tomato);
+    border-color: var(--tomato);
+  }
+
+  .chip-seal {
+    background: var(--seal-bg, var(--tomato));
+    color: var(--seal-fg, var(--on-tomato));
+  }
+
+  /* ============================================================= messages */
+
+  .banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.85rem;
+    border: var(--rule-w) solid var(--rule);
+    background: var(--panel);
+    padding: 0.8rem 1rem;
+    font-size: 0.9375rem;
+  }
+
+  .banner-block {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.2rem;
+  }
+
+  .banner-warn {
+    background: var(--yellow);
+    color: var(--ink);
+  }
+
+  .banner-danger {
+    background: var(--red);
+    color: var(--panel);
+  }
+
+  .banner-ok {
+    background: var(--mint);
+    color: var(--ink);
+  }
+
+  .banner-agent {
+    background: var(--cobalt);
+    color: var(--on-cobalt);
+  }
+
+  .ruled > * + * {
+    border-top: var(--rule-w) solid var(--rule);
+  }
+
+  .backdrop {
+    position: fixed;
+    inset: 0;
+    background: color-mix(in srgb, var(--ink) 65%, transparent);
+  }
+
+  /* ============================================================== layout */
+
+  /*
+   * Screens are built from full-width bands, so the shell gives no padding at
+   * all. A screen that is a single column of prose rather than a lattice opts
+   * back into a margin with this.
+   */
+  .page {
+    width: 100%;
+    max-width: 76rem;
+    margin-inline: auto;
+    padding: 1.5rem 1.25rem 3rem;
+  }
+
+  @media (min-width: 1024px) {
+    .page {
+      padding: 2rem 2rem 4rem;
+    }
+  }
+
+  /*
+   * Content inside a full-width band. The band keeps its rules edge to edge,
+   * which is the language, but a shopping line is not more usable for being
+   * 1500 pixels from its own checkbox to its own delete button.
+   */
+  .measure {
+    width: 100%;
+    max-width: 60rem;
+    margin-inline: auto;
+  }
+
+  .measure-wide {
+    width: 100%;
+    max-width: 76rem;
+    margin-inline: auto;
+  }
+
+  /* ============================================================= aliases */
+
+  /*
+   * The names the screens already use, mapped onto this language rather than
+   * renamed across forty files. Each one is a real style here, not a shim: a
+   * slip is a ruled block, an eyebrow is a section label, a tile fills with ink.
+   */
+  .eyebrow {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    line-height: 1.2;
+    color: var(--ink-2);
+  }
+
+  .eyebrow-rule {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .eyebrow-rule::after {
+    content: "";
+    flex: 1;
+    height: var(--rule-w);
+    background: var(--rule);
+  }
+
+  .display {
+    font-weight: 700;
+    font-variation-settings: "wdth" 88, "opsz" 24;
+    line-height: 1.08;
+    letter-spacing: -0.015em;
+  }
+
+  .title {
+    font-weight: 700;
+    font-size: clamp(1.75rem, 4vw, 3rem);
+    font-variation-settings: "wdth" 84, "opsz" 40;
+    line-height: 0.95;
+    letter-spacing: -0.025em;
+    text-transform: uppercase;
+  }
+
+  .hero {
+    font-weight: 700;
+    font-size: clamp(3.25rem, 11vw, 9rem);
+    font-variation-settings: "wdth" 78, "opsz" 96;
+    line-height: 0.82;
+    letter-spacing: -0.035em;
+    text-transform: uppercase;
+  }
+
+  .slip,
+  .slip-float,
+  .sheet {
+    background: var(--panel);
+    border: var(--rule-w) solid var(--rule);
+    border-radius: 0;
+  }
+
+  .tile {
+    position: relative;
+    overflow: hidden;
+    background: var(--panel);
+    border: var(--rule-w) solid var(--rule);
+    transition: background-color 90ms linear, color 90ms linear;
+  }
+
+  .inverted {
+    background: var(--ink);
+    color: var(--on-ink);
+  }
+
+  .hatched,
+  .ledger {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      var(--rule-soft) 0 1px,
+      transparent 1px 8px
+    );
+  }
+
+  .rise {
+    animation: wipe 420ms cubic-bezier(0.16, 0.84, 0.24, 1) backwards;
+  }
+
+  /* =============================================================== motion */
+
+  /* Snap, do not float: blocks arrive by wiping in, and never fade. */
+  @keyframes wipe {
+    from {
+      clip-path: inset(0 100% 0 0);
+    }
+    to {
+      clip-path: inset(0 0 0 0);
+    }
+  }
+
+  .wipe {
+    animation: wipe 420ms cubic-bezier(0.16, 0.84, 0.24, 1) backwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+.skip-link {
+  position: fixed;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 120;
+  transform: translateY(-250%);
+  background: var(--tomato);
+  color: var(--on-tomato);
+  border: var(--rule-w) solid var(--rule);
+  padding: 0.5rem 0.9rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
 }

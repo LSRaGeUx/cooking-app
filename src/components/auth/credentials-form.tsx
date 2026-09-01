@@ -77,53 +77,50 @@ export function CredentialsForm({ initialMode }: { initialMode: Mode }) {
     }
   }
 
-  const fieldClass =
-    "rounded-md border border-black/15 px-3 py-2 dark:border-white/20";
-
   return (
     <div className="flex flex-col gap-4">
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
         {mode === "signup" ? (
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">{t("name")}</span>
+          <label className="label">
+            <span>{t("name")}</span>
             <input
               name="name"
               type="text"
               required
               autoComplete="name"
-              className={fieldClass}
+              className="field"
             />
           </label>
         ) : null}
 
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium">{t("email")}</span>
+        <label className="label">
+          <span>{t("email")}</span>
           <input
             name="email"
             type="email"
             required
             autoComplete="email"
-            className={fieldClass}
+            className="field"
           />
         </label>
 
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium">{t("password")}</span>
+        <label className="label">
+          <span>{t("password")}</span>
           <input
             name="password"
             type="password"
             required
             minLength={8}
             autoComplete={mode === "login" ? "current-password" : "new-password"}
-            className={fieldClass}
+            className="field"
           />
           {mode === "signup" ? (
-            <span className="text-xs opacity-70">{t("passwordHint")}</span>
+            <span className="hint">{t("passwordHint")}</span>
           ) : null}
         </label>
 
         {failed ? (
-          <p role="alert" className="text-sm text-red-700 dark:text-red-400">
+          <p role="alert" className="banner banner-danger">
             {t("failed")}
           </p>
         ) : null}
@@ -131,7 +128,7 @@ export function CredentialsForm({ initialMode }: { initialMode: Mode }) {
         <button
           type="submit"
           disabled={pending}
-          className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-black"
+          className="btn btn-primary w-full"
         >
           {pending ? t("submitting") : t("submit")}
         </button>
@@ -141,11 +138,11 @@ export function CredentialsForm({ initialMode }: { initialMode: Mode }) {
         </p>
       </form>
 
-      <p className="text-sm opacity-70">
+      <p className="text-sm text-muted">
         {mode === "login" ? t("noAccount") : t("hasAccount")}{" "}
         <button
           type="button"
-          className="underline"
+          className="link"
           onClick={() => {
             setFailed(false);
             setMode(mode === "login" ? "signup" : "login");

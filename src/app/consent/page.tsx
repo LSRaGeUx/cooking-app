@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { getTranslations } from "next-intl/server";
+import { AuthShell } from "@/components/auth/auth-shell";
 import { ConsentForm } from "@/components/auth/consent-form";
 import { auth } from "@/lib/auth";
 import { MCP_SCOPES, type McpScope } from "@/lib/scopes";
@@ -28,40 +29,37 @@ export default async function ConsentPage({
 
   if (!clientId) {
     return (
-      <main className="mx-auto flex max-w-md flex-col gap-4 px-6 py-16">
-        <h1 className="text-2xl font-semibold">{t("title")}</h1>
-        <p className="text-sm opacity-70">{t("missingRequest")}</p>
-      </main>
+      <AuthShell>
+        <h1 className="title">{t("title")}</h1>
+        <p className="lede">{t("missingRequest")}</p>
+      </AuthShell>
     );
   }
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-16">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">{t("title")}</h1>
-        <p className="text-sm opacity-80">
+    <AuthShell>
+      <div className="flex flex-col gap-3">
+        <h1 className="title">{t("title")}</h1>
+        <p className="lede text-ink">
           {clientName
             ? t("intro", { client: clientName })
             : t("introUnknownClient")}
         </p>
       </div>
 
-      <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium uppercase tracking-wide opacity-60">
-          {t("scopes")}
-        </h2>
-        <ul className="flex flex-col gap-1 rounded-md border border-black/10 p-4 text-sm dark:border-white/15">
+      <section className="flex flex-col gap-3">
+        <h2 className="eyebrow eyebrow-rule">{t("scopes")}</h2>
+        <ul className="ruled flex flex-col rounded-[3px] border border-agent-line border-l-[3px] border-l-agent bg-agent-soft px-4 text-sm">
           {requestedScopes.map((scope) => (
-            <li key={scope} className="flex gap-2">
-              <span aria-hidden="true">•</span>
-              <span>{scopeLabel(t, scope)}</span>
+            <li key={scope} className="py-2.5">
+              {scopeLabel(t, scope)}
             </li>
           ))}
         </ul>
       </section>
 
       <ConsentForm />
-    </main>
+    </AuthShell>
   );
 }
 

@@ -30,6 +30,9 @@ jobs:
       BETTER_AUTH_SECRET: ci-secret-not-used-in-production
       BETTER_AUTH_URL: http://localhost:3000
       MCP_RESOURCE: http://localhost:3000/api/mcp
+      # CI has no Google OAuth client, and the application refuses to boot with
+      # no way in at all. The password door is that way in here.
+      AUTH_PASSWORD_LOGIN: "true"
 
     steps:
       - uses: actions/checkout@v5

@@ -2,9 +2,11 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  date,
   index,
   numeric,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -24,19 +26,28 @@ import { ingredient } from "./recipes";
  * moving, so it is written down and then edited in place rather than recomputed
  * on every read.
  *
- * `plan_version_id` records which version the list was last generated from, and
- * it moves forward on regeneration: the list belongs to a week, while a version
- * is superseded by every edit. Finding "this week's list" therefore joins
- * through plan_version to plan rather than storing a second key.
+ * A list belongs to a shopping cycle, so its identity is the date it starts on.
+ * A cycle is seven days from the cook's shopping day and can straddle a Sunday,
+ * which is why the plan version it was built from cannot be its key: there may
+ * be two of them. Those live in grocery_list_version, and they are what makes
+ * staleness answerable. See docs/01-functional-spec.md section 8.1.
  */
 export const groceryList = pgTable(
   "grocery_list",
   {
     id: primaryId(),
     userId: ownerId(),
-    planVersionId: uuid("plan_version_id")
-      .notNull()
-      .references(() => planVersion.id, { onDelete: "cascade" }),
+    // The cycle covered. `ends_on` is derived, stored so a query can filter on
+    // it without recomputing the cycle length in SQL.
+    // The cycle covered. `ends_on` is derived, stored so a query can filter on
+    // it without recomputing the cycle length in SQL.
+    //
+    // Carried as `yyyy-mm-dd` strings rather than as Date: a `date` column has
+    // no time and no zone, and node-pg would hand back a local midnight, so in
+    // Paris `2026-08-31` arrives as 30 August in UTC and every cycle boundary
+    // shifts by a day. src/domain/shopping.ts parses these explicitly.
+    startsOn: date("starts_on", { mode: "string" }).notNull(),
+    endsOn: date("ends_on", { mode: "string" }).notNull(),
     state: text("state").notNull().default("active"),
     generatedAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -44,10 +55,10 @@ export const groceryList = pgTable(
       .defaultNow(),
   },
   (t) => [
-    // One live list per version. The service keeps it to one per week by moving
-    // plan_version_id forward instead of writing a second row.
-    uniqueIndex("grocery_list_one_live_per_version_idx")
-      .on(t.planVersionId)
+    // One live list per cycle. Regenerating rewrites the lines of this row
+    // rather than writing a second one.
+    uniqueIndex("grocery_list_one_live_per_cycle_idx")
+      .on(t.userId, t.startsOn)
       .where(sql`state <> 'archived'`),
     index("grocery_list_user_idx").on(t.userId),
     check(
@@ -55,6 +66,32 @@ export const groceryList = pgTable(
       sql`${t.state} in ${sql.raw(sqlInList(GROCERY_LIST_STATES))}`,
     ),
     ownerPolicy("grocery_list_owner", t.userId),
+  ],
+).enableRLS();
+
+/**
+ * Which plan versions a list was built from.
+ *
+ * At most two rows, because a seven-day cycle overlaps at most two ISO weeks,
+ * and the set is rewritten on every regeneration. A single column on
+ * grocery_list could not express a list that spans a Sunday, and without this
+ * table "is my list stale" has no answer.
+ */
+export const groceryListVersion = pgTable(
+  "grocery_list_version",
+  {
+    userId: ownerId(),
+    groceryListId: uuid("grocery_list_id")
+      .notNull()
+      .references(() => groceryList.id, { onDelete: "cascade" }),
+    planVersionId: uuid("plan_version_id")
+      .notNull()
+      .references(() => planVersion.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.groceryListId, t.planVersionId] }),
+    index("grocery_list_version_list_idx").on(t.groceryListId),
+    ownerPolicy("grocery_list_version_owner", t.userId),
   ],
 ).enableRLS();
 
@@ -103,6 +140,7 @@ export const groceryLine = pgTable(
 ).enableRLS();
 
 export type GroceryList = typeof groceryList.$inferSelect;
+export type GroceryListVersion = typeof groceryListVersion.$inferSelect;
 export type NewGroceryList = typeof groceryList.$inferInsert;
 export type GroceryLine = typeof groceryLine.$inferSelect;
 export type NewGroceryLine = typeof groceryLine.$inferInsert;

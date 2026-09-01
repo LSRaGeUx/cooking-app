@@ -1,25 +1,80 @@
 # Plain Compose spec only. No Docker-only extensions, so this file runs
 # unchanged under Podman (dev) and Docker (self-hosters).
+#
+# Dev runs the database alone: `npm run db:up` starts `db` and nothing else.
+# A self-hoster runs the whole thing with the `serve` profile:
+#
+#   docker compose --profile serve up -d --build
+#
+# The two services in that profile are the application and a one-shot migrator
+# that has to finish before the application starts.
 services:
   db:
     image: docker.io/library/postgres:18-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: cooking
-      POSTGRES_PASSWORD: cooking
-      POSTGRES_DB: cooking
+      POSTGRES_USER: ${POSTGRES_USER:-cooking}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cooking}
+      POSTGRES_DB: ${POSTGRES_DB:-cooking}
       # Needed because the app connects as a non-superuser role for RLS to bite.
       POSTGRES_INITDB_ARGS: "--data-checksums"
     ports:
-      - "5432:5432"
+      # Loopback only. On a VPS, publishing 5432 on every interface puts the
+      # database on the public internet, and the dev workflow does not need it.
+      - "127.0.0.1:5432:5432"
     volumes:
       # Postgres 18+ images place data in a major-version subdirectory, so the
       # mount goes one level up. Mounting /var/lib/postgresql/data fails to boot.
       - pgdata:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cooking -d cooking"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cooking} -d ${POSTGRES_DB:-cooking}"]
       interval: 5s
       timeout: 5s
       retries: 20
+
+  # Runs once per deploy and exits. Creates the least-privileged runtime role,
+  # migrates the domain tables, then lets Better Auth migrate its own twelve.
+  migrate:
+    profiles: ["serve"]
+    build:
+      context: .
+      target: migrator
+    environment: &db_env
+      DATABASE_URL: postgres://${POSTGRES_USER:-cooking}:${POSTGRES_PASSWORD:-cooking}@db:5432/${POSTGRES_DB:-cooking}
+      APP_DATABASE_URL: postgres://cooking_app:${APP_DB_PASSWORD:-cooking_app}@db:5432/${POSTGRES_DB:-cooking}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    profiles: ["serve"]
+    build:
+      context: .
+      target: runtime
+    restart: unless-stopped
+    environment:
+      <<: *db_env
+      # No defaults on purpose. A deployment that silently came up with a
+      # placeholder secret, or with localhost as its OAuth issuer, is worse than
+      # one that refuses to start: see docs/08-self-hosting.md section 3.
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?generate one with openssl rand -base64 32}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?the public https origin, not localhost}
+      MCP_RESOURCE: ${MCP_RESOURCE:?the public https origin plus /api/mcp}
+    ports:
+      # Loopback only: TLS is terminated by the reverse proxy in front.
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/login || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
 volumes:
   pgdata:

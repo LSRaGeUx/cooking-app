@@ -24,6 +24,11 @@ const nextConfig: NextConfig = {
   // outbound AI client. See scripts/check-no-llm-deps.mjs.
   serverExternalPackages: ["pg"],
 
+  // Emits .next/standalone, a self-contained server with only the traced
+  // dependencies. It is what lets the runtime image skip npm and the whole
+  // toolchain, which is most of the image and all of its attack surface.
+  output: "standalone",
+
   // beforeFiles, so a well-known path can never be swallowed by a page route or
   // the 404 handler before the rewrite is considered.
   async rewrites() {

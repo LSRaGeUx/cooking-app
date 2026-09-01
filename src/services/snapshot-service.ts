@@ -149,6 +149,7 @@ export async function composeProfileSnapshot(
         defaultTimeBudgetMin: profile.defaultTimeBudgetMin,
         timeBudgetToleranceMin: profile.timeBudgetToleranceMin,
         varietyPreference: profile.varietyPreference,
+        shoppingDay: profile.shoppingDay,
       },
       kitchen: {
         skillLevel: profile.skillLevel,

@@ -1,22 +1,32 @@
 import { redirect } from "next/navigation";
 import { getTranslations } from "next-intl/server";
+import { AuthShell } from "@/components/auth/auth-shell";
 import { CredentialsForm } from "@/components/auth/credentials-form";
+import { signInMethods } from "@/lib/auth";
 import { getCurrentSession } from "@/lib/session";
 
+/**
+ * Self-service sign-up only exists while the development password door is open.
+ * With Google alone there is nothing to fill in: the account is created on first
+ * sign-in if the address is on the allowlist, so this screen would be a form
+ * that asks for what Google already answered.
+ */
 export default async function SignUpPage() {
+  if (!signInMethods.passwordLogin) redirect("/login");
+
   const session = await getCurrentSession();
   if (session?.user) redirect("/");
 
   const t = await getTranslations("signup");
 
   return (
-    <main className="mx-auto flex max-w-sm flex-col gap-6 px-6 py-16">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">{t("title")}</h1>
-        <p className="text-sm opacity-70">{t("intro")}</p>
+    <AuthShell>
+      <div className="flex flex-col gap-3">
+        <h1 className="title">{t("title")}</h1>
+        <p className="lede">{t("intro")}</p>
       </div>
 
       <CredentialsForm initialMode="signup" />
-    </main>
+    </AuthShell>
   );
 }

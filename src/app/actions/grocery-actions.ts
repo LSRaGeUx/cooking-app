@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { formatIsoWeek, type IsoWeek } from "@/domain/week";
 import { requireUser } from "@/lib/session";
 import {
   addManualLine,
@@ -15,16 +14,17 @@ import {
 } from "@/services/grocery-service";
 import { runAction, type ActionResult } from "./result";
 
-function revalidateList(week: IsoWeek): void {
-  revalidatePath(`/courses/${formatIsoWeek(week)}`);
+/** `cycleStart` is the `yyyy-mm-dd` the shopping cycle begins on. */
+function revalidateList(cycleStart: string): void {
+  revalidatePath(`/courses/${cycleStart}`);
 }
 
 export async function generateGroceryListAction(
-  week: IsoWeek,
+  cycleStart: string,
 ): Promise<ActionResult<GenerateResult>> {
   const { ctx } = await requireUser();
-  const result = await runAction(() => generateGroceryList(ctx, week));
-  if (result.ok) revalidateList(week);
+  const result = await runAction(() => generateGroceryList(ctx, cycleStart));
+  if (result.ok) revalidateList(cycleStart);
   return result;
 }
 
@@ -43,32 +43,32 @@ export async function setLineCheckedAction(
 }
 
 export async function addManualLineAction(
-  week: IsoWeek,
+  cycleStart: string,
   listId: string,
   input: ManualLineInput,
 ): Promise<ActionResult<GroceryLineView>> {
   const { ctx } = await requireUser();
   const result = await runAction(() => addManualLine(ctx, listId, input));
-  if (result.ok) revalidateList(week);
+  if (result.ok) revalidateList(cycleStart);
   return result;
 }
 
 export async function deleteLineAction(
-  week: IsoWeek,
+  cycleStart: string,
   lineId: string,
 ): Promise<ActionResult<void>> {
   const { ctx } = await requireUser();
   const result = await runAction(() => deleteLine(ctx, lineId));
-  if (result.ok) revalidateList(week);
+  if (result.ok) revalidateList(cycleStart);
   return result;
 }
 
 export async function archiveGroceryListAction(
-  week: IsoWeek,
+  cycleStart: string,
   listId: string,
 ): Promise<ActionResult<void>> {
   const { ctx } = await requireUser();
   const result = await runAction(() => archiveGroceryList(ctx, listId));
-  if (result.ok) revalidateList(week);
+  if (result.ok) revalidateList(cycleStart);
   return result;
 }

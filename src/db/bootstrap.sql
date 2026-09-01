@@ -17,10 +17,16 @@ BEGIN
   ELSE
     EXECUTE format('ALTER ROLE cooking_app LOGIN PASSWORD %L', pw);
   END IF;
+  -- The database is named by whoever created it: `cooking` under compose, a
+  -- generated identifier on a managed add-on. Reading it back keeps this file
+  -- portable instead of hardcoding one deployment's choice.
+  EXECUTE format(
+    'GRANT CONNECT ON DATABASE %I TO cooking_app',
+    current_database()
+  );
 END
 $$;
 
-GRANT CONNECT ON DATABASE cooking TO cooking_app;
 GRANT USAGE ON SCHEMA public TO cooking_app;
 
 -- Applies to tables that exist now.
@@ -34,4 +40,15 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO cooking_app;
 
 -- Belt and braces: never let the runtime role bypass RLS.
-ALTER ROLE cooking_app NOBYPASSRLS;
+--
+-- NOBYPASSRLS is already the default for a new role, so this only ever
+-- restates it. Only a superuser may touch the attribute at all: a CREATEROLE
+-- user cannot, which is what you get from a managed Postgres. So it is skipped
+-- there rather than failing the install over a no-op.
+DO $$
+BEGIN
+  IF (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) THEN
+    EXECUTE 'ALTER ROLE cooking_app NOBYPASSRLS';
+  END IF;
+END
+$$;

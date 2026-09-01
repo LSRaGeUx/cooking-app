@@ -32,64 +32,63 @@ export default async function ActivityPage({
   const lastPage = Math.max(Math.ceil(total / pageSize), 1);
 
   return (
-    <div className="flex flex-col gap-5">
-      <header className="flex flex-wrap items-baseline justify-between gap-2">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold">{t("activity")}</h1>
-          <p className="max-w-2xl text-sm opacity-70">{t("activityHelp")}</p>
-          <p className="text-xs opacity-50">{t("total", { count: total })}</p>
+    <div className="page flex flex-col gap-5">
+      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-rule pb-4">
+        <div className="flex flex-col gap-2">
+          <h1 className="title rise">{t("activity")}</h1>
+          <p className="lede">{t("activityHelp")}</p>
+          <p className="micro">{t("total", { count: total })}</p>
         </div>
-        <Link href="/agent" className="text-sm underline">
+        <Link href="/agent" className="btn btn-quiet btn-sm">
           {t("title")}
         </Link>
       </header>
 
       {entries.length === 0 ? (
-        <p className="text-sm opacity-70">{t("activityEmpty")}</p>
+        <p className="hint">{t("activityEmpty")}</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[40rem] text-sm">
             <thead>
-              <tr className="border-b border-black/10 text-left text-xs uppercase tracking-wide opacity-60 dark:border-white/15">
-                <th className="py-2">{t("activityWhen")}</th>
-                <th>{t("activityTool")}</th>
-                <th>{t("activityResult")}</th>
-                <th>{t("activityClient")}</th>
+              <tr className="border-b border-rule-strong text-left">
+                <th className="eyebrow py-2">{t("activityWhen")}</th>
+                <th className="eyebrow">{t("activityTool")}</th>
+                <th className="eyebrow">{t("activityResult")}</th>
+                <th className="eyebrow">{t("activityClient")}</th>
               </tr>
             </thead>
             <tbody>
               {entries.map((entry) => (
-                <tr
-                  key={entry.id}
-                  className="border-b border-black/5 dark:border-white/10"
-                >
-                  <td className="py-2 text-xs opacity-70">
+                <tr key={entry.id} className="border-b border-rule">
+                  <td className="micro py-2.5">
                     {formatter.format(entry.createdAt)}
                   </td>
                   <td>
-                    <code className="text-xs">{entry.toolName}</code>
-                    <span className="ml-2 text-xs opacity-50">
+                    <code className="text-agent-ink">{entry.toolName}</code>
+                    <span className="micro ml-2">
                       {entry.direction === "write"
                         ? t("directionWrite")
                         : t("directionRead")}
                     </span>
                   </td>
-                  <td
-                    className={`text-xs ${
-                      entry.result === "ok"
-                        ? "opacity-70"
-                        : "text-amber-700 dark:text-amber-400"
-                    }`}
-                  >
-                    {entry.result === "ok"
-                      ? t("resultOk")
-                      : entry.result === "rejected"
-                        ? `${t("resultRejected")} · ${entry.rejectionCode ?? ""}`
-                        : t("resultError")}
+                  <td>
+                    <span
+                      className={`chip ${
+                        entry.result === "ok"
+                          ? "chip-ok"
+                          : entry.result === "rejected"
+                            ? "chip-warn"
+                            : "chip-danger"
+                      }`}
+                    >
+                      {entry.result === "ok"
+                        ? t("resultOk")
+                        : entry.result === "rejected"
+                          ? `${t("resultRejected")} · ${entry.rejectionCode ?? ""}`
+                          : t("resultError")}
+                    </span>
                   </td>
-                  <td className="text-xs opacity-50">
-                    {entry.oauthClientId ?? "-"}
-                  </td>
+                  <td className="micro">{entry.oauthClientId ?? "-"}</td>
                 </tr>
               ))}
             </tbody>
@@ -98,17 +97,13 @@ export default async function ActivityPage({
       )}
 
       {lastPage > 1 ? (
-        <nav className="flex gap-3 text-sm">
+        <nav className="segmented self-start">
           {page > 1 ? (
-            <Link href={`/agent/activite?page=${page - 1}`} className="underline">
-              {page - 1}
-            </Link>
+            <Link href={`/agent/activite?page=${page - 1}`}>{page - 1}</Link>
           ) : null}
-          <span className="opacity-60">{page}</span>
+          <span aria-current="true">{page}</span>
           {page < lastPage ? (
-            <Link href={`/agent/activite?page=${page + 1}`} className="underline">
-              {page + 1}
-            </Link>
+            <Link href={`/agent/activite?page=${page + 1}`}>{page + 1}</Link>
           ) : null}
         </nav>
       ) : null}

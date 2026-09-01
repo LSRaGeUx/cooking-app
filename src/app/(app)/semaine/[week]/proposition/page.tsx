@@ -27,26 +27,26 @@ export default async function ProposalPage({
   const weekHref = `/semaine/${formatIsoWeek(isoWeek)}`;
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-5">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold">
+    <div className="page mx-auto flex max-w-3xl flex-col gap-5">
+      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-rule pb-4">
+        <div className="flex flex-col gap-2">
+          {review ? (
+            <span className="chip chip-agent self-start">
+              {t("writtenBy", { number: review.version.versionNumber })}
+            </span>
+          ) : null}
+          <h1 className="title rise">
             {t("title", { week: isoWeek.week, year: isoWeek.year })}
           </h1>
-          <p className="max-w-2xl text-sm opacity-70">{t("intro")}</p>
-          {review ? (
-            <p className="text-xs opacity-50">
-              {t("writtenBy", { number: review.version.versionNumber })}
-            </p>
-          ) : null}
+          <p className="lede">{t("intro")}</p>
         </div>
-        <Link href={weekHref} className="text-sm underline">
+        <Link href={weekHref} className="btn btn-quiet btn-sm">
           {t("backToWeek")}
         </Link>
       </header>
 
       {review === null ? (
-        <p className="text-sm opacity-70">{t("none")}</p>
+        <p className="hint">{t("none")}</p>
       ) : (
         <ProposalReviewPanel
           week={isoWeek}

@@ -68,100 +68,90 @@ export function ConnectionPanel({
     <div className="flex flex-col gap-8">
       <Feedback {...feedback} />
 
-      <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium uppercase tracking-wide opacity-60">
-          {t("endpoint")}
-        </h2>
-        <div className="flex flex-wrap items-center gap-2">
-          <code className="flex-1 overflow-x-auto rounded-md border border-black/15 px-3 py-2 text-sm dark:border-white/20">
+      {/*
+        The one line the whole product depends on being pasted correctly, so it
+        is given the weight of a headline rather than the weight of a field.
+      */}
+      <section className="flex flex-col gap-3">
+        <h2 className="eyebrow eyebrow-rule">{t("endpoint")}</h2>
+        <div className="flex flex-wrap items-center gap-3 rounded-[3px] border border-agent-line border-l-[3px] border-l-agent bg-sunk p-4">
+          <code className="mono flex-1 overflow-x-auto text-[0.95rem] text-agent-ink">
             {endpoint}
           </code>
           <button
             type="button"
             onClick={() => void copy(endpoint)}
-            className="rounded-md border border-black/15 px-3 py-2 text-sm dark:border-white/20"
+            className="btn btn-primary btn-sm"
           >
             {copied ? t("copied") : t("copy")}
           </button>
         </div>
-        <p className="max-w-2xl text-xs opacity-70">{t("endpointHelp")}</p>
+        <p className="hint">{t("endpointHelp")}</p>
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium uppercase tracking-wide opacity-60">
-          {t("instructions")}
-        </h2>
-        <div className="flex flex-col gap-3">
-          <article className="rounded-md border border-black/10 p-3 dark:border-white/15">
-            <h3 className="text-sm font-medium">{t("clientClaudeDesktop")}</h3>
-            <p className="text-sm opacity-80">{t("claudeDesktopSteps")}</p>
+        <h2 className="eyebrow eyebrow-rule">{t("instructions")}</h2>
+        <div className="grid gap-3 md:grid-cols-3">
+          <article className="slip flex flex-col gap-2 p-4">
+            <h3 className="display text-base">{t("clientClaudeDesktop")}</h3>
+            <p className="text-sm text-muted">{t("claudeDesktopSteps")}</p>
           </article>
-          <article className="flex flex-col gap-2 rounded-md border border-black/10 p-3 dark:border-white/15">
-            <h3 className="text-sm font-medium">{t("clientClaudeCode")}</h3>
-            <p className="text-sm opacity-80">{t("claudeCodeSteps")}</p>
-            <div className="flex flex-wrap items-center gap-2">
-              <code className="flex-1 overflow-x-auto rounded-md border border-black/10 px-2 py-1 text-xs dark:border-white/15">
+          <article className="slip flex flex-col gap-2 p-4">
+            <h3 className="display text-base">{t("clientClaudeCode")}</h3>
+            <p className="text-sm text-muted">{t("claudeCodeSteps")}</p>
+            <div className="mt-auto flex flex-wrap items-center gap-2 pt-2">
+              <code className="flex-1 overflow-x-auto rounded-[2px] bg-sunk px-2 py-1.5 text-agent-ink">
                 {claudeCodeCommand}
               </code>
               <button
                 type="button"
                 onClick={() => void copy(claudeCodeCommand)}
-                className="rounded-md border border-black/15 px-2 py-1 text-xs dark:border-white/20"
+                className="btn btn-quiet btn-sm"
               >
                 {t("copy")}
               </button>
             </div>
           </article>
-          <article className="rounded-md border border-black/10 p-3 dark:border-white/15">
-            <h3 className="text-sm font-medium">{t("clientGeneric")}</h3>
-            <p className="text-sm opacity-80">{t("genericSteps")}</p>
+          <article className="slip flex flex-col gap-2 p-4">
+            <h3 className="display text-base">{t("clientGeneric")}</h3>
+            <p className="text-sm text-muted">{t("genericSteps")}</p>
           </article>
         </div>
       </section>
 
-      <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium uppercase tracking-wide opacity-60">
-          {t("test")}
-        </h2>
-        <p
-          className={`rounded-md border px-3 py-2 text-sm ${
-            lastCallAt
-              ? "border-emerald-600/50 bg-emerald-500/5"
-              : "border-black/10 dark:border-white/15"
-          }`}
-        >
+      <section className="flex flex-col gap-3">
+        <h2 className="eyebrow eyebrow-rule">{t("test")}</h2>
+        <p className={`banner ${lastCallAt ? "banner-ok" : ""}`}>
           {lastCallAt ? t("testLast", { date: lastCallAt }) : t("testNever")}
         </p>
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium uppercase tracking-wide opacity-60">
-          {t("clients")}
-        </h2>
+        <h2 className="eyebrow eyebrow-rule">{t("clients")}</h2>
 
         {clients.length === 0 ? (
-          <p className="text-sm opacity-70">{t("clientsEmpty")}</p>
+          <p className="hint">{t("clientsEmpty")}</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {clients.map((client) => (
               <li
                 key={client.consentId}
-                className="flex flex-col gap-2 rounded-md border border-black/15 p-3 dark:border-white/20"
+                className="slip flex flex-col gap-2.5 border-l-[3px] border-l-agent p-4"
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="font-medium">
+                  <span className="display text-base">
                     {client.name ?? client.clientId}
                   </span>
                   <button
                     type="button"
                     disabled={pending}
                     onClick={() => void revoke(client.clientId)}
-                    className="text-sm text-red-700 underline disabled:opacity-40 dark:text-red-400"
+                    className="btn btn-danger btn-sm"
                   >
                     {t("revoke")}
                   </button>
                 </div>
-                <p className="text-xs opacity-60">
+                <p className="micro">
                   {t("connectedAt", {
                     date: new Date(client.connectedAt).toLocaleString(locale),
                   })}
@@ -176,10 +166,7 @@ export function ConnectionPanel({
                 </p>
                 <ul className="flex flex-wrap gap-1">
                   {client.scopes.map((scope) => (
-                    <li
-                      key={scope}
-                      className="rounded bg-black/5 px-1.5 py-0.5 text-xs dark:bg-white/10"
-                    >
+                    <li key={scope} className="chip chip-agent">
                       {consent.has(`scopeNames.${scope}`)
                         ? consent(`scopeNames.${scope}`)
                         : scope}
@@ -191,27 +178,25 @@ export function ConnectionPanel({
           </ul>
         )}
 
-        <p className="text-xs opacity-70">{t("revokeHelp")}</p>
+        <p className="hint">{t("revokeHelp")}</p>
       </section>
 
-      <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium uppercase tracking-wide opacity-60">
-          {t("promptPack")}
-        </h2>
-        <p className="max-w-2xl text-xs opacity-70">{t("promptPackHelp")}</p>
-        <ul className="flex flex-wrap gap-3 text-sm">
+      <section className="flex flex-col gap-3">
+        <h2 className="eyebrow eyebrow-rule">{t("promptPack")}</h2>
+        <p className="hint">{t("promptPackHelp")}</p>
+        <ul className="flex flex-wrap gap-2">
           <li>
-            <a href="/agent-pack/house-rules.md" className="underline">
+            <a href="/agent-pack/house-rules.md" className="btn btn-quiet btn-sm">
               {t("promptPackRules")}
             </a>
           </li>
           <li>
-            <a href="/agent-pack/plan-week.md" className="underline">
+            <a href="/agent-pack/plan-week.md" className="btn btn-quiet btn-sm">
               {t("promptPackPlan")}
             </a>
           </li>
           <li>
-            <a href="/agent-pack/weekly-review.md" className="underline">
+            <a href="/agent-pack/weekly-review.md" className="btn btn-quiet btn-sm">
               {t("promptPackReview")}
             </a>
           </li>

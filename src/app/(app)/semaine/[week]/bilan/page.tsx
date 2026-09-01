@@ -47,17 +47,17 @@ export default async function WeekReviewPage({
   });
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-5">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold">
+    <div className="page mx-auto flex max-w-3xl flex-col gap-5">
+      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-rule pb-4">
+        <div className="flex flex-col gap-2">
+          <h1 className="title rise">
             {t("title", { week: isoWeek.week, year: isoWeek.year })}
           </h1>
-          <p className="max-w-2xl text-sm opacity-70">{t("intro")}</p>
+          <p className="lede">{t("intro")}</p>
         </div>
         <Link
           href={`/semaine/${formatIsoWeek(isoWeek)}`}
-          className="text-sm underline"
+          className="btn btn-quiet btn-sm"
         >
           {t("backToWeek")}
         </Link>

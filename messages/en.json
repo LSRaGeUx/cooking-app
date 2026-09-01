@@ -14,7 +14,14 @@
     "agent": "Agent",
     "account": "Account",
     "signOut": "Sign out",
-    "skipToContent": "Skip to content"
+    "skipToContent": "Skip to content",
+    "groupPlan": "Cooking",
+    "groupSettings": "Settings",
+    "more": "More",
+    "theme": "Theme",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "weekBadge": "W{week} · {year}"
   },
   "common": {
     "save": "Save",
@@ -43,7 +50,14 @@
     "noAccount": "No account yet?",
     "signUpLink": "Create an account",
     "failed": "Could not sign you in. Check your email address and your password.",
-    "oauthNotice": "Once signed in, you will be asked to authorise the application that requested access."
+    "oauthNotice": "Once signed in, you will be asked to authorise the application that requested access.",
+    "google": "Continue with Google",
+    "googlePending": "Redirecting…",
+    "googleFailed": "Could not open Google sign-in. Try again.",
+    "accessDenied": "This address has no access to this instance. Ask to be added.",
+    "accessNotConfigured": "No access list is configured on this instance, so nobody can sign in. Set ALLOWED_EMAILS.",
+    "signInFailed": "Sign-in failed. Try again.",
+    "passwordNotice": "Password sign-in, enabled for local development."
   },
   "signup": {
     "title": "Create an account",
@@ -87,6 +101,12 @@
   },
   "week": {
     "title": "Week {week} of {year}",
+    "label": "Week",
+    "todayMark": "Today",
+    "shoppingMark": "Shop",
+    "statMeals": "Meals",
+    "statMinutes": "Active min",
+    "statRecipes": "Recipes",
     "previous": "Previous week",
     "next": "Next week",
     "today": "Current week",
@@ -234,6 +254,7 @@
   },
   "recipes": {
     "title": "Recipes",
+    "countLabel": "Recipes",
     "count": "{count, plural, =0 {No recipes} one {# recipe} other {# recipes}}",
     "new": "New recipe",
     "searchPlaceholder": "Search by title, description or tag",
@@ -252,6 +273,8 @@
       "ingredients": "Ingredients",
       "steps": "Steps",
       "unattended": "unattended",
+      "noIngredients": "No ingredients recorded.",
+      "noSteps": "No steps recorded.",
       "revision": "Revision {number}",
       "deleted": "This recipe is deleted. It stays visible for history.",
       "allergenWarning": "Contains a declared allergen"
@@ -308,12 +331,17 @@
   },
   "grocery": {
     "title": "Groceries",
-    "subtitle": "Week {week} of {year}",
+    "cycleRange": "From {from} to {to}",
+    "previousCycle": "Previous shop",
+    "nextCycle": "Next shop",
+    "currentCycle": "Current shop",
+    "noShoppingDay": "Your lists follow the Monday to Sunday week. Set your shopping day in the profile so they cover the days between two shops instead.",
+    "setShoppingDay": "Pick my shopping day",
     "generate": "Generate the list",
     "regenerate": "Update from the plan",
     "generating": "Generating…",
-    "empty": "No list for this week. Generate it from your plan.",
-    "noPlan": "Plan at least one meal this week to generate a list.",
+    "empty": "No list for this shop yet. Generate it from your plan.",
+    "noPlan": "Plan at least one meal in this period to generate a list.",
     "emptyList": "The list is empty. Add a line, or plan some meals.",
     "goToWeek": "See the week",
     "stale": "The plan has changed since this list was generated.",
@@ -393,6 +421,9 @@
     "timeBudgetToleranceHelp": "Past the budget plus this tolerance, a proposal is refused, not just flagged.",
     "varietyPreference": "Variety preference",
     "varietyPreferenceHelp": "1: repetition does not bother you. 5: never repeat a dish within the week.",
+    "shoppingDay": "Shopping day",
+    "shoppingDayNone": "No fixed day",
+    "shoppingDayHelp": "Your grocery lists cover the seven days starting on this day, that day included. On the day itself the list switches to the period that is starting. With no fixed day they follow the Monday to Sunday week.",
     "weeklyBudget": "Weekly budget",
     "weeklyBudgetCurrency": "Currency",
     "weeklyBudgetHelp": "Indicative. Ingredient prices are not tracked.",
@@ -443,7 +474,11 @@
       "negative": "Negative",
       "neutral": "Neutral"
     },
-    "confidences": { "low": "Low", "medium": "Medium", "high": "High" },
+    "confidences": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High"
+    },
     "statuses": {
       "unconfirmed": "Unconfirmed",
       "confirmed": "Confirmed",

@@ -9,10 +9,10 @@ export default async function PantryPage() {
   const items = await listPantry(ctx);
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold">{t("title")}</h1>
-        <p className="max-w-2xl text-sm opacity-70">{t("intro")}</p>
+    <div className="page mx-auto flex max-w-3xl flex-col gap-6">
+      <header className="flex flex-col gap-2 border-b border-rule pb-4">
+        <h1 className="title rise">{t("title")}</h1>
+        <p className="lede">{t("intro")}</p>
       </header>
 
       <PantryLists items={items} />

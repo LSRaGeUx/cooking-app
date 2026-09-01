@@ -89,6 +89,7 @@ Enforced fields, because these need validation, filtering, or hard blocking:
 | Default servings | integer | Default for new entries |
 | Default time budget | minutes | Fallback when a slot has none |
 | Variety preference | 1 to 5, from "I like repetition" to "never repeat" | Advisory, drives agent repetition behavior |
+| Shopping day | one ISO weekday, optional | Defines the shopping cycle, which is what a grocery list covers. See section 8 |
 | Locale and units | language, unit system | Formatting |
 
 Allergen handling is the only place in the whole system with a hard,
@@ -246,7 +247,45 @@ Tuesday with a 15-minute budget is satisfiable by Sunday's batch.
 
 ## 8. Grocery list
 
-- Generated from a plan version on demand, then persisted and editable. It is a
+### 8.1 The shopping cycle
+
+A grocery list covers a **shopping cycle**, not an ISO week. The cycle is
+derived from the profile's shopping day and runs seven days starting on it: a
+cook who shops on Saturday gets a list covering Saturday to Friday, which
+crosses the week boundary without being asked about it.
+
+The week is the wrong unit for a list, for three reasons seen in use: you shop
+on Saturday for the days that follow, so you want next week's meals and not
+this week's; you shop mid-week and the meals already cooked are still sitting
+unticked on the list; and you shop once for a span that straddles a Sunday.
+
+Rules:
+
+- The cycle containing today is the one that starts on the most recent shopping
+  day, that day included. On the shopping day itself the list therefore switches
+  to the new cycle: you shop for the week that starts now.
+- The list aggregates every entry whose date falls inside the cycle, taken from
+  the active version of each ISO week the cycle overlaps. A cycle overlaps at
+  most two weeks.
+- **The unit is the cooking session, not the meal.** You buy for a session that
+  happens inside the cycle, scaled to cover everything it feeds, including a
+  meal that will be eaten after the next shop: the cooking is now, so the
+  ingredients are needed now. A meal fed by a session outside the cycle costs
+  nothing here, because it was bought with that session on an earlier shop.
+  Aggregating by meal instead would double-buy every batch that straddles a
+  shop.
+- A list is stale when any version it was built from is no longer active.
+- With no shopping day set, the cycle is the ISO week containing today, Monday
+  to Sunday. The feature is additive: an unconfigured account behaves as before.
+- One live list per cycle, identified by the date it starts on.
+
+Shifting a single cycle ("shopping on Friday this week") is deliberately not in
+v1. The derived cycle is right almost always, and a manual override is the kind
+of control that earns its place only once the automatic answer annoys someone.
+
+### 8.2 Contents
+
+- Generated from the plan on demand, then persisted and editable. It is a
   snapshot, not a live view, because the user shops with it while the plan may
   still change.
 - Aggregation: sum quantities per normalized ingredient, converting compatible
@@ -310,7 +349,7 @@ the fact store honest about provenance.
 | **Proposal review** | Slot-by-slot diff of a pending version, with rationale per entry | Accept all, accept per slot, reject with reason |
 | **Recipe library** | Search, filter by tag, time, protein, rotation age | Filters must include "not cooked in N weeks" |
 | **Recipe detail and edit** | View and edit, see plan history for this recipe | Shows aggregate feedback |
-| **Grocery list** | Shop from it | Mobile-first, offline-tolerant |
+| **Grocery list** | Shop from it | One shopping cycle per list, mobile-first, offline-tolerant |
 | **Pantry** | Staples and use-soon | Two short lists |
 | **Profile** | Structured fields | Grouped: dietary, kitchen, organization, preferences |
 | **Facts** | Review, confirm, edit, retire, filter by category and status | Unconfirmed agent facts shown first. This screen is the trust surface of the product |

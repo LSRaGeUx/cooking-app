@@ -41,6 +41,10 @@ export const profile = pgTable(
     defaultServings: smallint("default_servings").notNull().default(2),
     defaultTimeBudgetMin: smallint("default_time_budget_min"),
     varietyPreference: smallint("variety_preference").notNull().default(3),
+    // ISO weekday of the weekly shop, 1 to 7. Null means the cook has not said,
+    // and grocery lists then fall back to Monday-to-Sunday weeks. See
+    // src/domain/shopping.ts.
+    shoppingDay: smallint("shopping_day"),
     weeklyBudgetAmount: numeric("weekly_budget_amount", {
       precision: 10,
       scale: 2,
@@ -59,6 +63,10 @@ export const profile = pgTable(
     check("profile_diet_known", sql`${t.diet} in ${sql.raw(sqlInList(DIETS))}`),
     check("profile_skill_range", sql`${t.skillLevel} between 1 and 5`),
     check("profile_variety_range", sql`${t.varietyPreference} between 1 and 5`),
+    check(
+      "profile_shopping_day_range",
+      sql`${t.shoppingDay} is null or ${t.shoppingDay} between 1 and 7`,
+    ),
     check("profile_servings_positive", sql`${t.defaultServings} > 0`),
     check(
       "profile_authority_known",

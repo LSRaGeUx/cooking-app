@@ -118,47 +118,44 @@ function PantrySection({
   const [quantityNote, setQuantityNote] = useState("");
   const [expiresOn, setExpiresOn] = useState("");
 
-  const field =
-    "rounded-md border border-black/15 px-3 py-2 text-sm dark:border-white/20";
-
   return (
-    <section className="flex flex-col gap-3">
+    <section className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
-        <h2 className="text-sm font-medium uppercase tracking-wide opacity-60">
-          {title}
-        </h2>
-        <p className="max-w-2xl text-xs opacity-70">{help}</p>
+        <h2 className="eyebrow eyebrow-rule">{title}</h2>
+        <p className="hint">{help}</p>
       </div>
 
       {items.length === 0 ? (
-        <p className="text-sm opacity-70">{t("empty")}</p>
+        <p className="hint">{t("empty")}</p>
       ) : (
         <ul className="flex flex-wrap gap-2">
           {items.map((item) => (
             <li
               key={item.id}
-              className="flex items-center gap-2 rounded-md border border-black/15 px-2 py-1 text-sm dark:border-white/20"
+              className={`slip flex items-center gap-2 border-l-[3px] py-1.5 pl-2.5 pr-1 text-sm ${
+                kind === "use_soon" ? "border-l-amber-ink" : "border-l-olive"
+              }`}
             >
               <span>{item.name}</span>
               {item.quantityNote ? (
-                <span className="text-xs opacity-60">{item.quantityNote}</span>
+                <span className="micro">{item.quantityNote}</span>
               ) : null}
               {item.expiresOn ? (
-                <span className="text-xs opacity-60">
+                <span className="micro text-amber-ink">
                   {t("expires", { date: item.expiresOn })}
                 </span>
               ) : null}
               {item.source === "agent" ? (
-                <span className="text-xs opacity-50">{t("addedByAgent")}</span>
+                <span className="chip chip-agent">{t("addedByAgent")}</span>
               ) : null}
               <button
                 type="button"
                 disabled={disabled}
                 aria-label={common("delete")}
                 onClick={() => void onRun(() => removePantryItemAction(item.id))}
-                className="text-xs opacity-50 hover:opacity-100 disabled:opacity-30"
+                className="px-1.5 text-faint transition-colors hover:text-danger-ink disabled:opacity-30"
               >
-                ×
+                &times;
               </button>
             </li>
           ))}
@@ -166,32 +163,32 @@ function PantrySection({
       )}
 
       <div className="flex flex-wrap items-end gap-2">
-        <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-sm">
-          <span className="font-medium">{t("name")}</span>
+        <label className="label min-w-[10rem] flex-1">
+          <span>{t("name")}</span>
           <input
             value={name}
             placeholder={t("namePlaceholder")}
             onChange={(event) => setName(event.target.value)}
-            className={`w-full ${field}`}
+            className="field"
           />
         </label>
-        <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-sm">
-          <span className="font-medium">{t("quantityNote")}</span>
+        <label className="label min-w-[10rem] flex-1">
+          <span>{t("quantityNote")}</span>
           <input
             value={quantityNote}
             placeholder={t("quantityNotePlaceholder")}
             onChange={(event) => setQuantityNote(event.target.value)}
-            className={`w-full ${field}`}
+            className="field"
           />
         </label>
         {withExpiry ? (
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">{t("expiresOn")}</span>
+          <label className="label">
+            <span>{t("expiresOn")}</span>
             <input
               type="date"
               value={expiresOn}
               onChange={(event) => setExpiresOn(event.target.value)}
-              className={field}
+              className="field"
             />
           </label>
         ) : null}
@@ -215,14 +212,14 @@ function PantrySection({
               setExpiresOn("");
             }
           }}
-          className="rounded-md border border-black/15 px-3 py-2 text-sm disabled:opacity-50 dark:border-white/20"
+          className="btn btn-quiet"
         >
           {addLabel}
         </button>
       </div>
 
       {!withExpiry ? (
-        <p className="text-xs opacity-70">{t("quantityNoteHelp")}</p>
+        <p className="hint">{t("quantityNoteHelp")}</p>
       ) : null}
     </section>
   );

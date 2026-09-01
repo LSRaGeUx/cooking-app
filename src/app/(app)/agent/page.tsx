@@ -21,10 +21,10 @@ export default async function AgentPage() {
   });
 
   return (
-    <div className="flex flex-col gap-8">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold">{t("title")}</h1>
-        <p className="max-w-2xl text-sm opacity-70">{t("intro")}</p>
+    <div className="page flex flex-col gap-8">
+      <header className="flex flex-col gap-2 border-b border-rule pb-4">
+        <h1 className="title rise">{t("title")}</h1>
+        <p className="lede">{t("intro")}</p>
       </header>
 
       <ConnectionPanel
@@ -33,49 +33,54 @@ export default async function AgentPage() {
         lastCallAt={lastCall ? formatter.format(lastCall) : null}
       />
 
-      <section className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-medium uppercase tracking-wide opacity-60">
-            {t("reviewFacts")}
-          </h2>
-          <Link href="/faits?status=unconfirmed" className="text-sm underline">
+      <section className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 className="eyebrow">{t("reviewFacts")}</h2>
+          <Link href="/faits?status=unconfirmed" className="link text-sm">
             {t("reviewFacts")}
           </Link>
         </div>
-        <p className="max-w-2xl text-xs opacity-70">{t("reviewFactsHelp")}</p>
+        <p className="hint">{t("reviewFactsHelp")}</p>
       </section>
 
-      <section className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-medium uppercase tracking-wide opacity-60">
-            {t("activity")}
-          </h2>
-          <Link href="/agent/activite" className="text-sm underline">
+      <section className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 className="eyebrow">{t("activity")}</h2>
+          <Link href="/agent/activite" className="link text-sm">
             {t("viewActivity")}
           </Link>
         </div>
-        <p className="max-w-2xl text-xs opacity-70">{t("activityHelp")}</p>
+        <p className="hint">{t("activityHelp")}</p>
 
         {recent.entries.length === 0 ? (
-          <p className="text-sm opacity-70">{t("activityEmpty")}</p>
+          <p className="hint">{t("activityEmpty")}</p>
         ) : (
-          <ul className="flex flex-col gap-1 text-sm">
+          <ul className="ruled flex flex-col">
             {recent.entries.map((entry) => (
               <li
                 key={entry.id}
-                className="flex flex-wrap items-baseline gap-2 border-b border-black/5 py-1 dark:border-white/10"
+                className="flex flex-wrap items-baseline gap-2.5 py-2"
               >
-                <code className="text-xs">{entry.toolName}</code>
-                <span className="text-xs opacity-60">
+                {/* One dot, one glance: green ran, amber refused, red broke. */}
+                <span
+                  aria-hidden="true"
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                    entry.result === "ok"
+                      ? "bg-olive"
+                      : entry.result === "rejected"
+                        ? "bg-amber-ink"
+                        : "bg-danger"
+                  }`}
+                />
+                <code className="text-agent-ink">{entry.toolName}</code>
+                <span className="micro">
                   {entry.direction === "write"
                     ? t("directionWrite")
                     : t("directionRead")}
                 </span>
                 <span
-                  className={`text-xs ${
-                    entry.result === "ok"
-                      ? "opacity-60"
-                      : "text-amber-700 dark:text-amber-400"
+                  className={`micro ${
+                    entry.result === "ok" ? "" : "text-amber-ink"
                   }`}
                 >
                   {entry.result === "ok"
@@ -84,7 +89,7 @@ export default async function AgentPage() {
                       ? `${t("resultRejected")} · ${entry.rejectionCode ?? ""}`
                       : t("resultError")}
                 </span>
-                <span className="ml-auto text-xs opacity-50">
+                <span className="micro ml-auto">
                   {formatter.format(entry.createdAt)}
                 </span>
               </li>

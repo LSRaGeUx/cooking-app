@@ -33,24 +33,23 @@ export function Feedback({ error, warnings = [] }: FeedbackState) {
   return (
     <div className="flex flex-col gap-2" aria-live="polite">
       {error ? (
-        <div
-          role="alert"
-          className="rounded-md border border-red-500/40 bg-red-500/5 px-3 py-2 text-sm"
-        >
-          <p className="font-medium">{headingFor(errors, error.code)}</p>
-          <p className="opacity-90">{errorMessage(error)}</p>
+        <div role="alert" className="banner banner-danger banner-block">
+          <p className="font-medium text-danger-ink">
+            {headingFor(errors, error.code)}
+          </p>
+          <p>{errorMessage(error)}</p>
         </div>
       ) : null}
 
       {warnings.map((warning, index) => (
         <div
           key={`${warning.code}-${index}`}
-          className="rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm"
+          className="banner banner-warn banner-block"
         >
-          <p className="font-medium">
+          <p className="font-medium text-amber-ink">
             {headingFor(warningLabels, warning.code)}
           </p>
-          <p className="opacity-90">{warningMessage(warning)}</p>
+          <p>{warningMessage(warning)}</p>
         </div>
       ))}
     </div>

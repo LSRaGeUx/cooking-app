@@ -120,6 +120,7 @@ Retention: 90 days by default, configurable.
 | default_servings | smallint | |
 | default_time_budget_min | smallint | nullable |
 | variety_preference | smallint | 1 to 5 |
+| shopping_day | smallint | nullable, ISO 1 to 7. Defines the shopping cycle a grocery list covers |
 | weekly_budget_amount | numeric(10,2) | nullable |
 | weekly_budget_currency | char(3) | nullable |
 | agent_authority | text | `proposal` or `direct` |
@@ -404,19 +405,30 @@ what happened in that slot this week, not to one revision of the plan.
 |---|---|---|
 | id | uuid | PK |
 | user_id | uuid | FK |
-| plan_version_id | uuid | FK |
+| starts_on | date | first day of the shopping cycle, and the list's identity |
+| ends_on | date | last day covered, `starts_on` plus six |
 | state | text | `draft`, `active`, `archived` |
 | generated_at, updated_at | timestamptz | |
 
 A snapshot, not a view. The user shops from it while the plan may still move.
 
-`plan_version_id` records the version the list was last generated from, and it
-moves forward on every regeneration. The list belongs to a **week**, not to a
-version: a version is superseded by every plan edit, so a list pinned to one
-would be stale as soon as the user moved a meal. Finding this week's list joins
-through `plan_version` to `plan`, which is why there is no second key. A partial
-unique index on `plan_version_id` where the state is not `archived` keeps it to
-one live list per version.
+The list belongs to a **shopping cycle**, so its identity is the date it starts
+on, and a partial unique index on `(user_id, starts_on)` where the state is not
+`archived` keeps it to one live list per cycle. A cycle is not a week and can
+overlap two of them, which is why the version it was built from is no longer a
+usable key.
+
+### `grocery_list_version`
+| Column | Type | Notes |
+|---|---|---|
+| grocery_list_id | uuid | FK, cascade, part of PK |
+| plan_version_id | uuid | FK, cascade, part of PK |
+
+Which plan versions a list was built from. A cycle overlaps at most two ISO
+weeks, so there are at most two rows, and the set is rewritten on every
+regeneration. This is what makes staleness answerable: a list is stale when any
+row here points at a version that is no longer `active`. A single
+`plan_version_id` column could not express a list that spans a Sunday.
 
 ### `grocery_line`
 | Column | Type | Notes |

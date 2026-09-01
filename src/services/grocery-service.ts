@@ -1,7 +1,23 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
-import { groceryLine, groceryList, plan, planEntry, planVersion } from "@/db/schema";
+import { and, asc, eq, inArray, ne } from "drizzle-orm";
+import {
+  groceryLine,
+  groceryList,
+  groceryListVersion,
+  plan,
+  planEntry,
+  planVersion,
+} from "@/db/schema";
 import { normalizeTerm } from "@/domain/allergens";
 import { DomainError } from "@/domain/errors";
+import {
+  cycleFromStart,
+  dateOfEntry,
+  formatCycleStart,
+  isoWeeksInCycle,
+  isWithinCycle,
+  parseCycleStart,
+  type ShoppingCycle,
+} from "@/domain/shopping";
 import {
   aggregateGroceryLines,
   compareLines,
@@ -52,14 +68,21 @@ export interface GroceryEntrySource {
   readonly entryId: string;
   readonly dayOfWeek: number;
   readonly title: string;
+  /**
+   * Null when the recipe behind the entry is gone. Carried so the shopping
+   * screen can mark a line with the same colour the dish wears in the week,
+   * which is derived from the recipe id and nothing else.
+   */
+  readonly recipeId: string | null;
 }
 
 export interface GroceryListView {
   readonly id: string;
   readonly state: string;
-  readonly planVersionId: string;
-  readonly planVersionNumber: number;
-  /** True when the list was generated from a version that is no longer active. */
+  /** First and last day covered, as `yyyy-mm-dd`. */
+  readonly startsOn: string;
+  readonly endsOn: string;
+  /** True when any version the list was built from is no longer active. */
   readonly stale: boolean;
   readonly generatedAt: Date;
   readonly updatedAt: Date;
@@ -87,55 +110,60 @@ export interface GenerateResult {
 
 export async function getGroceryList(
   ctx: ServiceContext,
-  week: unknown,
+  cycleStart: unknown,
 ): Promise<GroceryListView | null> {
-  const isoWeek = isoWeekSchema.parse(week);
+  const cycle = requireCycle(cycleStart);
 
   return inScope(ctx, async (tx) => {
     const scoped = { ...ctx, tx };
-    const found = await findLiveList(scoped, isoWeek);
+    const found = await findLiveList(scoped, cycle);
     if (!found) return null;
     return loadListView(scoped, found.listId);
   });
 }
 
 /**
- * Generates the list for a week, or merges into the one that is already there.
- * Always runs against the week's active version, because that is the plan the
- * user is actually going to cook.
+ * Generates the list for a shopping cycle, or merges into the one already
+ * there. Runs against the active version of every ISO week the cycle overlaps,
+ * because that is the plan the user is actually going to cook.
  */
 export async function generateGroceryList(
   ctx: ServiceContext,
-  week: unknown,
+  cycleStart: unknown,
 ): Promise<GenerateResult> {
-  const isoWeek = isoWeekSchema.parse(week);
+  const cycle = requireCycle(cycleStart);
 
   return inScope(ctx, async (tx) => {
     const scoped = { ...ctx, tx };
-    const active = await findActiveVersion(scoped, isoWeek);
-    if (!active) {
+    const versions = await versionsForCycle(scoped, cycle);
+    if (versions.length === 0) {
       throw new DomainError(
         "NOT_FOUND",
-        `Aucune semaine active pour ${isoWeek.year}-W${isoWeek.week}. Planifiez au moins un repas avant de générer une liste de courses.`,
-        { year: isoWeek.year, week: isoWeek.week },
+        `Aucune semaine planifiée entre le ${formatCycleStart(cycle.startsOn)} et le ${formatCycleStart(cycle.endsOn)}. Planifiez au moins un repas avant de générer une liste de courses.`,
+        {
+          startsOn: formatCycleStart(cycle.startsOn),
+          endsOn: formatCycleStart(cycle.endsOn),
+        },
       );
     }
 
-    const aggregated = await aggregateForVersion(scoped, active.id);
+    const aggregated = await aggregateForCycle(scoped, cycle, versions);
     const coverage = await loadPantryCoverage(scoped);
-    const existing = await findLiveList(scoped, isoWeek);
+    const existing = await findLiveList(scoped, cycle);
 
     if (!existing) {
       const created = await tx
         .insert(groceryList)
         .values({
           userId: ctx.userId,
-          planVersionId: active.id,
+          startsOn: formatCycleStart(cycle.startsOn),
+          endsOn: formatCycleStart(cycle.endsOn),
           state: "active",
         })
         .returning({ id: groceryList.id });
 
       const listId = created[0]!.id;
+      await recordVersions(scoped, listId, versions);
       const inserted = await insertDerivedLines(
         scoped,
         listId,
@@ -161,13 +189,31 @@ export async function generateGroceryList(
       aggregated,
       coverage,
     );
+    await recordVersions(scoped, existing.listId, versions);
     await tx
       .update(groceryList)
-      .set({ planVersionId: active.id, updatedAt: new Date() })
+      .set({ updatedAt: new Date() })
       .where(eq(groceryList.id, existing.listId));
 
     return { list: await loadListView(scoped, existing.listId), diff };
   });
+}
+
+/**
+ * Cycles arrive as `2026-09-05` from a URL or an action. Rejected loudly rather
+ * than coerced: a rolled-over date would silently shop for the wrong week.
+ */
+function requireCycle(value: unknown): ShoppingCycle {
+  const raw = typeof value === "string" ? value : "";
+  const start = parseCycleStart(raw);
+  if (!start) {
+    throw new DomainError(
+      "VALIDATION",
+      `Cycle de courses invalide : ${raw}. Attendu une date de début au format 2026-09-05.`,
+      { cycleStart: raw },
+    );
+  }
+  return cycleFromStart(start);
 }
 
 export async function setLineChecked(
@@ -258,18 +304,96 @@ export async function archiveGroceryList(
  * for, and aggregates. Soft-deleted recipes still contribute: the meal is still
  * planned, and the shopper still needs the ingredients.
  */
-async function aggregateForVersion(
+interface CycleVersion {
+  readonly id: string;
+  readonly versionNumber: number;
+  readonly week: IsoWeek;
+}
+
+/**
+ * The active version of every ISO week the cycle touches. A seven-day cycle
+ * touches one week or two; a week with no active plan simply contributes
+ * nothing, which is how a half-planned cycle still produces a usable list.
+ */
+async function versionsForCycle(
   ctx: ServiceContext & { tx: NonNullable<ServiceContext["tx"]> },
-  planVersionId: string,
+  cycle: ShoppingCycle,
+): Promise<CycleVersion[]> {
+  const found: CycleVersion[] = [];
+  for (const week of isoWeeksInCycle(cycle)) {
+    const active = await findActiveVersion(ctx, week);
+    if (active) found.push({ ...active, week });
+  }
+  return found;
+}
+
+/** Rewritten on every regeneration, so staleness always reflects the last build. */
+async function recordVersions(
+  ctx: ServiceContext & { tx: NonNullable<ServiceContext["tx"]> },
+  listId: string,
+  versions: readonly CycleVersion[],
+): Promise<void> {
+  await ctx.tx
+    .delete(groceryListVersion)
+    .where(eq(groceryListVersion.groceryListId, listId));
+
+  if (versions.length === 0) return;
+  await ctx.tx.insert(groceryListVersion).values(
+    versions.map((version) => ({
+      userId: ctx.userId,
+      groceryListId: listId,
+      planVersionId: version.id,
+    })),
+  );
+}
+
+/**
+ * What to buy for one shopping cycle.
+ *
+ * The rule is about cooking sessions, not about meals. You buy for a session
+ * that happens inside the cycle, scaled to cover everything it feeds, including
+ * a meal that will be eaten after the next shop: the cooking is now, so the
+ * ingredients are needed now. A meal fed by a session outside the cycle costs
+ * nothing here, because it was bought with that session on an earlier shop.
+ *
+ * That is what makes a mid-week shop work. Meals already cooked earlier in the
+ * cycle fall outside it and drop off the list instead of sitting there unticked.
+ */
+async function aggregateForCycle(
+  ctx: ServiceContext & { tx: NonNullable<ServiceContext["tx"]> },
+  cycle: ShoppingCycle,
+  versions: readonly CycleVersion[],
 ): Promise<AggregatedGroceryLine[]> {
+  if (versions.length === 0) return [];
+
   const entries = await ctx.tx
     .select({
       id: planEntry.id,
       recipeId: planEntry.recipeId,
       servings: planEntry.servings,
+      dayOfWeek: planEntry.dayOfWeek,
+      planVersionId: planEntry.planVersionId,
     })
     .from(planEntry)
-    .where(eq(planEntry.planVersionId, planVersionId));
+    .where(
+      inArray(
+        planEntry.planVersionId,
+        versions.map((version) => version.id),
+      ),
+    );
+
+  const weekOfVersion = new Map(
+    versions.map((version) => [version.id, version.week]),
+  );
+  const inCycle = new Set(
+    entries
+      .filter((entry) => {
+        const week = weekOfVersion.get(entry.planVersionId);
+        if (!week) return false;
+        return isWithinCycle(cycle, dateOfEntry(week, entry.dayOfWeek));
+      })
+      .map((entry) => entry.id),
+  );
 
   const recipeIds = [
     ...new Set(
@@ -304,7 +428,10 @@ async function aggregateForVersion(
   const sourceLines: GrocerySourceLine[] = [];
   for (const entry of entries) {
     if (entry.recipeId === null) continue;
+    // Fed by another session: bought with it, whenever that was.
     if (dependentEntryIds.has(entry.id)) continue;
+    // Cooked in another cycle: bought on that cycle's shop.
+    if (!inCycle.has(entry.id)) continue;
 
     const basket = baskets.get(entry.recipeId);
     if (!basket) continue;
@@ -521,24 +648,22 @@ async function findActiveVersion(
 }
 
 /**
- * The live list for a week, found by joining through the version it was last
- * generated from. A list belongs to a week; the version it points at is only
- * the one it was last built from.
+ * The live list for a cycle, found by the date it starts on. A cycle can span
+ * two ISO weeks, so there is nothing to join through: the start date is the
+ * list's identity.
  */
 async function findLiveList(
   ctx: ServiceContext & { tx: NonNullable<ServiceContext["tx"]> },
-  isoWeek: IsoWeek,
+  cycle: ShoppingCycle,
 ): Promise<{ listId: string } | null> {
   const rows = await ctx.tx
     .select({ listId: groceryList.id })
     .from(groceryList)
-    .innerJoin(planVersion, eq(planVersion.id, groceryList.planVersionId))
-    .innerJoin(plan, eq(plan.id, planVersion.planId))
     .where(
       and(
         eq(groceryList.userId, ctx.userId),
-        eq(plan.isoYear, isoWeek.year),
-        eq(plan.isoWeek, isoWeek.week),
+        eq(groceryList.startsOn, formatCycleStart(cycle.startsOn)),
+        ne(groceryList.state, "archived"),
       ),
     )
     .limit(1);
@@ -572,16 +697,20 @@ async function loadListView(
     .select({
       id: groceryList.id,
       state: groceryList.state,
-      planVersionId: groceryList.planVersionId,
+      startsOn: groceryList.startsOn,
+      endsOn: groceryList.endsOn,
       generatedAt: groceryList.generatedAt,
       updatedAt: groceryList.updatedAt,
-      versionNumber: planVersion.versionNumber,
-      versionState: planVersion.state,
     })
     .from(groceryList)
-    .innerJoin(planVersion, eq(planVersion.id, groceryList.planVersionId))
     .where(eq(groceryList.id, listId))
     .limit(1);
+
+  const versions = await tx
+    .select({ state: planVersion.state })
+    .from(groceryListVersion)
+    .innerJoin(planVersion, eq(planVersion.id, groceryListVersion.planVersionId))
+    .where(eq(groceryListVersion.groceryListId, listId));
 
   const list = lists[0];
   if (!list) {
@@ -607,6 +736,7 @@ async function loadListView(
             entryId: planEntry.id,
             dayOfWeek: planEntry.dayOfWeek,
             title: planEntry.recipeTitleSnapshot,
+            recipeId: planEntry.recipeId,
           })
           .from(planEntry)
           .where(inArray(planEntry.id, entryIds));
@@ -614,11 +744,12 @@ async function loadListView(
   return {
     id: list.id,
     state: list.state,
-    planVersionId: list.planVersionId,
-    planVersionNumber: list.versionNumber,
+    startsOn: list.startsOn,
+    endsOn: list.endsOn,
     // A list built from a superseded version is still perfectly shoppable; the
-    // screen just says so and offers to regenerate.
-    stale: list.versionState !== "active",
+    // screen just says so and offers to regenerate. A cycle can span two weeks,
+    // so one stale contributor is enough.
+    stale: versions.some((row) => row.state !== "active"),
     generatedAt: list.generatedAt,
     updatedAt: list.updatedAt,
     lines: lines

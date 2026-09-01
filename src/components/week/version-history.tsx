@@ -54,18 +54,29 @@ export function VersionHistory({
   }
 
   return (
-    <section className="flex flex-col gap-2">
-      <h2 className="text-sm font-medium">{t("versionHistory")}</h2>
-      <p className="text-xs opacity-70">{t("versionsHelp")}</p>
+    <section className="page flex flex-col gap-3">
+      <div className="eyebrow eyebrow-rule">{t("versionHistory")}</div>
+      <p className="hint">{t("versionsHelp")}</p>
       <Feedback {...feedback} />
-      <ol className="flex flex-col gap-1 text-sm">
+      <ol className="ruled flex flex-col">
         {versions.map((version) => (
-          <li key={version.id} className="flex items-center gap-2">
-            <span className="font-medium">
-              {t("versionLabel", { number: version.versionNumber })}
+          <li key={version.id} className="flex flex-wrap items-center gap-3 py-2.5">
+            <span className="micro w-10 text-ink">
+              <span className="sr-only">
+                {t("versionLabel", { number: version.versionNumber })}
+              </span>
+              <span aria-hidden="true">v{version.versionNumber}</span>
             </span>
-            <span className="text-xs opacity-60">
-              {stateLabel[version.state] ?? version.state} ·{" "}
+            <span
+              className={`chip ${version.state === "active" ? "chip-ok" : ""}`}
+            >
+              {stateLabel[version.state] ?? version.state}
+            </span>
+            <span
+              className={`chip ${
+                version.createdBy === "agent" ? "chip-agent" : ""
+              }`}
+            >
               {version.createdBy === "agent"
                 ? t("createdByAgent")
                 : t("createdByUser")}
@@ -75,7 +86,7 @@ export function VersionHistory({
                 type="button"
                 disabled={pending}
                 onClick={() => void revert(version.versionNumber)}
-                className="text-xs underline disabled:opacity-50"
+                className="link ml-auto text-xs disabled:opacity-50"
               >
                 {t("revert")}
               </button>

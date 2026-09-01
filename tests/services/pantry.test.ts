@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { formatCycleStart } from "@/domain/shopping";
+import { isoWeekStart } from "@/domain/week";
 import { DomainError } from "@/domain/errors";
 import { currentIsoWeek } from "@/domain/week";
 import { agentContext } from "@/services/context";
@@ -14,6 +16,15 @@ import { createRecipe } from "@/services/recipe-service";
 import { listMealTypes } from "@/services/slot-service";
 import { composeProfileSnapshot } from "@/services/snapshot-service";
 import { cleanupUser, testUser } from "../helpers/fixtures";
+
+/**
+ * Grocery lists cover a shopping cycle, not a week. These tests plan by week,
+ * so they shop on the Monday cycle of that week, which is exactly the fallback
+ * an account with no shopping day set gets.
+ */
+function cycleOf(week: { year: number; week: number }): string {
+  return formatCycleStart(isoWeekStart(week));
+}
 
 /**
  * Two short lists, and what they change downstream: a grocery list that leaves
@@ -89,7 +100,7 @@ describe("the lists themselves", () => {
 
 describe("what the pantry does to a grocery list", () => {
   it("marks a staple as covered rather than dropping the line", async () => {
-    const { list } = await generateGroceryList(ctx, week);
+    const { list } = await generateGroceryList(ctx, cycleOf(week));
 
     const pasta = list.lines.find((line) => line.displayName === "Pâtes");
     // Still there, so the user can check it. Being out of pasta the one week it
@@ -102,7 +113,7 @@ describe("what the pantry does to a grocery list", () => {
   });
 
   it("marks a use-soon ingredient so it gets finished", async () => {
-    const { list } = await generateGroceryList(ctx, week);
+    const { list } = await generateGroceryList(ctx, cycleOf(week));
     const courgette = list.lines.find(
       (line) => line.displayName === "Courgette",
     );
@@ -112,7 +123,7 @@ describe("what the pantry does to a grocery list", () => {
   it("re-evaluates coverage on every regeneration", async () => {
     await addPantryItems(ctx, [{ kind: "staple", name: "Huile d'olive" }]);
 
-    const { list } = await generateGroceryList(ctx, week);
+    const { list } = await generateGroceryList(ctx, cycleOf(week));
     const oil = list.lines.find((line) => line.displayName === "Huile d'olive");
     // A staple added since the last generation drops off now, not next week.
     expect(oil?.coveredByPantry).toBe(true);

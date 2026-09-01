@@ -79,7 +79,7 @@ export function FeedbackBoard({
       <Feedback {...feedbackState} />
 
       {rows.length === 0 ? (
-        <p className="text-sm opacity-70">{t("empty")}</p>
+        <p className="hint">{t("empty")}</p>
       ) : (
         <ul className="flex flex-col gap-3">
           {rows.map((row) => (
@@ -95,20 +95,18 @@ export function FeedbackBoard({
         </ul>
       )}
 
-      <section className="flex flex-col gap-2 border-t border-black/10 pt-4 dark:border-white/15">
-        <h2 className="text-sm font-medium uppercase tracking-wide opacity-60">
-          {t("signals")}
-        </h2>
-        <p className="max-w-2xl text-xs opacity-70">{t("signalsHelp")}</p>
+      <section className="flex flex-col gap-3 border-t border-rule pt-6">
+        <h2 className="eyebrow eyebrow-rule">{t("signals")}</h2>
+        <p className="hint">{t("signalsHelp")}</p>
 
         {signals.length === 0 && suggestions.length === 0 ? (
-          <p className="text-sm opacity-70">{t("noSignals")}</p>
+          <p className="hint">{t("noSignals")}</p>
         ) : null}
 
         {signals.length > 0 ? (
-          <ul className="flex flex-col gap-1 text-sm">
+          <ul className="ruled flex flex-col text-sm">
             {signals.map((signal, index) => (
-              <li key={`${signal.code}-${index}`} className="opacity-90">
+              <li key={`${signal.code}-${index}`} className="py-2">
                 {signal.message}
               </li>
             ))}
@@ -118,7 +116,7 @@ export function FeedbackBoard({
         {suggestions.map((suggestion) => (
           <div
             key={`${suggestion.dayOfWeek}:${suggestion.mealTypeId}`}
-            className="flex flex-wrap items-center gap-3 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm"
+            className="banner banner-warn"
           >
             <span>
               {t("budgetSuggestion", {
@@ -142,7 +140,7 @@ export function FeedbackBoard({
                   ),
                 )
               }
-              className="rounded-md border border-black/15 px-3 py-1 text-xs disabled:opacity-50 dark:border-white/20"
+              className="btn btn-quiet btn-sm ml-auto"
             >
               {t("budgetApply")}
             </button>
@@ -193,28 +191,29 @@ function FeedbackRowForm({
     row.feedback?.portionIssue ?? "",
   );
 
-  const field =
-    "rounded-md border border-black/15 px-2 py-1 text-sm dark:border-white/20";
-
   return (
-    <li className="flex flex-col gap-2 rounded-md border border-black/15 p-3 dark:border-white/20">
-      <div className="flex flex-wrap items-baseline gap-2">
-        <span className="text-sm font-medium">{row.recipeTitle}</span>
-        <span className="text-xs opacity-60">
+    <li
+      className={`slip flex flex-col gap-3 border-l-[3px] p-4 ${
+        row.feedback === null ? "border-l-rule-strong" : "border-l-olive"
+      }`}
+    >
+      <div className="flex flex-wrap items-baseline gap-2.5">
+        <span className="display text-base">{row.recipeTitle}</span>
+        <span className="eyebrow">
           {dayLabel} {row.mealTypeLabel.toLowerCase()}
         </span>
         {row.feedback === null ? (
-          <span className="text-xs opacity-50">{t("notAnswered")}</span>
+          <span className="chip">{t("notAnswered")}</span>
         ) : null}
       </div>
 
       <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="opacity-70">{t("outcome")}</span>
+        <label className="label">
+          <span>{t("outcome")}</span>
           <select
             value={outcome}
             onChange={(event) => setOutcome(event.target.value)}
-            className={field}
+            className="field"
           >
             <option value="">{common("none")}</option>
             {FEEDBACK_OUTCOMES.map((value) => (
@@ -226,23 +225,23 @@ function FeedbackRowForm({
         </label>
 
         {outcome === "swapped" ? (
-          <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-xs">
-            <span className="opacity-70">{t("swappedFor")}</span>
+          <label className="label min-w-[10rem] flex-1">
+            <span>{t("swappedFor")}</span>
             <input
               value={swappedFor}
               placeholder={t("swappedForPlaceholder")}
               onChange={(event) => setSwappedFor(event.target.value)}
-              className={`w-full ${field}`}
+              className="field"
             />
           </label>
         ) : null}
 
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="opacity-70">{t("rating")}</span>
+        <label className="label">
+          <span>{t("rating")}</span>
           <select
             value={rating}
             onChange={(event) => setRating(event.target.value)}
-            className={field}
+            className="field"
           >
             <option value="">{common("none")}</option>
             {[1, 2, 3, 4, 5].map((value) => (
@@ -253,12 +252,12 @@ function FeedbackRowForm({
           </select>
         </label>
 
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="opacity-70">{t("portionIssue")}</span>
+        <label className="label">
+          <span>{t("portionIssue")}</span>
           <select
             value={portionIssue}
             onChange={(event) => setPortionIssue(event.target.value)}
-            className={field}
+            className="field"
           >
             <option value="">{t("portions.none")}</option>
             {PORTION_ISSUES.map((value) => (
@@ -269,7 +268,7 @@ function FeedbackRowForm({
           </select>
         </label>
 
-        <label className="flex items-center gap-2 py-1 text-xs">
+        <label className="flex items-center gap-2 py-1 text-sm">
           <input
             type="checkbox"
             checked={tookLonger}
@@ -279,13 +278,13 @@ function FeedbackRowForm({
         </label>
       </div>
 
-      <label className="flex flex-col gap-1 text-xs">
-        <span className="opacity-70">{t("note")}</span>
+      <label className="label">
+        <span>{t("note")}</span>
         <input
           value={note}
           placeholder={t("notePlaceholder")}
           onChange={(event) => setNote(event.target.value)}
-          className={`w-full ${field}`}
+          className="field"
         />
       </label>
 
@@ -305,7 +304,7 @@ function FeedbackRowForm({
               }),
             )
           }
-          className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
+          className="btn btn-primary btn-sm"
         >
           {t("save")}
         </button>
@@ -315,7 +314,7 @@ function FeedbackRowForm({
             type="button"
             disabled={disabled}
             onClick={() => void onRun(() => clearFeedbackAction(week, row.entryId))}
-            className="text-xs underline opacity-60 disabled:opacity-30"
+            className="btn btn-ghost btn-sm"
           >
             {t("clear")}
           </button>

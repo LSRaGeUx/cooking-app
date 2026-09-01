@@ -104,6 +104,16 @@ export const profileInputSchema = z.object({
     .max(5)
     .default(3)
     .describe("1 = j'aime la répétition, 5 = ne jamais répéter un plat."),
+  shoppingDay: z
+    .number()
+    .int()
+    .min(1)
+    .max(7)
+    .nullable()
+    .default(null)
+    .describe(
+      "Jour de courses hebdomadaire, 1 = lundi à 7 = dimanche. Définit le cycle que couvre une liste de courses : sept jours à partir de ce jour, ce jour inclus. Null si la personne n'a rien indiqué.",
+    ),
   weeklyBudgetAmount: z.number().min(0).max(100000).nullable().default(null),
   weeklyBudgetCurrency: z.string().length(3).nullable().default(null),
   agentAuthority: z.enum(AGENT_AUTHORITIES).default("proposal"),

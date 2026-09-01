@@ -43,9 +43,9 @@ export function RecipeImport() {
   }
 
   return (
-    <section className="flex flex-col gap-2 rounded-md border border-black/10 p-3 dark:border-white/15">
-      <h2 className="text-sm font-medium">{t("import")}</h2>
-      <p className="max-w-2xl text-xs opacity-70">{t("importHelp")}</p>
+    <section className="slip flex flex-col gap-3 border-l-[3px] border-l-ember p-4">
+      <h2 className="eyebrow">{t("import")}</h2>
+      <p className="hint">{t("importHelp")}</p>
       <Feedback {...feedback} />
       <div className="flex flex-wrap items-center gap-2">
         <input
@@ -53,13 +53,13 @@ export function RecipeImport() {
           value={url}
           placeholder={t("importPlaceholder")}
           onChange={(event) => setUrl(event.target.value)}
-          className="min-w-[14rem] flex-1 rounded-md border border-black/15 px-3 py-2 text-sm dark:border-white/20"
+          className="min-w-[14rem] flex-1"
         />
         <button
           type="button"
           disabled={pending || url.trim().length === 0}
           onClick={() => void submit()}
-          className="rounded-md border border-black/15 px-3 py-2 text-sm disabled:opacity-50 dark:border-white/20"
+          className="btn btn-primary"
         >
           {pending ? t("importing") : t("importSubmit")}
         </button>

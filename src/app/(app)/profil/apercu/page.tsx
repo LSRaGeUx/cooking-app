@@ -15,19 +15,19 @@ export default async function SnapshotPage() {
   });
 
   return (
-    <div className="flex flex-col gap-5">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold">{t("title")}</h1>
-          <p className="max-w-2xl text-sm opacity-70">{t("intro")}</p>
-          <p className="text-xs opacity-50">
+    <div className="page flex flex-col gap-5">
+      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-rule pb-4">
+        <div className="flex flex-col gap-2">
+          <h1 className="title rise">{t("title")}</h1>
+          <p className="lede">{t("intro")}</p>
+          <p className="micro">
             {t("budget", {
               included: snapshot.factBudget.included,
               active: snapshot.factBudget.active,
             })}
           </p>
         </div>
-        <Link href="/profil" className="text-sm underline">
+        <Link href="/profil" className="btn btn-quiet btn-sm">
           {t("backToProfile")}
         </Link>
       </header>

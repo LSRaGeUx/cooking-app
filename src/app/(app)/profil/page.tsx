@@ -20,16 +20,13 @@ export default async function ProfilePage() {
   const equipment = await listEquipment(ctx);
 
   return (
-    <div className="flex flex-col gap-8">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold">{t("title")}</h1>
-          <p className="max-w-2xl text-sm opacity-70">{t("intro")}</p>
+    <div className="page flex flex-col gap-8">
+      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-rule pb-4">
+        <div className="flex flex-col gap-2">
+          <h1 className="title rise">{t("title")}</h1>
+          <p className="lede">{t("intro")}</p>
         </div>
-        <Link
-          href="/profil/apercu"
-          className="rounded-md border border-black/15 px-3 py-1.5 text-sm dark:border-white/20"
-        >
+        <Link href="/profil/apercu" className="btn btn-quiet">
           {t("viewSnapshot")}
         </Link>
       </header>
@@ -43,6 +40,7 @@ export default async function ProfilePage() {
           defaultTimeBudgetMin: profile.defaultTimeBudgetMin,
           timeBudgetToleranceMin: profile.timeBudgetToleranceMin,
           varietyPreference: profile.varietyPreference,
+          shoppingDay: profile.shoppingDay,
           weeklyBudgetAmount:
             profile.weeklyBudgetAmount === null
               ? null

@@ -59,35 +59,37 @@ export function EntryPanel({
     <div
       role="dialog"
       aria-label={t("editEntry")}
-      className="flex flex-col gap-3 rounded-md border border-black/15 bg-white p-3 shadow-lg dark:border-white/20 dark:bg-neutral-900"
+      className="slip-float flex flex-col gap-4 p-4"
     >
       <div className="flex items-baseline justify-between gap-2">
-        <h3 className="text-sm font-medium">{entry.recipeTitleSnapshot}</h3>
-        <button type="button" onClick={onClose} className="text-xs underline">
+        <h3 className="display text-base leading-snug">
+          {entry.recipeTitleSnapshot}
+        </h3>
+        <button type="button" onClick={onClose} className="link text-xs">
           {common("close")}
         </button>
       </div>
 
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="font-medium">{t("servingsLabel")}</span>
+      <label className="label">
+        <span>{t("servingsLabel")}</span>
         <input
           type="number"
           min={1}
           max={50}
           value={servings}
           onChange={(event) => setServings(Number(event.target.value))}
-          className="rounded-md border border-black/15 px-2 py-1 dark:border-white/20"
+          className="w-24"
         />
       </label>
 
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="font-medium">{t("noteLabel")}</span>
+      <label className="label">
+        <span>{t("noteLabel")}</span>
         <textarea
           value={note}
           rows={2}
           placeholder={t("notePlaceholder")}
           onChange={(event) => setNote(event.target.value)}
-          className="rounded-md border border-black/15 px-2 py-1 dark:border-white/20"
+          className="field"
         />
       </label>
 
@@ -97,18 +99,18 @@ export function EntryPanel({
         onClick={() =>
           onSave({ servings, note: note.trim().length > 0 ? note.trim() : null })
         }
-        className="rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-black"
+        className="btn btn-primary self-start"
       >
         {disabled ? common("saving") : common("save")}
       </button>
 
-      <div className="flex flex-col gap-1 border-t border-black/10 pt-3 dark:border-white/15">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium">{t("duplicate")}</span>
+      <div className="flex flex-col gap-2 border-t border-rule pt-4">
+        <label className="label">
+          <span>{t("duplicate")}</span>
           <select
             value={duplicateTarget}
             onChange={(event) => setDuplicateTarget(event.target.value)}
-            className="rounded-md border border-black/15 px-2 py-1 dark:border-white/20"
+            className="field"
           >
             <option value="">{common("none")}</option>
             {targets.map((slot) => (
@@ -129,15 +131,15 @@ export function EntryPanel({
             if (!day || !mealTypeId) return;
             onDuplicate({ dayOfWeek: Number(day), mealTypeId });
           }}
-          className="self-start rounded-md border border-black/15 px-3 py-1.5 text-sm disabled:opacity-50 dark:border-white/20"
+          className="btn btn-quiet btn-sm self-start"
         >
           {t("duplicate")}
         </button>
       </div>
 
-      <div className="flex flex-col gap-1 border-t border-black/10 pt-3 dark:border-white/15">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium">{t("prepLink")}</span>
+      <div className="flex flex-col gap-2 border-t border-rule pt-4">
+        <label className="label">
+          <span>{t("prepLink")}</span>
           <select
             value={prepSourceId ?? ""}
             disabled={disabled}
@@ -146,7 +148,7 @@ export function EntryPanel({
                 ? onUnlinkPrep()
                 : onLinkPrep(event.target.value)
             }
-            className="rounded-md border border-black/15 px-2 py-1 dark:border-white/20"
+            className="field"
           >
             <option value="">{t("prepLinkNone")}</option>
             {prepCandidates.map((candidate) => (
@@ -155,7 +157,7 @@ export function EntryPanel({
               </option>
             ))}
           </select>
-          <span className="text-xs opacity-70">{t("prepLinkHelp")}</span>
+          <span className="hint">{t("prepLinkHelp")}</span>
         </label>
       </div>
 
@@ -163,7 +165,7 @@ export function EntryPanel({
         type="button"
         disabled={disabled}
         onClick={onClear}
-        className="self-start text-sm text-red-700 underline disabled:opacity-50 dark:text-red-400"
+        className="btn btn-danger btn-sm self-start"
       >
         {t("clear")}
       </button>

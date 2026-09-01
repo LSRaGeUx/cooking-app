@@ -57,7 +57,7 @@ export function ConsentForm() {
   return (
     <div className="flex flex-col gap-3">
       {failed ? (
-        <p role="alert" className="text-sm text-red-700 dark:text-red-400">
+        <p role="alert" className="banner banner-danger">
           {t("failed")}
         </p>
       ) : null}
@@ -67,7 +67,7 @@ export function ConsentForm() {
           type="button"
           disabled={pending !== null}
           onClick={() => decide(true)}
-          className="flex-1 rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-black"
+          className="btn btn-primary flex-1"
         >
           {pending === "allow" ? t("submitting") : t("allow")}
         </button>
@@ -75,13 +75,13 @@ export function ConsentForm() {
           type="button"
           disabled={pending !== null}
           onClick={() => decide(false)}
-          className="flex-1 rounded-md border border-black/15 px-4 py-2 text-sm font-medium disabled:opacity-60 dark:border-white/20"
+          className="btn btn-quiet flex-1"
         >
           {pending === "deny" ? t("submitting") : t("deny")}
         </button>
       </div>
 
-      <p className="text-xs opacity-70">{t("reversible")}</p>
+      <p className="hint">{t("reversible")}</p>
     </div>
   );
 }

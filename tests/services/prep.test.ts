@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { formatCycleStart } from "@/domain/shopping";
+import { isoWeekStart } from "@/domain/week";
 import { DomainError } from "@/domain/errors";
 import { currentIsoWeek } from "@/domain/week";
 import { agentContext } from "@/services/context";
@@ -14,6 +16,15 @@ import { linkPrep, loadPrepLinks, unsourcedLinks } from "@/services/prep-service
 import { createRecipe } from "@/services/recipe-service";
 import { listMealTypes } from "@/services/slot-service";
 import { cleanupUser, testUser } from "../helpers/fixtures";
+
+/**
+ * Grocery lists cover a shopping cycle, not a week. These tests plan by week,
+ * so they shop on the Monday cycle of that week, which is exactly the fallback
+ * an account with no shopping day set gets.
+ */
+function cycleOf(week: { year: number; week: number }): string {
+  return formatCycleStart(isoWeekStart(week));
+}
 
 /**
  * "Cook double Sunday, eat Tuesday in ten minutes."
@@ -139,7 +150,7 @@ describe("linking a meal to a cooking session", () => {
 
 describe("the grocery list under a prep link", () => {
   it("counts the session once, scaled to everything drawn from it", async () => {
-    const { list } = await generateGroceryList(ctx, week);
+    const { list } = await generateGroceryList(ctx, cycleOf(week));
     const beef = list.lines.find((line) => line.displayName === "Boeuf haché")
       ?? list.lines.find((line) => line.displayName.toLowerCase().includes("boeuf"));
 

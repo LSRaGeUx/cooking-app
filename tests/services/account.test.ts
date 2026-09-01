@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { formatCycleStart } from "@/domain/shopping";
+import { isoWeekStart } from "@/domain/week";
 import { currentIsoWeek } from "@/domain/week";
 import { deleteAccount, exportAccount } from "@/services/account-service";
 import { createFact } from "@/services/fact-service";
@@ -9,6 +11,15 @@ import { assignRecipe } from "@/services/plan-service";
 import { createRecipe } from "@/services/recipe-service";
 import { listMealTypes } from "@/services/slot-service";
 import { cleanupUser, testUser } from "../helpers/fixtures";
+
+/**
+ * Grocery lists cover a shopping cycle, not a week. These tests plan by week,
+ * so they shop on the Monday cycle of that week, which is exactly the fallback
+ * an account with no shopping day set gets.
+ */
+function cycleOf(week: { year: number; week: number }): string {
+  return formatCycleStart(isoWeekStart(week));
+}
 
 /**
  * Taking your data out, and taking your account down.
@@ -50,7 +61,7 @@ beforeAll(async () => {
       mealTypeId: dinnerId,
       recipeId,
     });
-    await generateGroceryList(ctx, week);
+    await generateGroceryList(ctx, cycleOf(week));
     await addPantryItems(ctx, [{ kind: "staple", name: "farine" }]);
     await createFact(ctx, {
       statement: "N'aime pas la coriandre",

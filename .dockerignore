@@ -1,0 +1,14 @@
+# Everything the build does not need. Keeping .env out is the important line:
+# the image must take its configuration at runtime, not carry a copy of someone's
+# secret into a layer.
+.env
+.env.*
+.git
+.github
+.next
+node_modules
+npm-debug.log*
+tsconfig.tsbuildinfo
+*.md
+docs
+tests

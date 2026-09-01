@@ -4,12 +4,42 @@ import { jwt } from "better-auth/plugins";
 import { mcp } from "@better-auth/mcp";
 import { Pool } from "pg";
 import { MCP_SCOPES } from "./scopes";
+import { checkAccess } from "./access";
 
 function required(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`Missing required env var: ${name}`);
   return value;
 }
+
+const googleCredentials =
+  process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+    ? {
+        clientId: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      }
+    : undefined;
+
+/**
+ * Password sign-in is a development affordance, not a product feature. It is off
+ * unless asked for, because a second door into the same accounts is a second
+ * door to defend, and because `npm run verify:oauth` has no way to drive a
+ * Google consent screen and needs credentials to sign in with.
+ */
+const passwordLoginEnabled = process.env.AUTH_PASSWORD_LOGIN === "true";
+
+if (!googleCredentials && !passwordLoginEnabled) {
+  throw new Error(
+    "No sign-in method configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, " +
+      "or AUTH_PASSWORD_LOGIN=true for local development.",
+  );
+}
+
+/** What the login screen should offer. Derived here so there is one answer. */
+export const signInMethods = {
+  google: googleCredentials !== undefined,
+  passwordLogin: passwordLoginEnabled,
+} as const;
 
 /**
  * Better Auth owns its own tables and migrates them with its own migrator
@@ -30,7 +60,30 @@ export const auth = betterAuth({
   database: new Pool({ connectionString: required("DATABASE_URL") }),
   baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
   emailAndPassword: {
-    enabled: true,
+    enabled: passwordLoginEnabled,
+  },
+  socialProviders: googleCredentials ? { google: googleCredentials } : {},
+  user: {
+    /**
+     * The access gate. Better Auth calls this before creating a user, before
+     * linking an account, and on every OAuth sign-in, across every method, so
+     * one rule covers Google, the development password door, and anything added
+     * later. Returning `{ error }` turns into a redirect to `errorCallbackURL`
+     * carrying the code, which `/login` translates.
+     */
+    validateUserInfo: ({ user }) => {
+      const email = typeof user.email === "string" ? user.email : "";
+      const result = checkAccess(email);
+      if (result.allowed) return;
+      return { error: result.code, errorDescription: "Address not permitted on this instance" };
+    },
+  },
+  account: {
+    // One provider, so linking has nothing to link. Off, it removes the case
+    // where a second identity claiming an allowlisted address inherits the
+    // account that already holds it. An account already linked is unaffected:
+    // sign-in finds it by provider and account id, before the linking branch.
+    accountLinking: { enabled: false },
   },
   plugins: [
     jwt(),

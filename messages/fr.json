@@ -14,7 +14,14 @@
     "agent": "Agent",
     "account": "Compte",
     "signOut": "Se déconnecter",
-    "skipToContent": "Aller au contenu"
+    "skipToContent": "Aller au contenu",
+    "groupPlan": "Cuisine",
+    "groupSettings": "Réglages",
+    "more": "Plus",
+    "theme": "Thème",
+    "themeLight": "Clair",
+    "themeDark": "Sombre",
+    "weekBadge": "S{week} · {year}"
   },
   "common": {
     "save": "Enregistrer",
@@ -43,7 +50,14 @@
     "noAccount": "Pas encore de compte ?",
     "signUpLink": "Créer un compte",
     "failed": "Connexion impossible. Vérifiez votre adresse e-mail et votre mot de passe.",
-    "oauthNotice": "Après connexion, vous serez invité à autoriser l'application qui a demandé l'accès."
+    "oauthNotice": "Après connexion, vous serez invité à autoriser l'application qui a demandé l'accès.",
+    "google": "Continuer avec Google",
+    "googlePending": "Redirection…",
+    "googleFailed": "Impossible d'ouvrir la connexion Google. Réessayez.",
+    "accessDenied": "Cette adresse n'a pas accès à cette instance. Demandez à y être ajouté.",
+    "accessNotConfigured": "Aucune liste d'accès n'est configurée sur cette instance, donc personne ne peut se connecter. Renseignez ALLOWED_EMAILS.",
+    "signInFailed": "La connexion a échoué. Réessayez.",
+    "passwordNotice": "Connexion par mot de passe, activée pour le développement local."
   },
   "signup": {
     "title": "Créer un compte",
@@ -87,6 +101,12 @@
   },
   "week": {
     "title": "Semaine {week} de {year}",
+    "label": "Semaine",
+    "todayMark": "Aujourd'hui",
+    "shoppingMark": "Courses",
+    "statMeals": "Repas",
+    "statMinutes": "Min actives",
+    "statRecipes": "Recettes",
     "previous": "Semaine précédente",
     "next": "Semaine suivante",
     "today": "Semaine en cours",
@@ -234,6 +254,7 @@
   },
   "recipes": {
     "title": "Recettes",
+    "countLabel": "Recettes",
     "count": "{count, plural, =0 {Aucune recette} one {# recette} other {# recettes}}",
     "new": "Nouvelle recette",
     "searchPlaceholder": "Chercher par titre, description ou étiquette",
@@ -252,6 +273,8 @@
       "ingredients": "Ingrédients",
       "steps": "Étapes",
       "unattended": "sans surveillance",
+      "noIngredients": "Aucun ingrédient enregistré.",
+      "noSteps": "Aucune étape enregistrée.",
       "revision": "Révision {number}",
       "deleted": "Cette recette est supprimée. Elle reste visible pour l'historique.",
       "allergenWarning": "Contient un allergène déclaré"
@@ -308,12 +331,17 @@
   },
   "grocery": {
     "title": "Courses",
-    "subtitle": "Semaine {week} de {year}",
+    "cycleRange": "Du {from} au {to}",
+    "previousCycle": "Courses précédentes",
+    "nextCycle": "Courses suivantes",
+    "currentCycle": "Courses en cours",
+    "noShoppingDay": "Vos listes suivent la semaine du lundi au dimanche. Indiquez votre jour de courses dans le profil pour qu'elles couvrent plutôt les jours entre deux courses.",
+    "setShoppingDay": "Choisir mon jour de courses",
     "generate": "Générer la liste",
     "regenerate": "Mettre à jour depuis le plan",
     "generating": "Génération…",
-    "empty": "Aucune liste pour cette semaine. Générez-la depuis votre plan.",
-    "noPlan": "Planifiez au moins un repas cette semaine pour générer une liste.",
+    "empty": "Aucune liste pour ces courses. Générez-la depuis votre plan.",
+    "noPlan": "Planifiez au moins un repas sur cette période pour générer une liste.",
     "emptyList": "La liste est vide. Ajoutez une ligne, ou planifiez des repas.",
     "goToWeek": "Voir la semaine",
     "stale": "Le plan a changé depuis la génération de cette liste.",
@@ -393,6 +421,9 @@
     "timeBudgetToleranceHelp": "Au-delà du budget plus cette tolérance, une proposition est refusée, pas seulement signalée.",
     "varietyPreference": "Préférence de variété",
     "varietyPreferenceHelp": "1 : la répétition ne vous dérange pas. 5 : ne jamais répéter un plat dans la semaine.",
+    "shoppingDay": "Jour de courses",
+    "shoppingDayNone": "Pas de jour fixe",
+    "shoppingDayHelp": "Vos listes de courses couvrent les sept jours à partir de ce jour, celui-ci compris. Le jour venu, la liste bascule sur la période qui commence. Sans jour fixe, elles suivent la semaine du lundi au dimanche.",
     "weeklyBudget": "Budget hebdomadaire",
     "weeklyBudgetCurrency": "Devise",
     "weeklyBudgetHelp": "Indicatif. Les prix des ingrédients ne sont pas suivis.",
@@ -443,7 +474,11 @@
       "negative": "Négative",
       "neutral": "Neutre"
     },
-    "confidences": { "low": "Faible", "medium": "Moyenne", "high": "Haute" },
+    "confidences": {
+      "low": "Faible",
+      "medium": "Moyenne",
+      "high": "Haute"
+    },
     "statuses": {
       "unconfirmed": "Non confirmé",
       "confirmed": "Confirmé",

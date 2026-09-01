@@ -16,7 +16,7 @@ export function LocaleSwitch() {
   const [pending, startTransition] = useTransition();
 
   return (
-    <div className="flex items-center gap-1" role="group" aria-label="Language">
+    <div className="segmented" role="group" aria-label="Language">
       {locales.map((locale) => (
         <button
           key={locale}
@@ -30,9 +30,7 @@ export function LocaleSwitch() {
               router.refresh();
             })
           }
-          className={`rounded px-1.5 py-0.5 text-xs uppercase ${
-            locale === current ? "font-semibold" : "opacity-50 hover:opacity-100"
-          }`}
+          className={locale === current ? "" : "cursor-pointer"}
         >
           {locale}
         </button>

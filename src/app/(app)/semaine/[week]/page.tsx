@@ -7,11 +7,14 @@ import {
   currentIsoWeek,
   formatIsoWeek,
   isoWeekDates,
+  isSameIsoWeek,
   ISO_DAYS,
   parseIsoWeek,
   shiftIsoWeek,
 } from "@/domain/week";
+import { cycleContaining, formatCycleStart } from "@/domain/shopping";
 import { requireUser } from "@/lib/session";
+import { getProfile } from "@/services/profile-service";
 import { pendingFeedback } from "@/services/feedback-service";
 import { getWeekView, listVersions } from "@/services/plan-service";
 import { loadPrepLinks } from "@/services/prep-service";
@@ -20,6 +23,11 @@ import { loadRecipeSummaries, searchRecipes } from "@/services/recipe-service";
 /**
  * The week screen. Deep-linkable per ISO week, always with the year, because a
  * bare week number is ambiguous across the new year.
+ *
+ * Built from bands rather than from a document: a masthead cell holding the
+ * week number, three figure cells beside it, a control band, then the wall.
+ * Nothing is centred and nothing has a margin, so the grid runs to both edges
+ * of the screen and the page reads as one continuous object.
  */
 export default async function WeekPage({
   params,
@@ -56,8 +64,9 @@ export default async function WeekPage({
     [...summaries.values()].map((summary) => [summary.id, summary.activeTimeMin]),
   );
 
+  const locale = await getLocale();
   const dates = isoWeekDates(isoWeek);
-  const dateFormatter = new Intl.DateTimeFormat(await getLocale(), {
+  const dayFormatter = new Intl.DateTimeFormat(locale, {
     day: "numeric",
     month: "short",
     timeZone: "UTC",
@@ -65,53 +74,110 @@ export default async function WeekPage({
   const dayLabels = Object.fromEntries(
     ISO_DAYS.map((day) => [
       String(day),
-      dateFormatter.format(dates[day - 1] ?? dates[0]!),
+      dayFormatter.format(dates[day - 1] ?? dates[0]!),
     ]),
   );
+  const dayNumbers = Object.fromEntries(
+    ISO_DAYS.map((day) => [
+      String(day),
+      String((dates[day - 1] ?? dates[0]!).getUTCDate()),
+    ]),
+  );
+  const span = `${dayFormatter.format(dates[0]!)} – ${dayFormatter.format(dates[6]!)} ${isoWeek.year}`;
 
   const previous = shiftIsoWeek(isoWeek, -1);
   const next = shiftIsoWeek(isoWeek, 1);
   const today = currentIsoWeek();
 
+  // The tomato day head only makes sense on the week that contains today.
+  const now = new Date();
+  const todayDayOfWeek = isSameIsoWeek(isoWeek, today)
+    ? now.getDay() === 0
+      ? 7
+      : now.getDay()
+    : null;
+
+  // The shop that covers this week, and the column it lands on. Seeing the line
+  // while planning is the point: everything after it is on the next shop.
+  const profile = await getProfile(ctx);
+  const shoppingCycle = cycleContaining(
+    isSameIsoWeek(isoWeek, today) ? now : dates[0]!,
+    profile.shoppingDay,
+  );
+  const groceryHref = `/courses/${formatCycleStart(shoppingCycle.startsOn)}`;
+
+  const activeMinutes = view.entries.reduce(
+    (total, entry) =>
+      total +
+      (entry.recipeId ? (activeTimeByRecipeId[entry.recipeId] ?? 0) : 0),
+    0,
+  );
+  const figures = [
+    { label: t("statMeals"), value: view.entries.length },
+    { label: t("statMinutes"), value: activeMinutes },
+    { label: t("statRecipes"), value: referencedIds.length },
+  ];
+
   return (
-    <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-baseline justify-between gap-3">
-        <h1 className="text-2xl font-semibold">
-          {t("title", { week: isoWeek.week, year: isoWeek.year })}
-        </h1>
-        <nav className="flex items-center gap-3 text-sm">
-          <Link href={`/semaine/${formatIsoWeek(previous)}`} className="underline">
-            {t("previous")}
-          </Link>
-          <Link href={`/semaine/${formatIsoWeek(today)}`} className="underline">
-            {t("today")}
-          </Link>
-          <Link href={`/semaine/${formatIsoWeek(next)}`} className="underline">
-            {t("next")}
-          </Link>
-          <Link
-            href={`/courses/${formatIsoWeek(isoWeek)}`}
-            className="rounded-md border border-black/15 px-3 py-1.5 dark:border-white/20"
+    <div className="flex flex-col">
+      <section className="wall grid-cols-3 border-t-0 lg:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))]">
+        <div className="block col-span-3 flex flex-col gap-2 px-5 py-7 lg:col-span-1 lg:px-8">
+          <span className="label-text text-muted">{t("label")}</span>
+          <h1 className="mega wipe">
+            <span className="sr-only">
+              {t("title", { week: isoWeek.week, year: isoWeek.year })}
+            </span>
+            <span aria-hidden="true">
+              {String(isoWeek.week).padStart(2, "0")}
+            </span>
+          </h1>
+          <span className="micro">{span}</span>
+        </div>
+
+        {figures.map((figure) => (
+          <div
+            key={figure.label}
+            className="block flex flex-col justify-between gap-4 px-4 py-5 lg:px-5"
           >
-            {t("groceryLink")}
+            <span className="numeral text-4xl lg:text-6xl">
+              {String(figure.value).padStart(2, "0")}
+            </span>
+            <span className="label-text text-muted">{figure.label}</span>
+          </div>
+        ))}
+      </section>
+
+      <nav className="band flex flex-wrap items-center gap-3 bg-panel px-5 py-3 lg:px-8">
+        <div className="segmented">
+          <Link href={`/semaine/${formatIsoWeek(previous)}`}>
+            <span aria-hidden="true">&lsaquo;&nbsp;</span>
+            <span className="sr-only sm:not-sr-only">{t("previous")}</span>
           </Link>
-        </nav>
-      </header>
+          <Link href={`/semaine/${formatIsoWeek(today)}`}>{t("today")}</Link>
+          <Link href={`/semaine/${formatIsoWeek(next)}`}>
+            <span className="sr-only sm:not-sr-only">{t("next")}</span>
+            <span aria-hidden="true">&nbsp;&rsaquo;</span>
+          </Link>
+        </div>
+        <Link
+          href={groceryHref}
+          className="btn btn-primary ml-auto"
+        >
+          {t("groceryLink")}
+        </Link>
+      </nav>
 
       {awaiting.length > 0 ? (
         // A strip, never a modal: the spec is explicit that this prompt must
         // not block, and a prompt that blocks is a prompt people learn to
         // dismiss without reading.
-        <aside className="flex flex-wrap items-center gap-3 rounded-md border border-black/10 px-3 py-2 dark:border-white/15">
-          <div className="flex flex-col">
-            <span className="text-sm">
-              {t("feedbackPrompt", { count: awaiting.length })}
-            </span>
-            <span className="text-xs opacity-60">{t("feedbackPromptHelp")}</span>
-          </div>
+        <aside className="band flex flex-wrap items-center gap-4 bg-yellow px-5 py-3 text-ink lg:px-8">
+          <span className="lede">
+            {t("feedbackPrompt", { count: awaiting.length })}
+          </span>
           <Link
             href={`/semaine/${formatIsoWeek(isoWeek)}/bilan`}
-            className="ml-auto rounded-md border border-black/15 px-3 py-1.5 text-sm dark:border-white/20"
+            className="btn ml-auto"
           >
             {t("feedbackFill")}
           </Link>
@@ -119,11 +185,14 @@ export default async function WeekPage({
       ) : null}
 
       {view.pendingVersion ? (
-        <aside className="flex flex-wrap items-center gap-3 rounded-md border border-amber-500/50 bg-amber-500/5 px-3 py-2">
-          <span className="text-sm">{t("pendingBanner")}</span>
+        // Cobalt, because this one is the agent speaking and nothing else on
+        // the screen is.
+        <aside className="band flex flex-wrap items-center gap-4 bg-cobalt px-5 py-3 text-on-cobalt lg:px-8">
+          <span className="label-text">{t("createdByAgent")}</span>
+          <span className="lede">{t("pendingBanner")}</span>
           <Link
             href={`/semaine/${formatIsoWeek(isoWeek)}/proposition`}
-            className="rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white dark:bg-white dark:text-black"
+            className="btn ml-auto border-current bg-transparent text-current hover:bg-on-cobalt hover:text-cobalt"
           >
             {t("pendingReview")}
           </Link>
@@ -144,6 +213,9 @@ export default async function WeekPage({
         prepLinks={prepLinks}
         activeTimeByRecipeId={activeTimeByRecipeId}
         dayLabels={dayLabels}
+        dayNumbers={dayNumbers}
+        todayDayOfWeek={todayDayOfWeek}
+        shoppingDayOfWeek={profile.shoppingDay}
       />
 
       <VersionHistory week={isoWeek} versions={versions} />

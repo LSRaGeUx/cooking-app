@@ -60,7 +60,7 @@ which is more wiring but still in the same ecosystem.
 | Auth | Better Auth, with the OIDC/MCP provider plugin | Sessions for the UI and the OAuth server for MCP from one library, one user table |
 | MCP | `@modelcontextprotocol/sdk`, Streamable HTTP | |
 | Validation | Zod, single source of truth | Same schemas generate MCP tool JSON Schema, validate HTTP payloads, and type forms. Tool descriptions live in the Zod `.describe()` calls, which keeps the "descriptions are the prompt" principle enforceable in code review |
-| UI | React with Tailwind, plus a headless component library | |
+| UI | React with Tailwind v4, design tokens in `src/app/globals.css` | No component library. The whole interface is six primitives over one token set, so a headless library would add a dependency and a second vocabulary for the same controls. Fonts are pulled at build time by `next/font` and served from this origin, so a self-hosted install makes no request to Google |
 | Drag and drop | `dnd-kit` | Accessible, keyboard-operable, which matters because the grid is the main screen |
 | i18n | `next-intl`, French default | Keys externalized from the first commit, per the locale decision |
 | Background jobs | None in v1 | Grocery generation and snapshot composition are request-time. Adding a queue before there is a job that needs one is premature |
@@ -68,6 +68,61 @@ which is more wiring but still in the same ecosystem.
 | Testing | Vitest for units, Playwright for the three critical flows | |
 | Deployment | A `compose.yaml` with app plus Postgres 18, run by Podman in dev and by Podman or Docker in prod. Also runs on a serverless host with a managed Postgres | Self-host is the stated posture. Stay on the plain Compose spec, no Docker-only extensions, so either runtime works |
 | Observability | Structured JSON logs, plus the in-app agent activity log | The activity log is a product feature, not just telemetry |
+
+### 3.1 Design language
+
+"Bloc". The interface is not a document, it is a board, and four rules hold it
+together.
+
+**Everything is a rectangle on a lattice.** A 2px ink rule separates cells, edge
+to edge, with no gaps, no rounded corners and no shadows. `.wall` draws its top
+and left rule and every child draws its right and bottom, so any grid becomes a
+continuous mesh with no doubled lines. There is no centred column and the shell
+gives no padding: screens are built from full-width bands, and a screen that is
+genuinely one column of prose opts back into a margin with `.page`.
+
+**Colour is structural.** A filled block means planned, bought, confirmed, or
+today. Empty is white, out of play is hatched. Tomato is the cook: primary
+actions, today's column, the wordmark. Cobalt is the agent, and only the agent:
+proposals, unconfirmed facts, the activity log. There is no decorative colour.
+
+**Every recipe owns one flat colour**, derived from its id
+(`src/lib/recipe-seal.ts`), and wears it in the library tile, its cell in the
+week, the edge of every shopping line it caused, and its own page. Derived,
+never stored, so it costs no column and cannot drift.
+`tests/domain/recipe-seal.test.ts` pins the stability and the spread.
+
+**One typeface.** Bricolage Grotesque has a width axis and an optical size axis,
+so the same family sets a 15px label and a 140px week number, condensed hard at
+poster sizes. A second family would be a second voice. JetBrains Mono is a
+stamp, not a voice: only strings a machine wrote or measured exactly, such as
+the MCP endpoint, a tool name or a shell command.
+
+Light is the product and dark is a preference, chosen on the settings index and
+stored in a cookie so the server renders the right ground on the first byte
+(`src/lib/theme.ts`).
+
+Navigation is a bar welded into the top rule, not a rail: the four cooking
+screens are blocks that fill with ink where you are, and the nine settings
+screens live behind one block that opens the viewport as an index. Configuration
+is not a peer of cooking. On a phone the four blocks move to the bottom, because
+the grocery list is used one-handed in a shop.
+
+The week screen is the clearest case of the whole language: meal types are rows
+and days are columns, which is what the data actually is, and a planned meal
+fills its cell with its own colour. The week is legible as a pattern before a
+single title is read. Below 1024px it becomes a stack of day bands instead,
+chosen in JavaScript rather than hidden with CSS: the two structures share
+drag-and-drop ids, and two droppables with the same id is a silent bug. The
+`DndContext` carries a fixed `id` for the same reason, so the accessibility
+ids it generates do not depend on which structure rendered first.
+
+Full width is for lattices, not for lines. A shopping row is no more usable for
+having 1500 pixels between its checkbox and its delete button, so bands keep
+their rules edge to edge while the content inside them sits in `.measure`, and
+screens that are genuinely a form rather than a grid use `.page`, which is
+centred and capped.
+
 
 ## 4. Architecture
 
@@ -127,6 +182,22 @@ An architectural constraint that decays silently unless it is mechanical:
 
 ### 5.3 Security
 
+- Sign-in is Google OAuth, and an address allowlist in the environment
+  (`ALLOWED_EMAILS`) decides who may hold an account. Google proves the address,
+  it does not grant access: every Google account on earth can reach the callback,
+  so the allowlist is the control and the provider is only the proof. It is
+  enforced in `user.validateUserInfo`, which Better Auth calls on account
+  creation, on account linking and on every OAuth sign-in, so it covers every
+  method rather than one route. An empty list is open in development and closed
+  in production, because an instance facing the internet with no list configured
+  has no door on it.
+- Email and password sign-in is off unless `AUTH_PASSWORD_LOGIN` is set. It
+  exists for local development and for `verify:oauth`, which cannot drive a
+  Google consent screen. A second door into the same accounts is a second door to
+  defend.
+- Account linking is disabled. One provider has nothing to link, and disabling it
+  removes the case where a second identity claiming an allowlisted address
+  inherits the account that already holds it.
 - MCP endpoint: OAuth bearer only, no cookie auth, so a malicious page cannot
   drive the agent surface from a logged-in browser.
 - Per-client rate limits on MCP writes.
@@ -202,3 +273,11 @@ behavior it describes.
 | 10 | Per-user normalized ingredients | Global shared table | Avoids shared-vocabulary governance in a self-hosted app; aisles are per supermarket |
 | 11 | Pantry has no numeric quantities | Full inventory | Bookkeeping is what kills pantry features |
 | 12 | RLS from the first migration | Add later | Retrofit means auditing every query path |
+| 13 | One CSS token set, no component library | Radix or Ark headless primitives | The app needs six primitives over one token set, and a library would add a dependency plus a second vocabulary for the same controls |
+| 14 | Ember for the cook, woad for the agent | A single accent colour | Provenance is a domain concept here: who wrote a fact, who proposed a week. A reserved colour answers it before a label is read |
+| 15 | Recipe colour derived from the id | A stored colour, or a colour the user picks | Costs no column, no migration and no decision, and cannot fall out of sync. A picker would also be one more thing to fill in before the app is useful |
+| 16 | Light default, dark opt in, cookie not media query | Follow `prefers-color-scheme` | Following the system meant most users only ever saw the design inverted. A cookie also lets the server render the right ground on the first byte |
+| 17 | No centred column, screens are full-width bands | A page container with a max width | The week is a lattice of meal types by days; a container puts a gutter down both sides of it and turns every screen back into a document |
+| 18 | Meal types as rows, days as columns | Seven day cards, each listing its own meals | Dinner is one thing across the week, not seven unrelated items. The row-by-column form is what the data is, and it makes the week readable as a pattern |
+| 19 | Settings behind a panel, not a takeover | A full-screen index | Blanking the screen to change a setting loses the thing you were changing it for. Nine screens still do not deserve permanent shelf space next to four |
+| 20 | Google sign-in plus an environment allowlist | Open sign-up behind a reverse proxy password, or an invite table with an admin screen | A proxy password is a shared secret with no identity behind it, and an invite table needs a screen, a role and a first admin. A list of addresses in the environment is the smallest thing that names who gets in, and Google supplies the proof that an address is theirs |

@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { formatCycleStart } from "@/domain/shopping";
+import { isoWeekStart } from "@/domain/week";
 import { DomainError } from "@/domain/errors";
 import {
   addManualLine,
@@ -14,6 +16,15 @@ import { assignRecipe, clearEntry, getWeekView } from "@/services/plan-service";
 import { createRecipe } from "@/services/recipe-service";
 import { listMealTypes } from "@/services/slot-service";
 import { cleanupUser, testUser } from "../helpers/fixtures";
+
+/**
+ * Grocery lists cover a shopping cycle, not a week. These tests plan by week,
+ * so they shop on the Monday cycle of that week, which is exactly the fallback
+ * an account with no shopping day set gets.
+ */
+function cycleOf(week: { year: number; week: number }): string {
+  return formatCycleStart(isoWeekStart(week));
+}
 
 /**
  * The behaviour that matters here is the merge. A user standing in a shop with
@@ -69,12 +80,12 @@ afterAll(async () => {
 describe("generating a list", () => {
   it("refuses when the week has no active plan", async () => {
     await expect(
-      generateGroceryList(ctx, { year: 2026, week: 21 }),
+      generateGroceryList(ctx, cycleOf({ year: 2026, week: 21 })),
     ).rejects.toBeInstanceOf(DomainError);
   });
 
   it("returns nothing for a week that was never generated", async () => {
-    expect(await getGroceryList(ctx, { year: 2026, week: 21 })).toBeNull();
+    expect(await getGroceryList(ctx, cycleOf({ year: 2026, week: 21 }))).toBeNull();
   });
 
   it("builds a list from the week's active version", async () => {
@@ -84,7 +95,7 @@ describe("generating a list", () => {
       recipeId: tarteId,
     });
 
-    const { list, diff } = await generateGroceryList(ctx, week);
+    const { list, diff } = await generateGroceryList(ctx, cycleOf(week));
 
     expect(diff.added).toBe(2);
     expect(list.state).toBe("active");
@@ -101,7 +112,7 @@ describe("generating a list", () => {
   });
 
   it("names the meals a line came from, so a line can explain itself", async () => {
-    const list = (await getGroceryList(ctx, week))!;
+    const list = (await getGroceryList(ctx, cycleOf(week)))!;
     const farine = lineNamed(list, "Farine")!;
     expect(farine.sourceEntryIds).toHaveLength(1);
     const source = list.sources.find(
@@ -113,7 +124,7 @@ describe("generating a list", () => {
 
 describe("regenerating after the plan changes", () => {
   it("keeps checked state and manual lines, and reports what moved", async () => {
-    const before = (await getGroceryList(ctx, week))!;
+    const before = (await getGroceryList(ctx, cycleOf(week)))!;
     await setLineChecked(ctx, lineNamed(before, "Farine")!.id, true);
     await addManualLine(ctx, before.id, {
       displayName: "Café",
@@ -127,7 +138,7 @@ describe("regenerating after the plan changes", () => {
       recipeId: gratinId,
     });
 
-    const { list, diff } = await generateGroceryList(ctx, week);
+    const { list, diff } = await generateGroceryList(ctx, cycleOf(week));
 
     // Flour went from 200 g to 300 g and stayed ticked off.
     const farine = lineNamed(list, "Farine")!;
@@ -158,7 +169,7 @@ describe("regenerating after the plan changes", () => {
     const tuesday = view.entries.find((entry) => entry.dayOfWeek === 2)!;
     await clearEntry(ctx, week, tuesday.id);
 
-    const { list, diff } = await generateGroceryList(ctx, week);
+    const { list, diff } = await generateGroceryList(ctx, cycleOf(week));
 
     expect(lineNamed(list, "Lait")).toBeUndefined();
     expect(diff.removed).toBe(1);
@@ -167,9 +178,9 @@ describe("regenerating after the plan changes", () => {
   });
 
   it("stays one list per week rather than one per version", async () => {
-    const first = (await getGroceryList(ctx, week))!;
-    await generateGroceryList(ctx, week);
-    const second = (await getGroceryList(ctx, week))!;
+    const first = (await getGroceryList(ctx, cycleOf(week)))!;
+    await generateGroceryList(ctx, cycleOf(week));
+    const second = (await getGroceryList(ctx, cycleOf(week)))!;
     expect(second.id).toBe(first.id);
   });
 
@@ -180,43 +191,123 @@ describe("regenerating after the plan changes", () => {
       recipeId: gratinId,
     });
 
-    const stale = (await getGroceryList(ctx, week))!;
+    const stale = (await getGroceryList(ctx, cycleOf(week)))!;
     expect(stale.stale).toBe(true);
 
-    await generateGroceryList(ctx, week);
-    expect((await getGroceryList(ctx, week))!.stale).toBe(false);
+    await generateGroceryList(ctx, cycleOf(week));
+    expect((await getGroceryList(ctx, cycleOf(week)))!.stale).toBe(false);
   });
 });
 
 describe("editing the list by hand", () => {
   it("adds, checks and deletes a manual line", async () => {
-    const list = (await getGroceryList(ctx, week))!;
+    const list = (await getGroceryList(ctx, cycleOf(week)))!;
     const added = await addManualLine(ctx, list.id, {
       displayName: "Liquide vaisselle",
       quantity: 1,
     });
 
     await setLineChecked(ctx, added.id, true);
-    expect(lineNamed((await getGroceryList(ctx, week))!, "Liquide vaisselle")).
+    expect(lineNamed((await getGroceryList(ctx, cycleOf(week)))!, "Liquide vaisselle")).
       toMatchObject({ checked: true });
 
     await deleteLine(ctx, added.id);
     expect(
-      lineNamed((await getGroceryList(ctx, week))!, "Liquide vaisselle"),
+      lineNamed((await getGroceryList(ctx, cycleOf(week)))!, "Liquide vaisselle"),
     ).toBeUndefined();
   });
 
   it("refuses an empty manual line", async () => {
-    const list = (await getGroceryList(ctx, week))!;
+    const list = (await getGroceryList(ctx, cycleOf(week)))!;
     await expect(
       addManualLine(ctx, list.id, { displayName: "   " }),
     ).rejects.toBeInstanceOf(DomainError);
   });
 
-  it("archives a list", async () => {
-    const list = (await getGroceryList(ctx, week))!;
+  it("archives a list, and the cycle then starts a fresh one", async () => {
+    // Archiving retires the list rather than deleting it, and the cycle stops
+    // resolving to it: the screen offers to generate again, and regenerating
+    // writes a new list instead of reviving the archived one. The partial
+    // unique index says the same thing, one live list per cycle.
+    const list = (await getGroceryList(ctx, cycleOf(week)))!;
     await archiveGroceryList(ctx, list.id);
-    const archived = await getGroceryList(ctx, week);
-    expect(archived?.state).toBe("archived");
+
+    expect(await getGroceryList(ctx, cycleOf(week))).toBeNull();
+
+    const { list: regenerated } = await generateGroceryList(ctx, cycleOf(week));
+    expect(regenerated.id).not.toBe(list.id);
+    expect(regenerated.state).toBe("active");
+  });
+});
+
+/**
+ * The shopping cycle is the point of the feature: a list covers the days
+ * between two shops, which is rarely a Monday-to-Sunday week. These use week 30
+ * and 31 of 2026, whose Monday is 20 July, so a Thursday cycle starts on the
+ * 23rd and runs to the 29th, taking the tail of one week and the head of the
+ * next.
+ */
+describe("shopping cycles", () => {
+  const first = { year: 2026, week: 30 };
+  const second = { year: 2026, week: 31 };
+
+  it("covers two weeks and drops what was cooked before it starts", async () => {
+    // Monday of week 30: before the cycle, so already cooked and already
+    // bought. Thursday of week 30 and Monday of week 31: inside it.
+    await assignRecipe(ctx, first, {
+      dayOfWeek: 1,
+      mealTypeId: dinnerId,
+      recipeId: gratinId,
+    });
+    await assignRecipe(ctx, first, {
+      dayOfWeek: 4,
+      mealTypeId: dinnerId,
+      recipeId: tarteId,
+    });
+    await assignRecipe(ctx, second, {
+      dayOfWeek: 1,
+      mealTypeId: dinnerId,
+      recipeId: gratinId,
+    });
+
+    const thursday = formatCycleStart(
+      new Date(isoWeekStart(first).getTime() + 3 * 86_400_000),
+    );
+    expect(thursday).toBe("2026-07-23");
+
+    const { list } = await generateGroceryList(ctx, thursday);
+
+    expect(list.startsOn).toBe("2026-07-23");
+    expect(list.endsOn).toBe("2026-07-29");
+
+    // The tarte is Thursday, inside. The gratin is Monday of the next week,
+    // also inside. Monday of week 30 is outside, so its 100 g of flour is not
+    // counted: the total is the tarte's 200 plus the second gratin's 100.
+    expect(lineNamed(list, "Oignon")?.quantity).toBe(2);
+    expect(lineNamed(list, "Lait")?.quantity).toBe(250);
+    expect(lineNamed(list, "Farine")?.quantity).toBe(300);
+  });
+
+  it("keeps one live list per cycle, and neighbouring cycles are separate", async () => {
+    const thursday = "2026-07-23";
+    const nextThursday = "2026-07-30";
+
+    const again = await generateGroceryList(ctx, thursday);
+    const neighbour = await generateGroceryList(ctx, nextThursday);
+
+    expect(again.list.id).not.toBe(neighbour.list.id);
+    expect(neighbour.list.startsOn).toBe(nextThursday);
+    // Planning the next cycle leaves this one exactly as it was, which is the
+    // worry that started the whole feature.
+    expect((await getGroceryList(ctx, thursday))!.id).toBe(again.list.id);
+  });
+
+  it("refuses a cycle start that is not a date", async () => {
+    await expect(generateGroceryList(ctx, "2026-W30")).rejects.toBeInstanceOf(
+      DomainError,
+    );
+    await expect(generateGroceryList(ctx, "2026-02-30")).rejects.toBeInstanceOf(
+      DomainError,
+    );
   });
 });

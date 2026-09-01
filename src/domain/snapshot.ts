@@ -64,6 +64,8 @@ export interface ProfileSnapshot {
     readonly defaultTimeBudgetMin: number | null;
     readonly timeBudgetToleranceMin: number;
     readonly varietyPreference: number;
+    /** ISO weekday of the weekly shop, or null when it was never set. */
+    readonly shoppingDay: number | null;
   };
   readonly kitchen: {
     readonly skillLevel: number;
@@ -327,6 +329,13 @@ export function renderSnapshotMarkdown(snapshot: ProfileSnapshot): string {
   out.push(
     `Préférence de variété : ${snapshot.weekShape.varietyPreference} sur 5 (1 = la répétition convient, 5 = ne jamais répéter un plat).`,
   );
+  if (snapshot.weekShape.shoppingDay !== null) {
+    // Worth stating plainly: it tells the agent where the fresh produce should
+    // land in the week and where the freezer and the placards take over.
+    out.push(
+      `Courses le ${dayName(snapshot.weekShape.shoppingDay)}. Les produits frais tiennent mieux en début de cycle, juste après les courses.`,
+    );
+  }
   out.push("");
 
   out.push("## 4. La cuisine");

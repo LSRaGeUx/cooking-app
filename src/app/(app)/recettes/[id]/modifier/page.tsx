@@ -23,8 +23,10 @@ export default async function EditRecipePage({
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold">{t("titleEdit")}</h1>
+    <div className="page mx-auto flex w-full max-w-4xl flex-col gap-6">
+      <h1 className="display border-b border-rule pb-4 text-3xl">
+        {t("titleEdit")}
+      </h1>
       <RecipeForm recipe={detail} />
     </div>
   );

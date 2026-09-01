@@ -22,6 +22,9 @@ import type { ProposalReview } from "@/services/plan-service";
  * rationale is that the user can then correct the reason instead of the dish.
  * And rejecting asks for a reason, because that sentence is the best signal
  * this product ever gets.
+ *
+ * The rationale sits behind a woad edge on every row: it is the agent talking,
+ * and it should never be mistaken for something the cook already decided.
  */
 export function ProposalReviewPanel({
   week,
@@ -87,84 +90,93 @@ export function ProposalReviewPanel({
     unchanged: t("statusUnchanged"),
   };
 
+  /* The edge of each row says what would happen to that slot, before reading. */
   const statusClass: Record<string, string> = {
-    added: "border-emerald-600/50 bg-emerald-500/5",
-    changed: "border-amber-500/50 bg-amber-500/5",
-    removed: "border-red-500/40 bg-red-500/5",
-    unchanged: "border-black/10 dark:border-white/15",
+    added: "border-l-olive",
+    changed: "border-l-amber-ink",
+    removed: "border-l-danger",
+    unchanged: "border-l-rule-strong opacity-80",
+  };
+
+  const statusChip: Record<string, string> = {
+    added: "chip-ok",
+    changed: "chip-warn",
+    removed: "chip-danger",
+    unchanged: "",
   };
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-6">
       <Feedback {...feedback} />
 
       {review.version.summary ? (
-        <section className="flex flex-col gap-1 rounded-md border border-black/10 p-3 dark:border-white/15">
-          <h2 className="text-sm font-medium">{t("summary")}</h2>
-          <p className="text-sm opacity-80">{review.version.summary}</p>
+        <section className="rounded-[3px] border border-agent-line border-l-[3px] border-l-agent bg-agent-soft p-4">
+          <h2 className="eyebrow pb-1.5 text-agent-ink">{t("summary")}</h2>
+          <p className="lede text-ink">{review.version.summary}</p>
         </section>
       ) : null}
 
-      <ul className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-3">
         {review.rows.map((row) => {
           const entryId = row.proposed?.id ?? null;
           return (
             <li
               key={`${row.dayOfWeek}:${row.mealTypeId}`}
-              className={`flex flex-col gap-2 rounded-md border p-3 ${statusClass[row.status]}`}
+              className={`slip flex flex-col gap-3 border-l-[3px] p-4 ${statusClass[row.status]}`}
             >
-              <div className="flex flex-wrap items-baseline gap-2">
+              <div className="flex flex-wrap items-center gap-2.5">
                 {entryId ? (
                   <input
                     type="checkbox"
                     checked={selected.has(entryId)}
                     onChange={() => toggle(entryId)}
                     aria-label={`${days(String(row.dayOfWeek))} ${row.mealTypeLabel}`}
-                    className="h-4 w-4"
+                    className="h-5 w-5"
                   />
                 ) : null}
-                <span className="text-sm font-medium">
+                <span className="eyebrow text-ink">
                   {days(String(row.dayOfWeek))} {row.mealTypeLabel.toLowerCase()}
                 </span>
-                <span className="rounded bg-black/5 px-1.5 py-0.5 text-xs dark:bg-white/10">
+                <span className={`chip ${statusChip[row.status]}`}>
                   {statusLabel[row.status]}
                 </span>
               </div>
 
-              <div className="flex flex-col gap-0.5 text-sm">
-                <span className="font-medium">
+              <div className="flex flex-col gap-1">
+                <span className="display text-lg leading-snug">
                   {row.proposed
-                    ? `${row.proposed.recipeTitleSnapshot} · ${common("servings", { count: row.proposed.servings })}`
+                    ? row.proposed.recipeTitleSnapshot
                     : t("proposedEmpty")}
                 </span>
-                <span className="text-xs opacity-60">
+                <span className="micro">
+                  {row.proposed
+                    ? common("servings", { count: row.proposed.servings })
+                    : ""}
+                  {row.proposed ? " · " : ""}
                   {row.current
-                    ? t("currentlyPlanned", { title: row.current.recipeTitleSnapshot })
+                    ? t("currentlyPlanned", {
+                        title: row.current.recipeTitleSnapshot,
+                      })
                     : t("currentlyEmpty")}
                 </span>
                 {row.proposed?.note ? (
-                  <span className="text-xs italic opacity-70">
+                  <span className="text-sm italic text-muted">
                     {row.proposed.note}
                   </span>
                 ) : null}
               </div>
 
               {row.proposed ? (
-                <div className="flex flex-col gap-1 border-t border-black/10 pt-2 dark:border-white/15">
-                  <span className="text-xs font-medium uppercase tracking-wide opacity-60">
-                    {t("rationale")}
-                  </span>
-                  <p className="text-sm opacity-90">
+                <div className="flex flex-col gap-2 border-l-2 border-agent-line pl-3">
+                  <span className="eyebrow text-agent-ink">{t("rationale")}</span>
+                  <p className="prose text-base">
                     {row.proposed.rationale ?? t("noRationale")}
                   </p>
                   {row.citedFacts.length > 0 ? (
-                    <ul className="flex flex-wrap gap-2 pt-1">
+                    <ul className="flex flex-wrap gap-1.5">
                       {row.citedFacts.map((cited) => (
                         <li key={cited.id}>
-                          <Link
-                            href="/faits"
-                            className="rounded bg-black/5 px-1.5 py-0.5 text-xs underline dark:bg-white/10"
-                          >
+                          <Link href="/faits" className="chip chip-agent">
                             {cited.statement}
                             {cited.status === "unconfirmed"
                               ? ` (${t("factUnconfirmed")})`
@@ -181,75 +193,77 @@ export function ProposalReviewPanel({
         })}
       </ul>
 
-      <div className="flex flex-wrap items-center gap-3 border-t border-black/10 pt-4 dark:border-white/15">
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => void run(() => acceptProposalAction(week))}
-          className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-black"
-        >
-          {pending ? t("working") : t("acceptAll")}
-        </button>
+      {/* The decision bar stays reachable however long the diff runs. */}
+      <div className="sticky bottom-20 z-10 flex flex-col gap-2 rounded-[3px] border border-rule-strong bg-surface p-4 shadow-[var(--shadow-slip)] lg:bottom-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => void run(() => acceptProposalAction(week))}
+            className="btn btn-primary"
+          >
+            {pending ? t("working") : t("acceptAll")}
+          </button>
 
-        <button
-          type="button"
-          disabled={pending || selected.size === 0 || selected.size === acceptable.length}
-          onClick={() =>
-            void run(() => acceptProposalEntriesAction(week, [...selected]))
-          }
-          className="rounded-md border border-black/15 px-4 py-2 text-sm disabled:opacity-40 dark:border-white/20"
-        >
-          {t("acceptSelected", { count: selected.size })}
-        </button>
+          <button
+            type="button"
+            disabled={
+              pending || selected.size === 0 || selected.size === acceptable.length
+            }
+            onClick={() =>
+              void run(() => acceptProposalEntriesAction(week, [...selected]))
+            }
+            className="btn btn-quiet"
+          >
+            {t("acceptSelected", { count: selected.size })}
+          </button>
 
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => setRejecting(!rejecting)}
-          className="text-sm text-red-700 underline disabled:opacity-40 dark:text-red-400"
-        >
-          {t("reject")}
-        </button>
+          <button
+            type="button"
+            onClick={() =>
+              setSelected(
+                selected.size === acceptable.length
+                  ? new Set()
+                  : new Set(acceptable.map((row) => row.proposed!.id)),
+              )
+            }
+            className="btn btn-ghost btn-sm"
+          >
+            {selected.size === acceptable.length ? t("selectNone") : t("selectAll")}
+          </button>
 
-        <button
-          type="button"
-          onClick={() =>
-            setSelected(
-              selected.size === acceptable.length
-                ? new Set()
-                : new Set(acceptable.map((row) => row.proposed!.id)),
-            )
-          }
-          className="text-xs underline opacity-60"
-        >
-          {selected.size === acceptable.length ? t("selectNone") : t("selectAll")}
-        </button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => setRejecting(!rejecting)}
+            className="btn btn-danger btn-sm ml-auto"
+          >
+            {t("reject")}
+          </button>
+        </div>
+        <p className="hint">{t("acceptSelectedHelp")}</p>
       </div>
 
-      <p className="text-xs opacity-70">{t("acceptSelectedHelp")}</p>
-
       {rejecting ? (
-        <section className="flex flex-col gap-2 rounded-md border border-red-500/40 p-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">{t("rejectReason")}</span>
+        <section className="flex flex-col gap-3 rounded-[3px] border border-danger-line border-l-[3px] border-l-danger bg-danger-soft p-4">
+          <label className="label">
+            <span>{t("rejectReason")}</span>
             <textarea
               rows={2}
               value={reason}
               placeholder={t("rejectReasonPlaceholder")}
               onChange={(event) => setReason(event.target.value)}
-              className="rounded-md border border-black/15 px-3 py-2 dark:border-white/20"
+              className="field"
             />
-            <span className="text-xs opacity-70">{t("rejectReasonHelp")}</span>
+            <span className="hint">{t("rejectReasonHelp")}</span>
           </label>
           <button
             type="button"
             disabled={pending}
             onClick={() =>
-              void run(() =>
-                rejectProposalAction(week, reason.trim() || null),
-              )
+              void run(() => rejectProposalAction(week, reason.trim() || null))
             }
-            className="self-start rounded-md border border-red-500/50 px-3 py-1.5 text-sm text-red-700 disabled:opacity-40 dark:text-red-400"
+            className="btn btn-danger self-start"
           >
             {t("rejectSubmit")}
           </button>

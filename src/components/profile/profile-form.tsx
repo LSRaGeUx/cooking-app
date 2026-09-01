@@ -22,6 +22,7 @@ export interface ProfileFormValues {
   readonly defaultTimeBudgetMin: number | null;
   readonly timeBudgetToleranceMin: number;
   readonly varietyPreference: number;
+  readonly shoppingDay: number | null;
   readonly weeklyBudgetAmount: number | null;
   readonly weeklyBudgetCurrency: string | null;
   readonly agentAuthority: string;
@@ -30,6 +31,7 @@ export interface ProfileFormValues {
 export function ProfileForm({ profile }: { profile: ProfileFormValues }) {
   const t = useTranslations("profile");
   const common = useTranslations("common");
+  const days = useTranslations("week.days");
   const router = useRouter();
 
   const [values, setValues] = useState<ProfileFormValues>(profile);
@@ -58,6 +60,7 @@ export function ProfileForm({ profile }: { profile: ProfileFormValues }) {
       defaultTimeBudgetMin: values.defaultTimeBudgetMin,
       timeBudgetToleranceMin: values.timeBudgetToleranceMin,
       varietyPreference: values.varietyPreference,
+      shoppingDay: values.shoppingDay,
       weeklyBudgetAmount: values.weeklyBudgetAmount,
       weeklyBudgetCurrency: emptyToNull(values.weeklyBudgetCurrency),
       agentAuthority: values.agentAuthority,
@@ -78,23 +81,18 @@ export function ProfileForm({ profile }: { profile: ProfileFormValues }) {
     router.refresh();
   }
 
-  const field =
-    "rounded-md border border-black/15 px-3 py-2 text-sm dark:border-white/20";
-
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-6">
       <Feedback {...feedback} />
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium uppercase tracking-wide opacity-60">
-          {t("groups.dietary")}
-        </h2>
-        <label className="flex max-w-sm flex-col gap-1 text-sm">
-          <span className="font-medium">{t("diet")}</span>
+      <section className="flex flex-col gap-4">
+        <h2 className="eyebrow eyebrow-rule">{t("groups.dietary")}</h2>
+        <label className="label max-w-sm">
+          <span>{t("diet")}</span>
           <select
             value={values.diet}
             onChange={(event) => set("diet", event.target.value)}
-            className={field}
+            className="field"
           >
             {DIETS.map((diet) => (
               <option key={diet} value={diet}>
@@ -103,24 +101,22 @@ export function ProfileForm({ profile }: { profile: ProfileFormValues }) {
             ))}
           </select>
         </label>
-        <label className="flex max-w-2xl flex-col gap-1 text-sm">
-          <span className="font-medium">{t("dietNotes")}</span>
+        <label className="label max-w-2xl">
+          <span>{t("dietNotes")}</span>
           <textarea
             rows={2}
             value={values.dietNotes ?? ""}
             onChange={(event) => set("dietNotes", event.target.value)}
-            className={field}
+            className="field"
           />
-          <span className="text-xs opacity-70">{t("dietNotesHelp")}</span>
+          <span className="hint">{t("dietNotesHelp")}</span>
         </label>
       </section>
 
-      <section className="flex flex-col gap-3 border-t border-black/10 pt-4 dark:border-white/15">
-        <h2 className="text-sm font-medium uppercase tracking-wide opacity-60">
-          {t("groups.kitchen")}
-        </h2>
-        <label className="flex max-w-xs flex-col gap-1 text-sm">
-          <span className="font-medium">{t("skillLevel")}</span>
+      <section className="flex flex-col gap-4 pt-2">
+        <h2 className="eyebrow eyebrow-rule">{t("groups.kitchen")}</h2>
+        <label className="label max-w-xs">
+          <span>{t("skillLevel")}</span>
           <input
             type="range"
             min={1}
@@ -128,19 +124,20 @@ export function ProfileForm({ profile }: { profile: ProfileFormValues }) {
             value={values.skillLevel}
             onChange={(event) => set("skillLevel", Number(event.target.value))}
           />
-          <span className="text-xs opacity-70">
-            {values.skillLevel} / 5 · {t("skillLevelHelp")}
+          <span className="hint">
+            <span className="numeral pr-1 text-lg text-ember-ink">
+              {values.skillLevel}
+            </span>
+            / 5 · {t("skillLevelHelp")}
           </span>
         </label>
       </section>
 
-      <section className="flex flex-col gap-3 border-t border-black/10 pt-4 dark:border-white/15">
-        <h2 className="text-sm font-medium uppercase tracking-wide opacity-60">
-          {t("groups.organization")}
-        </h2>
+      <section className="flex flex-col gap-4 pt-2">
+        <h2 className="eyebrow eyebrow-rule">{t("groups.organization")}</h2>
         <div className="grid max-w-3xl gap-3 sm:grid-cols-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">{t("defaultServings")}</span>
+          <label className="label">
+            <span>{t("defaultServings")}</span>
             <input
               type="number"
               min={1}
@@ -149,11 +146,11 @@ export function ProfileForm({ profile }: { profile: ProfileFormValues }) {
               onChange={(event) =>
                 set("defaultServings", Number(event.target.value))
               }
-              className={field}
+              className="field"
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">{t("defaultTimeBudget")}</span>
+          <label className="label">
+            <span>{t("defaultTimeBudget")}</span>
             <input
               type="number"
               min={0}
@@ -162,11 +159,11 @@ export function ProfileForm({ profile }: { profile: ProfileFormValues }) {
               onChange={(event) =>
                 set("defaultTimeBudgetMin", optionalNumber(event.target.value))
               }
-              className={field}
+              className="field"
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">{t("timeBudgetTolerance")}</span>
+          <label className="label">
+            <span>{t("timeBudgetTolerance")}</span>
             <input
               type="number"
               min={0}
@@ -175,22 +172,47 @@ export function ProfileForm({ profile }: { profile: ProfileFormValues }) {
               onChange={(event) =>
                 set("timeBudgetToleranceMin", Number(event.target.value))
               }
-              className={field}
+              className="field"
             />
           </label>
         </div>
-        <p className="max-w-2xl text-xs opacity-70">
+        <p className="hint">
           {t("defaultTimeBudgetHelp")} {t("timeBudgetToleranceHelp")}
         </p>
+
+        {/*
+          The shopping day is what a grocery list covers, so it sits with the
+          other organisational defaults rather than on the shopping screen.
+        */}
+        <label className="label max-w-xs">
+          <span>{t("shoppingDay")}</span>
+          <select
+            value={values.shoppingDay ?? ""}
+            onChange={(event) =>
+              set(
+                "shoppingDay",
+                event.target.value === "" ? null : Number(event.target.value),
+              )
+            }
+            className="field"
+          >
+            <option value="">{t("shoppingDayNone")}</option>
+            {[1, 2, 3, 4, 5, 6, 7].map((day) => (
+              <option key={day} value={day}>
+                {days(String(day))}
+              </option>
+            ))}
+          </select>
+          <span className="hint">{t("shoppingDayHelp")}</span>
+        </label>
+
       </section>
 
-      <section className="flex flex-col gap-3 border-t border-black/10 pt-4 dark:border-white/15">
-        <h2 className="text-sm font-medium uppercase tracking-wide opacity-60">
-          {t("groups.preferences")}
-        </h2>
+      <section className="flex flex-col gap-4 pt-2">
+        <h2 className="eyebrow eyebrow-rule">{t("groups.preferences")}</h2>
 
-        <label className="flex max-w-xs flex-col gap-1 text-sm">
-          <span className="font-medium">{t("varietyPreference")}</span>
+        <label className="label max-w-xs">
+          <span>{t("varietyPreference")}</span>
           <input
             type="range"
             min={1}
@@ -200,14 +222,17 @@ export function ProfileForm({ profile }: { profile: ProfileFormValues }) {
               set("varietyPreference", Number(event.target.value))
             }
           />
-          <span className="text-xs opacity-70">
-            {values.varietyPreference} / 5 · {t("varietyPreferenceHelp")}
+          <span className="hint">
+            <span className="numeral pr-1 text-lg text-ember-ink">
+              {values.varietyPreference}
+            </span>
+            / 5 · {t("varietyPreferenceHelp")}
           </span>
         </label>
 
         <div className="grid max-w-md gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">{t("weeklyBudget")}</span>
+          <label className="label">
+            <span>{t("weeklyBudget")}</span>
             <input
               type="number"
               min={0}
@@ -216,29 +241,29 @@ export function ProfileForm({ profile }: { profile: ProfileFormValues }) {
               onChange={(event) =>
                 set("weeklyBudgetAmount", optionalNumber(event.target.value))
               }
-              className={field}
+              className="field"
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">{t("weeklyBudgetCurrency")}</span>
+          <label className="label">
+            <span>{t("weeklyBudgetCurrency")}</span>
             <input
               maxLength={3}
               value={values.weeklyBudgetCurrency ?? ""}
               onChange={(event) =>
                 set("weeklyBudgetCurrency", event.target.value.toUpperCase())
               }
-              className={field}
+              className="field"
             />
           </label>
         </div>
-        <p className="text-xs opacity-70">{t("weeklyBudgetHelp")}</p>
+        <p className="hint">{t("weeklyBudgetHelp")}</p>
 
-        <label className="flex max-w-sm flex-col gap-1 text-sm">
-          <span className="font-medium">{t("agentAuthority")}</span>
+        <label className="label max-w-sm">
+          <span>{t("agentAuthority")}</span>
           <select
             value={values.agentAuthority}
             onChange={(event) => set("agentAuthority", event.target.value)}
-            className={field}
+            className="field"
           >
             {AGENT_AUTHORITIES.map((authority) => (
               <option key={authority} value={authority}>
@@ -248,20 +273,16 @@ export function ProfileForm({ profile }: { profile: ProfileFormValues }) {
               </option>
             ))}
           </select>
-          <span className="text-xs opacity-70">{t("agentAuthorityHelp")}</span>
+          <span className="hint">{t("agentAuthorityHelp")}</span>
         </label>
       </section>
 
-      <div className="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-black"
-        >
+      <div className="flex items-center gap-3 border-t border-rule pt-5">
+        <button type="submit" disabled={pending} className="btn btn-primary">
           {pending ? common("saving") : common("save")}
         </button>
         {saved ? (
-          <span className="text-sm opacity-70" aria-live="polite">
+          <span className="chip chip-ok" aria-live="polite">
             {t("saved")}
           </span>
         ) : null}

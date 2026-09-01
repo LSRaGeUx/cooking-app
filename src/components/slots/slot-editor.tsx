@@ -150,15 +150,19 @@ export function SlotEditor({
     <div className="flex flex-col gap-5">
       <Feedback {...feedback} />
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[42rem] border-separate border-spacing-1 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="chip chip-ok">{t("statePlanned")}</span>
+        <span className="chip chip-warn">{t("stateSkipped")}</span>
+        <span className="chip">{t("stateHidden")}</span>
+      </div>
+
+      <div className="ledger overflow-x-auto rounded-[3px] border border-rule bg-surface p-3">
+        <table className="w-full min-w-[44rem] border-separate border-spacing-1.5 text-sm">
           <thead>
             <tr>
-              <th className="w-32 text-left text-xs font-medium opacity-60">
-                {t("mealTypes")}
-              </th>
+              <th className="eyebrow w-32 pb-2 text-left">{t("mealTypes")}</th>
               {ISO_DAYS.map((day) => (
-                <th key={day} className="text-xs font-medium opacity-60">
+                <th key={day} className="eyebrow pb-2">
                   {days(String(day))}
                 </th>
               ))}
@@ -167,7 +171,9 @@ export function SlotEditor({
           <tbody>
             {mealTypes.map((meal) => (
               <tr key={meal.id}>
-                <th className="text-left text-sm font-medium">{meal.label}</th>
+                <th className="display text-left text-[0.95rem] font-normal">
+                  {meal.label}
+                </th>
                 {ISO_DAYS.map((day) => {
                   const cell = cellOf(day, meal.id);
                   const key = cellKey(day, meal.id);
@@ -184,11 +190,13 @@ export function SlotEditor({
                           })
                         }
                         onDoubleClick={() => setSelected(key)}
-                        className={`w-full rounded-md border px-2 py-3 text-xs transition-colors ${stateClass(cell.state)}`}
+                        className={`w-full rounded-[2px] border px-2 py-4 text-[0.7rem] transition-colors ${stateClass(cell.state)}`}
                       >
-                        <span className="block">{stateLabel(t, cell.state)}</span>
+                        <span className="block font-medium">
+                          {stateLabel(t, cell.state)}
+                        </span>
                         {cell.state === "planned" && cell.timeBudgetMin !== null ? (
-                          <span className="block opacity-70">
+                          <span className="micro block pt-0.5">
                             {common("minutes", { count: cell.timeBudgetMin })}
                           </span>
                         ) : null}
@@ -197,7 +205,7 @@ export function SlotEditor({
                         <button
                           type="button"
                           onClick={() => setSelected(selected === key ? null : key)}
-                          className="mt-0.5 w-full text-[11px] underline opacity-60"
+                          className="link mt-1 w-full text-[0.65rem] text-muted"
                         >
                           {common("edit")}
                         </button>
@@ -212,9 +220,9 @@ export function SlotEditor({
       </div>
 
       {selectedCell && selectedMeal ? (
-        <section className="flex flex-col gap-3 rounded-md border border-black/15 p-4 dark:border-white/20">
-          <div className="flex items-baseline justify-between">
-            <h2 className="text-sm font-medium">
+        <section className="slip flex flex-col gap-4 border-l-[3px] border-l-ember p-5">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="display text-lg">
               {t("detailsFor", {
                 day: days(String(selectedCell.dayOfWeek)),
                 meal: selectedMeal.label,
@@ -223,14 +231,14 @@ export function SlotEditor({
             <button
               type="button"
               onClick={() => setSelected(null)}
-              className="text-xs underline"
+              className="link text-xs"
             >
               {common("close")}
             </button>
           </div>
 
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">{t("timeBudget")}</span>
+          <label className="label">
+            <span>{t("timeBudget")}</span>
             <input
               type="number"
               min={0}
@@ -245,13 +253,13 @@ export function SlotEditor({
                   timeBudgetMin: parseOptionalInt(event.target.value),
                 })
               }
-              className="w-32 rounded-md border border-black/15 px-2 py-1 dark:border-white/20"
+              className="w-32"
             />
-            <span className="text-xs opacity-70">{t("timeBudgetHelp")}</span>
+            <span className="hint">{t("timeBudgetHelp")}</span>
           </label>
 
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">{t("defaultServings")}</span>
+          <label className="label">
+            <span>{t("defaultServings")}</span>
             <input
               type="number"
               min={1}
@@ -266,27 +274,27 @@ export function SlotEditor({
                   defaultServings: parseOptionalInt(event.target.value),
                 })
               }
-              className="w-32 rounded-md border border-black/15 px-2 py-1 dark:border-white/20"
+              className="w-32"
             />
           </label>
         </section>
       ) : null}
 
       <section className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium">{t("addMealType")}</span>
+        <label className="label">
+          <span>{t("addMealType")}</span>
           <input
             value={newMealLabel}
             onChange={(event) => setNewMealLabel(event.target.value)}
             placeholder={t("mealTypeLabel")}
-            className="rounded-md border border-black/15 px-3 py-2 dark:border-white/20"
+            className="field"
           />
         </label>
         <button
           type="button"
           disabled={pending || newMealLabel.trim().length === 0}
           onClick={() => void addMealType()}
-          className="rounded-md border border-black/15 px-3 py-2 text-sm disabled:opacity-50 dark:border-white/20"
+          className="btn btn-quiet"
         >
           {common("add")}
         </button>
@@ -304,14 +312,19 @@ function stateLabel(
   return t("stateHidden");
 }
 
+/**
+ * The three states, told apart by ground as well as by colour: a planned cell
+ * is filled, a skipped one is struck through with a hatch, a hidden one is a
+ * dashed outline waiting to be brought into play.
+ */
 function stateClass(state: SlotState): string {
   if (state === "planned") {
-    return "border-emerald-600/50 bg-emerald-500/10";
+    return "border-olive-line bg-olive-soft text-olive-ink";
   }
   if (state === "skipped") {
-    return "border-amber-600/50 bg-amber-500/10";
+    return "hatched border-amber-line bg-amber-soft text-amber-ink";
   }
-  return "border-black/10 bg-black/5 opacity-60 dark:border-white/10 dark:bg-white/5";
+  return "border-dashed border-rule-strong text-faint";
 }
 
 function cellKey(dayOfWeek: number, mealTypeId: string): string {

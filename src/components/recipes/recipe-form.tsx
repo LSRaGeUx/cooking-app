@@ -169,15 +169,15 @@ export function RecipeForm({ recipe }: { recipe?: RecipeDetail }) {
     router.refresh();
   }
 
-  const field = "rounded-md border border-black/15 px-3 py-2 text-sm dark:border-white/20";
+  const field = "field";
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-6">
       <Feedback {...feedback} />
 
       <section className="flex flex-col gap-3">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium">{t("name")}</span>
+        <label className="label">
+          <span>{t("name")}</span>
           <input
             value={title}
             onChange={(event) => setTitle(event.target.value)}
@@ -188,8 +188,8 @@ export function RecipeForm({ recipe }: { recipe?: RecipeDetail }) {
           />
         </label>
 
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium">{t("description")}</span>
+        <label className="label">
+          <span>{t("description")}</span>
           <textarea
             value={description}
             rows={2}
@@ -198,8 +198,8 @@ export function RecipeForm({ recipe }: { recipe?: RecipeDetail }) {
           />
         </label>
 
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium">{t("imageUrl")}</span>
+        <label className="label">
+          <span>{t("imageUrl")}</span>
           <input
             value={imageUrl}
             type="url"
@@ -209,7 +209,7 @@ export function RecipeForm({ recipe }: { recipe?: RecipeDetail }) {
             onChange={(event) => setImageUrl(event.target.value)}
             className={field}
           />
-          <span className="text-xs opacity-70">{t("imageUrlHelp")}</span>
+          <span className="hint">{t("imageUrlHelp")}</span>
         </label>
 
         <div className="grid gap-3 sm:grid-cols-4">
@@ -218,28 +218,28 @@ export function RecipeForm({ recipe }: { recipe?: RecipeDetail }) {
           <NumberField label={t("cookTime")} value={cookTime} onChange={setCookTime} />
           <NumberField label={t("activeTime")} value={activeTime} onChange={setActiveTime} />
         </div>
-        <p className="text-xs opacity-70">{t("activeTimeHelp")}</p>
+        <p className="hint">{t("activeTimeHelp")}</p>
 
         <div className="grid gap-3 sm:grid-cols-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">{t("tags")}</span>
+          <label className="label">
+            <span>{t("tags")}</span>
             <input
               value={tags}
               onChange={(event) => setTags(event.target.value)}
               className={field}
             />
-            <span className="text-xs opacity-70">{t("tagsHelp")}</span>
+            <span className="hint">{t("tagsHelp")}</span>
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">{t("cuisine")}</span>
+          <label className="label">
+            <span>{t("cuisine")}</span>
             <input
               value={cuisine}
               onChange={(event) => setCuisine(event.target.value)}
               className={field}
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">{t("mainProtein")}</span>
+          <label className="label">
+            <span>{t("mainProtein")}</span>
             <input
               value={mainProtein}
               onChange={(event) => setMainProtein(event.target.value)}
@@ -261,9 +261,9 @@ export function RecipeForm({ recipe }: { recipe?: RecipeDetail }) {
         </div>
       </section>
 
-      <section className="flex flex-col gap-3 border-t border-black/10 pt-4 dark:border-white/15">
-        <h2 className="text-sm font-medium">{t("paste")}</h2>
-        <p className="text-xs opacity-70">{t("pasteHelp")}</p>
+      <section className="flex flex-col gap-3 border-t border-rule pt-6">
+        <h2 className="eyebrow eyebrow-rule">{t("paste")}</h2>
+        <p className="hint">{t("pasteHelp")}</p>
         <textarea
           value={paste}
           rows={4}
@@ -275,16 +275,16 @@ export function RecipeForm({ recipe }: { recipe?: RecipeDetail }) {
           type="button"
           onClick={() => void onParse()}
           disabled={pending || paste.trim().length === 0}
-          className="self-start rounded-md border border-black/15 px-3 py-1.5 text-sm disabled:opacity-50 dark:border-white/20"
+          className="btn btn-quiet btn-sm self-start"
         >
           {t("parse")}
         </button>
       </section>
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium">{t("ingredients")}</h2>
+        <h2 className="eyebrow eyebrow-rule">{t("ingredients")}</h2>
         {ingredients.length === 0 ? (
-          <p className="text-sm opacity-70">{t("noIngredients")}</p>
+          <p className="hint">{t("noIngredients")}</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {ingredients.map((line, index) => (
@@ -326,9 +326,9 @@ export function RecipeForm({ recipe }: { recipe?: RecipeDetail }) {
                   type="button"
                   aria-label={t("removeIngredient")}
                   onClick={() => removeAt(setIngredients, index)}
-                  className="rounded-md border border-black/15 px-2 py-1 text-xs dark:border-white/20"
+                  className="btn btn-quiet btn-sm"
                 >
-                  ×
+                  &times;
                 </button>
               </li>
             ))}
@@ -342,16 +342,16 @@ export function RecipeForm({ recipe }: { recipe?: RecipeDetail }) {
               { quantity: "", unit: "", rawName: "", note: "", optional: false },
             ])
           }
-          className="self-start text-sm underline"
+          className="btn btn-quiet btn-sm self-start"
         >
           {t("addIngredient")}
         </button>
       </section>
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium">{t("steps")}</h2>
+        <h2 className="eyebrow eyebrow-rule">{t("steps")}</h2>
         {steps.length === 0 ? (
-          <p className="text-sm opacity-70">{t("noSteps")}</p>
+          <p className="hint">{t("noSteps")}</p>
         ) : (
           <ol className="flex flex-col gap-2">
             {steps.map((step, index) => (
@@ -383,9 +383,9 @@ export function RecipeForm({ recipe }: { recipe?: RecipeDetail }) {
                   type="button"
                   aria-label={t("removeStep")}
                   onClick={() => removeAt(setSteps, index)}
-                  className="rounded-md border border-black/15 px-2 py-1 text-xs dark:border-white/20"
+                  className="btn btn-quiet btn-sm"
                 >
-                  ×
+                  &times;
                 </button>
               </li>
             ))}
@@ -399,7 +399,7 @@ export function RecipeForm({ recipe }: { recipe?: RecipeDetail }) {
               { text: "", durationMin: "", unattended: false },
             ])
           }
-          className="self-start text-sm underline"
+          className="btn btn-quiet btn-sm self-start"
         >
           {t("addStep")}
         </button>
@@ -408,7 +408,7 @@ export function RecipeForm({ recipe }: { recipe?: RecipeDetail }) {
       <button
         type="submit"
         disabled={pending || title.trim().length === 0}
-        className="self-start rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-black"
+        className="btn btn-primary self-start"
       >
         {pending ? common("saving") : common("save")}
       </button>
@@ -426,12 +426,12 @@ function TextField({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="flex flex-col gap-1 text-xs">
-      <span className="opacity-70">{label}</span>
+    <label className="label">
+      <span>{label}</span>
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="rounded-md border border-black/15 px-2 py-1 text-sm dark:border-white/20"
+        className="field"
       />
     </label>
   );
@@ -449,14 +449,14 @@ function NumberField({
   min?: number;
 }) {
   return (
-    <label className="flex flex-col gap-1 text-sm">
-      <span className="font-medium">{label}</span>
+    <label className="label">
+      <span>{label}</span>
       <input
         type="number"
         min={min}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="rounded-md border border-black/15 px-3 py-2 text-sm dark:border-white/20"
+        className="field"
       />
     </label>
   );

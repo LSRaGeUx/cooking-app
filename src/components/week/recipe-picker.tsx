@@ -76,11 +76,11 @@ export function RecipePicker({
     <div
       role="dialog"
       aria-label={heading}
-      className="flex flex-col gap-3 rounded-md border border-black/15 bg-white p-3 shadow-lg dark:border-white/20 dark:bg-neutral-900"
+      className="slip-float flex flex-col gap-3 p-3"
     >
       <div className="flex items-baseline justify-between gap-2">
-        <h3 className="text-sm font-medium">{heading}</h3>
-        <button type="button" onClick={onClose} className="text-xs underline">
+        <h3 className="eyebrow">{heading}</h3>
+        <button type="button" onClick={onClose} className="link text-xs">
           {common("close")}
         </button>
       </div>
@@ -91,12 +91,12 @@ export function RecipePicker({
         value={query}
         onChange={(event) => setQuery(event.target.value)}
         placeholder={t("searchPlaceholder")}
-        className="rounded-md border border-black/15 px-3 py-2 text-sm dark:border-white/20"
+        className="field"
       />
 
       <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto">
         {results.length === 0 ? (
-          <li className="px-1 py-2 text-sm opacity-70">
+          <li className="px-1 py-2 text-sm text-muted">
             {searching ? common("loading") : t("emptySearch")}
           </li>
         ) : (
@@ -106,11 +106,13 @@ export function RecipePicker({
                 type="button"
                 disabled={disabled}
                 onClick={() => onPick(recipe.id)}
-                className="flex w-full flex-col items-start rounded-md px-2 py-1.5 text-left text-sm hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/10"
+                className="flex w-full flex-col items-start gap-0.5 rounded-[2px] border-l-2 border-transparent px-2 py-1.5 text-left transition-colors hover:border-ember hover:bg-ember-soft disabled:opacity-50"
               >
-                <span>{recipe.title}</span>
+                <span className="display text-[0.95rem] leading-snug">
+                  {recipe.title}
+                </span>
                 {recipe.activeTimeMin !== null ? (
-                  <span className="text-xs opacity-60">
+                  <span className="micro">
                     {common("minutes", { count: recipe.activeTimeMin })}
                   </span>
                 ) : null}

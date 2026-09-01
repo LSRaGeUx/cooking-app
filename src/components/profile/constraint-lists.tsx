@@ -92,19 +92,14 @@ export function ConstraintLists({
   }
 
   const declared = new Set(equipment.map((row) => row.key));
-  const field =
-    "rounded-md border border-black/15 px-3 py-2 text-sm dark:border-white/20";
-
   return (
     <div className="flex flex-col gap-8">
       <Feedback {...feedback} />
 
       <section className="flex flex-col gap-3">
         <div className="flex flex-col gap-1">
-          <h2 className="text-sm font-medium uppercase tracking-wide opacity-60">
-            {t("allergens")}
-          </h2>
-          <p className="max-w-2xl text-xs opacity-70">{t("allergensHelp")}</p>
+          <h2 className="eyebrow eyebrow-rule">{t("allergens")}</h2>
+          <p className="hint">{t("allergensHelp")}</p>
         </div>
 
         {allergens.length > 0 ? (
@@ -112,14 +107,16 @@ export function ConstraintLists({
             {allergens.map((allergen) => (
               <li
                 key={allergen.id}
-                className="flex flex-wrap items-baseline gap-2 rounded-md border border-black/10 px-3 py-2 text-sm dark:border-white/15"
+                className={`slip flex flex-wrap items-baseline gap-2.5 border-l-[3px] px-3 py-2.5 text-sm ${
+                  allergen.severity === "strict"
+                    ? "border-l-danger"
+                    : "border-l-amber-ink"
+                }`}
               >
-                <span className="font-medium">{allergen.name}</span>
+                <span className="display text-base">{allergen.name}</span>
                 <span
-                  className={`rounded px-1.5 py-0.5 text-xs ${
-                    allergen.severity === "strict"
-                      ? "bg-red-500/15 text-red-800 dark:text-red-300"
-                      : "bg-amber-500/15 text-amber-800 dark:text-amber-300"
+                  className={`chip ${
+                    allergen.severity === "strict" ? "chip-danger" : "chip-warn"
                   }`}
                 >
                   {allergen.severity === "strict"
@@ -127,9 +124,7 @@ export function ConstraintLists({
                     : t("severityAvoid")}
                 </span>
                 {allergen.matches.length > 0 ? (
-                  <span className="text-xs opacity-60">
-                    {allergen.matches.join(", ")}
-                  </span>
+                  <span className="micro">{allergen.matches.join(", ")}</span>
                 ) : null}
                 <button
                   type="button"
@@ -137,7 +132,7 @@ export function ConstraintLists({
                   onClick={() =>
                     void run(() => deleteAllergenAction(allergen.id))
                   }
-                  className="ml-auto text-xs underline opacity-60 disabled:opacity-30"
+                  className="btn btn-ghost btn-sm ml-auto"
                 >
                   {common("delete")}
                 </button>
@@ -147,33 +142,33 @@ export function ConstraintLists({
         ) : null}
 
         <div className="flex flex-wrap items-end gap-2">
-          <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-sm">
-            <span className="font-medium">{t("allergenName")}</span>
+          <label className="label min-w-[10rem] flex-1">
+            <span>{t("allergenName")}</span>
             <input
               value={allergenName}
               onChange={(event) => setAllergenName(event.target.value)}
-              className={`w-full ${field}`}
+              className="field"
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">{t("allergenSeverity")}</span>
+          <label className="label">
+            <span>{t("allergenSeverity")}</span>
             <select
               value={allergenSeverity}
               onChange={(event) => setAllergenSeverity(event.target.value)}
-              className={field}
+              className="field"
             >
               <option value="strict">{t("severityStrict")}</option>
               <option value="avoid">{t("severityAvoid")}</option>
             </select>
           </label>
-          <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-sm">
-            <span className="font-medium">{t("matches")}</span>
+          <label className="label min-w-[12rem] flex-1">
+            <span>{t("matches")}</span>
             <input
               value={allergenMatches}
               onChange={(event) => setAllergenMatches(event.target.value)}
-              className={`w-full ${field}`}
+              className="field"
             />
-            <span className="text-xs opacity-70">{t("matchesHelp")}</span>
+            <span className="hint">{t("matchesHelp")}</span>
           </label>
           <button
             type="button"
@@ -191,21 +186,19 @@ export function ConstraintLists({
                 setAllergenMatches("");
               }
             }}
-            className="rounded-md border border-black/15 px-3 py-2 text-sm disabled:opacity-50 dark:border-white/20"
+            className="btn btn-quiet"
           >
             {common("add")}
           </button>
         </div>
 
-        <p className="text-xs opacity-70">{t("strictWarning")}</p>
+        <p className="banner banner-danger">{t("strictWarning")}</p>
       </section>
 
-      <section className="flex flex-col gap-3 border-t border-black/10 pt-6 dark:border-white/15">
+      <section className="flex flex-col gap-3 pt-2">
         <div className="flex flex-col gap-1">
-          <h2 className="text-sm font-medium uppercase tracking-wide opacity-60">
-            {t("exclusions")}
-          </h2>
-          <p className="text-xs opacity-70">{t("exclusionsHelp")}</p>
+          <h2 className="eyebrow eyebrow-rule">{t("exclusions")}</h2>
+          <p className="hint">{t("exclusionsHelp")}</p>
         </div>
 
         {exclusions.length > 0 ? (
@@ -213,7 +206,7 @@ export function ConstraintLists({
             {exclusions.map((exclusion) => (
               <li
                 key={exclusion.id}
-                className="flex items-center gap-2 rounded-md border border-black/10 px-2 py-1 text-sm dark:border-white/15"
+                className="slip flex items-center gap-2 py-1 pl-2.5 pr-1 text-sm"
               >
                 <span>{exclusion.name}</span>
                 <button
@@ -223,9 +216,9 @@ export function ConstraintLists({
                   onClick={() =>
                     void run(() => deleteExclusionAction(exclusion.id))
                   }
-                  className="text-xs opacity-50 hover:opacity-100 disabled:opacity-30"
+                  className="px-1.5 text-faint transition-colors hover:text-danger-ink disabled:opacity-30"
                 >
-                  ×
+                  &times;
                 </button>
               </li>
             ))}
@@ -233,20 +226,20 @@ export function ConstraintLists({
         ) : null}
 
         <div className="flex flex-wrap items-end gap-2">
-          <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-sm">
-            <span className="font-medium">{t("exclusions")}</span>
+          <label className="label min-w-[10rem] flex-1">
+            <span>{t("exclusions")}</span>
             <input
               value={exclusionName}
               onChange={(event) => setExclusionName(event.target.value)}
-              className={`w-full ${field}`}
+              className="field"
             />
           </label>
-          <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-sm">
-            <span className="font-medium">{t("matches")}</span>
+          <label className="label min-w-[12rem] flex-1">
+            <span>{t("matches")}</span>
             <input
               value={exclusionMatches}
               onChange={(event) => setExclusionMatches(event.target.value)}
-              className={`w-full ${field}`}
+              className="field"
             />
           </label>
           <button
@@ -264,19 +257,17 @@ export function ConstraintLists({
                 setExclusionMatches("");
               }
             }}
-            className="rounded-md border border-black/15 px-3 py-2 text-sm disabled:opacity-50 dark:border-white/20"
+            className="btn btn-quiet"
           >
             {common("add")}
           </button>
         </div>
       </section>
 
-      <section className="flex flex-col gap-3 border-t border-black/10 pt-6 dark:border-white/15">
+      <section className="flex flex-col gap-3 pt-2">
         <div className="flex flex-col gap-1">
-          <h2 className="text-sm font-medium uppercase tracking-wide opacity-60">
-            {t("equipment")}
-          </h2>
-          <p className="text-xs opacity-70">{t("equipmentHelp")}</p>
+          <h2 className="eyebrow eyebrow-rule">{t("equipment")}</h2>
+          <p className="hint">{t("equipmentHelp")}</p>
         </div>
 
         <ul className="flex flex-wrap gap-2">
@@ -298,10 +289,10 @@ export function ConstraintLists({
                           }),
                     )
                   }
-                  className={`rounded-md border px-3 py-1.5 text-sm disabled:opacity-50 ${
+                  className={`btn btn-sm ${
                     declared.has(item.key)
-                      ? "border-emerald-600/50 bg-emerald-500/10"
-                      : "border-black/15 opacity-70 dark:border-white/20"
+                      ? "border-olive-line bg-olive-soft text-olive-ink"
+                      : "btn-quiet"
                   }`}
                 >
                   {item.label}
@@ -323,7 +314,7 @@ export function ConstraintLists({
               .map((row) => (
                 <li
                   key={row.id}
-                  className="flex items-center gap-2 rounded-md border border-emerald-600/50 bg-emerald-500/10 px-2 py-1 text-sm"
+                  className="flex items-center gap-2 rounded-[2px] border border-olive-line bg-olive-soft px-2 py-1 text-sm text-olive-ink"
                 >
                   <span>{row.label ?? row.key}</span>
                   <button
@@ -333,9 +324,9 @@ export function ConstraintLists({
                     onClick={() =>
                       void run(() => deleteEquipmentAction(row.id))
                     }
-                    className="text-xs opacity-50 hover:opacity-100 disabled:opacity-30"
+                    className="px-1.5 text-faint transition-colors hover:text-danger-ink disabled:opacity-30"
                   >
-                    ×
+                    &times;
                   </button>
                 </li>
               ))}
@@ -343,12 +334,12 @@ export function ConstraintLists({
         ) : null}
 
         <div className="flex flex-wrap items-end gap-2">
-          <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-sm">
-            <span className="font-medium">{t("equipmentOther")}</span>
+          <label className="label min-w-[12rem] flex-1">
+            <span>{t("equipmentOther")}</span>
             <input
               value={customEquipment}
               onChange={(event) => setCustomEquipment(event.target.value)}
-              className={`w-full ${field}`}
+              className="field"
             />
           </label>
           <button
@@ -361,7 +352,7 @@ export function ConstraintLists({
               );
               if (ok) setCustomEquipment("");
             }}
-            className="rounded-md border border-black/15 px-3 py-2 text-sm disabled:opacity-50 dark:border-white/20"
+            className="btn btn-quiet"
           >
             {common("add")}
           </button>

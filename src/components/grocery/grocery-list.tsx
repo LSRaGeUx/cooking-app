@@ -12,7 +12,7 @@ import {
 } from "@/app/actions/grocery-actions";
 import { Feedback, type FeedbackState } from "@/components/feedback";
 import { pluralizeUnit } from "@/domain/units";
-import type { IsoWeek } from "@/domain/week";
+import { sealClass } from "@/lib/recipe-seal";
 import { useOfflineChecks } from "@/lib/offline-queue";
 import type {
   GroceryEntrySource,
@@ -33,15 +33,19 @@ import type {
  * under them without being asked is the one thing this screen must never do.
  */
 export function GroceryList({
-  week,
+  cycleStart,
   list,
   hasActivePlan,
   weekHref,
+  hasShoppingDay,
 }: {
-  week: IsoWeek;
+  /** The `yyyy-mm-dd` the shopping cycle begins on: the list's identity. */
+  cycleStart: string;
   list: GroceryListView | null;
   hasActivePlan: boolean;
   weekHref: string;
+  /** False while the cycle is still falling back to a Monday-to-Sunday week. */
+  hasShoppingDay: boolean;
 }) {
   const t = useTranslations("grocery");
   const common = useTranslations("common");
@@ -72,8 +76,11 @@ export function GroceryList({
   const checkedCount = toBuy.filter((line) => line.checked).length;
 
   async function regenerate(): Promise<void> {
+    // Highlighting is for a merge. On a first build every line is new, and
+    // marking all of them says nothing while making the list hard to read.
+    const wasEmpty = lines.length === 0;
     setPending(true);
-    const result = await generateGroceryListAction(week);
+    const result = await generateGroceryListAction(cycleStart);
     setPending(false);
 
     if (!result.ok) {
@@ -89,7 +96,7 @@ export function GroceryList({
 
     setFeedback({});
     setLines(result.data.list.lines);
-    setChangedIds(new Set(result.data.diff.changedLineIds));
+    setChangedIds(wasEmpty ? new Set() : new Set(result.data.diff.changedLineIds));
     setDiffSummary(
       t("diff", {
         added: result.data.diff.added,
@@ -121,7 +128,7 @@ export function GroceryList({
 
   async function removeLine(lineId: string): Promise<void> {
     setPending(true);
-    const result = await deleteLineAction(week, lineId);
+    const result = await deleteLineAction(cycleStart, lineId);
     setPending(false);
     if (!result.ok) {
       setFeedback({
@@ -142,7 +149,7 @@ export function GroceryList({
     if (displayName.length === 0) return;
 
     setPending(true);
-    const result = await addManualLineAction(week, list.id, {
+    const result = await addManualLineAction(cycleStart, list.id, {
       displayName,
       quantity: optionalNumber(String(form.get("quantity") ?? "")),
       unit: emptyToNull(String(form.get("unit") ?? "")),
@@ -166,9 +173,9 @@ export function GroceryList({
 
   if (!list) {
     return (
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col items-start gap-5 rounded-[3px] border border-dashed border-rule-strong bg-surface/40 px-8 py-14">
         <Feedback {...feedback} />
-        <p className="text-sm opacity-70">
+        <p className="display max-w-[24ch] text-[clamp(1.6rem,3vw,2.4rem)] leading-tight">
           {hasActivePlan ? t("empty") : t("noPlan")}
         </p>
         {hasActivePlan ? (
@@ -176,12 +183,12 @@ export function GroceryList({
             type="button"
             disabled={pending}
             onClick={() => void regenerate()}
-            className="self-start rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-black"
+            className="btn btn-primary"
           >
             {pending ? t("generating") : t("generate")}
           </button>
         ) : (
-          <a href={weekHref} className="self-start text-sm underline">
+          <a href={weekHref} className="btn btn-quiet">
             {t("goToWeek")}
           </a>
         )}
@@ -190,70 +197,100 @@ export function GroceryList({
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col">
       <Feedback {...feedback} />
 
-      {list.state === "draft" ? (
-        <p className="rounded-md border border-amber-500/40 px-3 py-2 text-sm">
-          {t("draft")}
+      {/*
+        Said once, on the screen where it matters, with the one link that fixes
+        it. Not a nag: it disappears the moment a shopping day is set.
+      */}
+      {!hasShoppingDay ? (
+        <p className="band flex flex-wrap items-center gap-3 bg-panel px-5 py-3 lg:px-8">
+          <span className="hint">{t("noShoppingDay")}</span>
+          <a href="/profil" className="btn btn-sm ml-auto">
+            {t("setShoppingDay")}
+          </a>
         </p>
       ) : null}
 
-      {list.stale ? (
-        <p className="rounded-md border border-amber-500/40 px-3 py-2 text-sm">
-          {t("stale")}
-        </p>
+      {list.state === "draft" ? (
+        <p className="banner banner-warn">{t("draft")}</p>
       ) : null}
+
+      {list.stale ? <p className="banner banner-warn">{t("stale")}</p> : null}
 
       {!offline.online || offline.pendingCount > 0 ? (
-        <p
-          role="status"
-          className="rounded-md border border-black/15 px-3 py-2 text-sm dark:border-white/20"
-        >
+        <p role="status" className="banner">
           {offline.pendingCount > 0
             ? t("queued", { count: offline.pendingCount })
             : t("offline")}
         </p>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="text-sm opacity-70">
-          {t("progress", { checked: checkedCount, total: toBuy.length })}
-        </span>
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => void regenerate()}
-          className="rounded-md border border-black/15 px-3 py-1.5 text-sm disabled:opacity-50 dark:border-white/20"
-        >
-          {pending ? t("generating") : t("regenerate")}
-        </button>
+      {/*
+        Sticky, because this is the one figure you look at while walking: how
+        much of the list is left. A bar across the whole width, not a widget:
+        it is the only thing on this screen that moves, so it gets the width.
+      */}
+      <div className="sticky top-13 z-20 bg-ground">
+        <div className="measure-wide border-x-2 border-b-2 border-rule bg-panel">
+          <div className="flex items-end gap-4 px-5 py-3 lg:px-8">
+          <span aria-hidden="true" className="numeral text-4xl">
+            {checkedCount}
+            <span className="text-faint">/{toBuy.length}</span>
+          </span>
+          <span className="sr-only">
+            {t("progress", { checked: checkedCount, total: toBuy.length })}
+          </span>
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => void regenerate()}
+              className="btn btn-sm ml-auto"
+            >
+              {pending ? t("generating") : t("regenerate")}
+            </button>
+          </div>
+          <div aria-hidden="true" className="h-2 w-full border-t-2 border-rule">
+            <div
+              className="h-full bg-tomato transition-[width] duration-200"
+              style={{
+                width: `${toBuy.length === 0 ? 0 : (checkedCount / toBuy.length) * 100}%`,
+              }}
+            />
+          </div>
+        </div>
       </div>
 
       {diffSummary ? (
-        <p className="text-xs opacity-70" aria-live="polite">
-          {diffSummary}
+        <p
+          className="band bg-panel px-5 py-2 lg:px-8"
+          aria-live="polite"
+        >
+          <span className="micro">{diffSummary}</span>
         </p>
       ) : null}
 
       {lines.length === 0 ? (
-        <p className="text-sm opacity-70">{t("emptyList")}</p>
+        <p className="hint">{t("emptyList")}</p>
       ) : (
-        <div className="flex flex-col gap-4">
+        <div className="measure-wide flex flex-col border-x-2 border-rule">
           {groups.map((group) => {
             const isCollapsed = collapsed.has(group.aisle ?? "");
             return (
-              <section key={group.aisle ?? "__none"} className="flex flex-col gap-1">
+              <section key={group.aisle ?? "__none"} className="flex flex-col">
                 <button
                   type="button"
                   onClick={() =>
                     setCollapsed((current) => toggleIn(current, group.aisle ?? ""))
                   }
                   aria-expanded={!isCollapsed}
-                  className="flex items-baseline justify-between border-b border-black/10 pb-1 text-left text-sm font-medium dark:border-white/15"
+                  className="flex w-full items-baseline justify-between gap-3 border-b-2 border-rule bg-ink px-5 py-2 text-left text-on-ink lg:px-8"
                 >
-                  <span>{group.aisle ?? t("noAisle")}</span>
-                  <span className="text-xs font-normal opacity-60">
+                  <span className="label-text">
+                    {group.aisle ?? t("noAisle")}
+                  </span>
+                  <span className="label-text opacity-70">
                     {group.lines.filter((line) => line.checked).length}/
                     {group.lines.length}
                   </span>
@@ -274,8 +311,8 @@ export function GroceryList({
                         />
                       ) : (
                         <li key={block.group} className="py-1">
-                          <p className="text-xs opacity-60">{t("unmergeable")}</p>
-                          <ul className="flex flex-col border-l border-black/15 pl-2 dark:border-white/20">
+                          <p className="micro pt-1">{t("unmergeable")}</p>
+                          <ul className="flex flex-col border-l-2 border-amber-line pl-3">
                             {block.lines.map((line) => (
                               <LineRow
                                 key={line.id}
@@ -300,14 +337,14 @@ export function GroceryList({
       )}
 
       {covered.length > 0 ? (
-        <details className="rounded-md border border-black/10 px-3 py-2 dark:border-white/15">
-          <summary className="cursor-pointer text-sm">
+        <details className="measure-wide slip my-5 px-4 py-3">
+          <summary className="eyebrow cursor-pointer text-ink">
             {t("alreadyHave")} ({covered.length})
           </summary>
-          <p className="pt-2 text-xs opacity-70">{t("alreadyHaveHelp")}</p>
-          <ul className="flex flex-wrap gap-2 pt-2">
+          <p className="hint pt-2">{t("alreadyHaveHelp")}</p>
+          <ul className="flex flex-wrap gap-x-4 gap-y-1 pt-3">
             {covered.map((line) => (
-              <li key={line.id} className="text-sm opacity-70">
+              <li key={line.id} className="text-sm text-muted line-through">
                 {[
                   line.quantity !== null ? formatQuantity(line.quantity) : null,
                   pluralizeUnit(line.unit, line.quantity),
@@ -323,43 +360,43 @@ export function GroceryList({
 
       <form
         action={addLine}
-        className="flex flex-wrap items-end gap-2 border-t border-black/10 pt-4 dark:border-white/15"
+        className="measure-wide flex flex-wrap items-end gap-3 border-x-2 border-b-2 border-rule bg-panel px-5 py-5 lg:px-8"
       >
-        <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-sm">
-          <span className="font-medium">{t("addLineName")}</span>
+        <label className="label min-w-[10rem] flex-1">
+          <span>{t("addLineName")}</span>
           <input
             name="displayName"
             required
             placeholder={t("addLineNamePlaceholder")}
-            className="w-full rounded-md border border-black/15 px-3 py-2 dark:border-white/20"
+            className="field"
           />
         </label>
-        <label className="flex w-20 flex-col gap-1 text-sm">
-          <span className="font-medium">{t("addLineQuantity")}</span>
+        <label className="label w-20">
+          <span>{t("addLineQuantity")}</span>
           <input
             name="quantity"
             inputMode="decimal"
-            className="w-full rounded-md border border-black/15 px-3 py-2 dark:border-white/20"
+            className="field"
           />
         </label>
-        <label className="flex w-20 flex-col gap-1 text-sm">
-          <span className="font-medium">{t("addLineUnit")}</span>
+        <label className="label w-20">
+          <span>{t("addLineUnit")}</span>
           <input
             name="unit"
-            className="w-full rounded-md border border-black/15 px-3 py-2 dark:border-white/20"
+            className="field"
           />
         </label>
-        <label className="flex min-w-[8rem] flex-1 flex-col gap-1 text-sm">
-          <span className="font-medium">{t("addLineAisle")}</span>
+        <label className="label min-w-[8rem] flex-1">
+          <span>{t("addLineAisle")}</span>
           <input
             name="aisle"
-            className="w-full rounded-md border border-black/15 px-3 py-2 dark:border-white/20"
+            className="field"
           />
         </label>
         <button
           type="submit"
           disabled={pending}
-          className="rounded-md border border-black/15 px-3 py-2 text-sm disabled:opacity-50 dark:border-white/20"
+          className="btn btn-quiet"
         >
           {common("add")}
         </button>
@@ -369,11 +406,11 @@ export function GroceryList({
         type="button"
         disabled={pending}
         onClick={() => {
-          void archiveGroceryListAction(week, list.id).then(() =>
+          void archiveGroceryListAction(cycleStart, list.id).then(() =>
             router.refresh(),
           );
         }}
-        className="self-start text-xs underline opacity-60 disabled:opacity-40"
+        className="btn btn-ghost btn-sm m-5 self-start lg:mx-8"
       >
         {t("archive")}
       </button>
@@ -397,26 +434,35 @@ function LineRow({
   onRemove: () => void;
 }) {
   const t = useTranslations("grocery");
-  const meals = sources
-    .filter((source) => line.sourceEntryIds.includes(source.entryId))
-    .map((source) => source.title);
+  // The dishes this line is for, each keeping the colour it wears in the week.
+  const dishes = sources.filter((source) =>
+    line.sourceEntryIds.includes(source.entryId),
+  );
+  const meals = dishes.map((source) => source.title);
+  const edge = dishes[0]
+    ? sealClass(dishes[0].recipeId ?? dishes[0].entryId)
+    : "";
 
   return (
     <li
-      className={`flex items-start gap-3 border-b border-black/5 py-2 dark:border-white/10 ${
-        highlighted ? "bg-amber-500/10" : ""
-      }`}
+      className={`${edge} flex items-stretch border-b-2 border-rule ${
+        highlighted ? "bg-yellow text-ink" : ""
+      } ${line.checked ? "bg-sunk" : ""}`}
     >
+      {/* The colour of the dish this is for, read before the words are. */}
+      <span
+        aria-hidden="true"
+        className="w-3 shrink-0 border-r-2 border-rule bg-seal"
+      />
       {/* A large hit area: this is tapped with a thumb while holding a basket. */}
-      <label className="flex flex-1 cursor-pointer items-start gap-3">
-        <input
-          type="checkbox"
-          checked={line.checked}
-          onChange={onToggle}
-          className="mt-0.5 h-5 w-5 shrink-0"
-        />
-        <span className="flex flex-col">
-          <span className={line.checked ? "line-through opacity-50" : ""}>
+      <label className="flex flex-1 cursor-pointer items-start gap-4 py-4 pl-4 lg:pl-8">
+        <input type="checkbox" checked={line.checked} onChange={onToggle} />
+        <span className="flex flex-col gap-0.5">
+          <span
+            className={`name text-[1.05rem] ${
+              line.checked ? "text-faint line-through" : ""
+            }`}
+          >
             {[
               line.quantity !== null ? formatQuantity(line.quantity) : null,
               pluralizeUnit(line.unit, line.quantity),
@@ -426,20 +472,27 @@ function LineRow({
               .join(" ")}
           </span>
           {line.useSoon ? (
-            <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
-              {t("useSoonMark")}
-            </span>
+            <span className="chip chip-warn self-start">{t("useSoonMark")}</span>
           ) : null}
           {meals.length > 0 ? (
-            <span className="text-xs opacity-50">
-              {t("usedIn", { meals: meals.join(", ") })}
+            <span className="flex items-center gap-1.5">
+              {dishes.map((dish) => (
+                <span
+                  key={dish.entryId}
+                  aria-hidden="true"
+                  className={`${sealClass(dish.recipeId ?? dish.entryId)} seal-mark`}
+                />
+              ))}
+              <span className="micro">
+                {t("usedIn", { meals: meals.join(", ") })}
+              </span>
             </span>
           ) : null}
           {line.origin === "manual" ? (
-            <span className="text-xs opacity-50">{t("manual")}</span>
+            <span className="micro">{t("manual")}</span>
           ) : null}
           {highlighted ? (
-            <span className="text-xs opacity-70">{t("changed")}</span>
+            <span className="micro text-amber-ink">{t("changed")}</span>
           ) : null}
         </span>
       </label>
@@ -449,9 +502,9 @@ function LineRow({
         disabled={disabled}
         aria-label={t("removeLine")}
         onClick={onRemove}
-        className="shrink-0 px-2 text-xs opacity-50 hover:opacity-100 disabled:opacity-30"
+        className="fillable shrink-0 border-l-2 border-rule px-4 text-faint disabled:opacity-30"
       >
-        ×
+        &times;
       </button>
     </li>
   );
