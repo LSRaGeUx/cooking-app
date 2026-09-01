@@ -79,6 +79,22 @@ const signIn = await post("/api/auth/sign-in/email", {
 });
 step("sign in", signIn.status === 200, `status ${signIn.status}`);
 
+// A real user reaches the browser before they reach an agent, and the first page
+// load is what seeds the account: meal types, the weekly slots and the starter
+// ingredient vocabulary all come from ensureUserSetup() behind requireUser().
+// Nothing on the MCP path runs it, so a script that skipped straight to the
+// token used to plan against whatever the developer's own account happened to
+// hold. See T6 in docs/06-open-questions.md.
+const firstVisit = await fetch(`${BASE}/`, {
+  headers: { cookie: cookieHeader() },
+  redirect: "manual",
+});
+step(
+  "the first page load seeds the account",
+  firstVisit.status < 400,
+  `status ${firstVisit.status}`,
+);
+
 // 2. Dynamic client registration, cold, with no credentials at all.
 const registration = await fetch(`${BASE}/api/auth/oauth2/register`, {
   method: "POST",
@@ -348,7 +364,28 @@ step(
 );
 
 // 9. The phase 5 write surface, driven the way an agent would.
-const someRecipeId = searchPayload.recipes?.[0]?.id;
+//
+// The library has to be seeded rather than assumed. This script runs against
+// the test database, which starts empty, and taking whatever recipe happened to
+// be lying around was how it used to depend on the developer's own data without
+// saying so. See T6 in docs/06-open-questions.md.
+let someRecipeId = searchPayload.recipes?.[0]?.id;
+if (!someRecipeId) {
+  const seeded = await rpc("tools/call", {
+    name: "create_recipe",
+    arguments: {
+      title: "Poelee de verification",
+      servings: 2,
+      activeTimeMin: 20,
+    },
+  });
+  someRecipeId = safeJson(toolText(seeded.payload)).id;
+  step(
+    "create_recipe seeds the library when it is empty",
+    typeof someRecipeId === "string" && someRecipeId.length > 0,
+    someRecipeId ?? "no id returned",
+  );
+}
 const dinnerKey =
   weekPayload.slots?.find((slot) => slot.meal_type_key === "dinner")
     ?.meal_type_key ?? "dinner";

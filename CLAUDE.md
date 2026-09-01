@@ -46,14 +46,26 @@ change as the code, and say so.
 Node per `.nvmrc`, Postgres 18 in a container via Podman.
 
 ```sh
-npm run db:setup     # container up, role bootstrap, drizzle migrate, auth migrate
+npm run db:setup     # container up, both databases, role bootstrap, both migrators
 npm run verify       # check:deps, typecheck, test
 npm run dev
+npm run dev:test     # the same server on the test database, for verify:oauth
 npm run verify:oauth # needs a running server: the whole agent connection path
 ```
 
 `npm run verify` needs only Postgres, so it stays CI-runnable. Anything needing
 an HTTP server goes in a script, not in Vitest.
+
+Two databases. `npm test` runs against `cooking_test`, never against the database
+you develop in, and the suite truncates it before every run so a failed run
+cannot decide what the next one sees. The names are derived by appending `_test`,
+so a clone needs no extra configuration, and `TEST_DATABASE_URL` and
+`TEST_APP_DATABASE_URL` override them. Anything not named with a `_test` suffix
+is refused rather than truncated.
+
+`verify:oauth` drives a real server, so isolating it is a matter of which server
+you start: `npm run dev:test` serves on the test database with the allowlist open
+and password sign-in on, which is what the script needs to sign itself in.
 
 Two connection roles, and mixing them up defeats tenancy:
 

@@ -22,7 +22,9 @@
     "verify:oauth": "node scripts/verify-oauth-flow.mjs",
     "db:bootstrap": "node scripts/db-bootstrap.mjs",
     "auth:migrate": "tsx scripts/auth-migrate.ts",
-    "db:setup": "npm run db:up && npm run db:bootstrap && npm run db:migrate && npm run auth:migrate"
+    "db:setup": "npm run db:up && npm run db:bootstrap && npm run db:migrate && npm run auth:migrate && npm run db:setup:test",
+    "db:setup:test": "node scripts/test-db-setup.mjs",
+    "dev:test": "node scripts/dev-test-server.mjs"
   },
   "dependencies": {
     "@better-auth/mcp": "^1.7.2",
