@@ -1,5 +1,12 @@
-import { and, asc, desc, eq, sql } from "drizzle-orm";
-import { entryFeedback, fact, plan, planEntry, planVersion } from "@/db/schema";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import {
+  entryFeedback,
+  fact,
+  plan,
+  planEntry,
+  planVersion,
+  prepLink,
+} from "@/db/schema";
 import {
   assertNoStrictAllergen,
   collectIngredientWarnings,
@@ -29,6 +36,7 @@ import {
   loadRecipesForValidation,
   type RecipeForValidation,
 } from "./recipe-service";
+import { linkPrep } from "./prep-service";
 import { listMealTypes, loadSlotDefinitions } from "./slot-service";
 
 /**
@@ -633,7 +641,32 @@ export async function proposeWeek(
       },
     );
 
-    return { ...result, reviewUrl: reviewUrlFor(isoWeek) };
+    // Prep links are created after the entries exist, in the same transaction,
+    // so a refused week leaves no links behind either.
+    const warnings = [...result.warnings];
+    for (const link of parsed.prepLinks) {
+      const source = result.entries[link.sourceIndex];
+      const dependent = result.entries[link.dependentIndex];
+      if (!source || !dependent) {
+        throw new DomainError(
+          "VALIDATION",
+          `Un lien de préparation référence une entrée inexistante (source ${link.sourceIndex}, dépendant ${link.dependentIndex}). Les indices portent sur le tableau \`entries\` du même appel.`,
+          { sourceIndex: link.sourceIndex, dependentIndex: link.dependentIndex },
+        );
+      }
+
+      const linked = await linkPrep(scoped, isoWeek, {
+        sourceEntryId: source.id,
+        dependentEntryId: dependent.id,
+        ...(link.servingsDrawn === null
+          ? {}
+          : { servingsDrawn: link.servingsDrawn }),
+        note: link.note,
+      });
+      warnings.push(...linked.warnings);
+    }
+
+    return { ...result, warnings, reviewUrl: reviewUrlFor(isoWeek) };
   });
 }
 
@@ -1158,13 +1191,39 @@ async function mutateWeek(
       // Feedback belongs to what happened in a slot this week, not to one
       // revision of the plan. Without this, editing a week after cooking would
       // silently orphan every verdict the user recorded.
+      const oldToNew = new Map<string, string>();
       for (const [index, draft] of next.entries()) {
         const newId = insertedEntries[index]?.id;
         if (!draft.sourceEntryId || !newId) continue;
+        oldToNew.set(draft.sourceEntryId, newId);
         await tx
           .update(entryFeedback)
           .set({ planEntryId: newId })
           .where(eq(entryFeedback.planEntryId, draft.sourceEntryId));
+      }
+
+      // Prep links point at two entries, so both ends are remapped. A source
+      // that did not survive leaves the link unsourced rather than deleting the
+      // dependent meal, which the user still intends to eat.
+      if (oldToNew.size > 0) {
+        const carried = await tx
+          .select()
+          .from(prepLink)
+          .where(
+            inArray(prepLink.dependentEntryId, [...oldToNew.keys()]),
+          );
+
+        for (const link of carried) {
+          const newDependent = oldToNew.get(link.dependentEntryId);
+          if (!newDependent) continue;
+          const newSource = link.sourceEntryId
+            ? (oldToNew.get(link.sourceEntryId) ?? null)
+            : null;
+          await tx
+            .update(prepLink)
+            .set({ dependentEntryId: newDependent, sourceEntryId: newSource })
+            .where(eq(prepLink.id, link.id));
+        }
       }
     }
 

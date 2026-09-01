@@ -27,6 +27,8 @@ import type { DomainWarning } from "@/domain/errors";
 import type { SlotDefinition } from "@/domain/slots";
 import { ISO_DAYS, type IsoWeek } from "@/domain/week";
 import type { PlanEntryView, WriteResult } from "@/services/plan-service";
+import type { PrepLinkView } from "@/services/prep-service";
+import { linkPrepAction, unlinkPrepAction } from "@/app/actions/prep-actions";
 import { EntryPanel } from "./entry-panel";
 import { RecipePicker, type PickableRecipe } from "./recipe-picker";
 
@@ -45,6 +47,7 @@ export function WeekGrid({
   entries: serverEntries,
   orphanedEntries,
   recipes,
+  prepLinks,
   activeTimeByRecipeId,
   dayLabels,
 }: {
@@ -53,6 +56,7 @@ export function WeekGrid({
   entries: readonly PlanEntryView[];
   orphanedEntries: readonly PlanEntryView[];
   recipes: readonly PickableRecipe[];
+  prepLinks: readonly PrepLinkView[];
   activeTimeByRecipeId: Readonly<Record<string, number | null>>;
   /** Formatted on the server so date formatting has one implementation. */
   dayLabels: Readonly<Record<string, string>>;
@@ -98,6 +102,27 @@ export function WeekGrid({
     router.refresh();
   }
 
+  /**
+   * For writes that do not return a new plan version, such as a prep link. The
+   * server stays the authority: the screen re-reads rather than guessing.
+   */
+  async function runPlain(
+    action: () => Promise<{ ok: boolean; code?: string; message?: string }>,
+  ): Promise<void> {
+    setPending(true);
+    const result = await action();
+    setPending(false);
+    if (!result.ok) {
+      setFeedback({
+        error: { code: result.code ?? "INTERNAL", message: result.message ?? "" },
+      });
+      return;
+    }
+    setFeedback({});
+    setOpenEntryId(null);
+    router.refresh();
+  }
+
   function onDragEnd(event: DragEndEvent): void {
     const entryId = String(event.active.id);
     const target = event.over ? String(event.over.id) : null;
@@ -111,6 +136,25 @@ export function WeekGrid({
     if (!parsed) return;
     void run(() => moveEntryAction(week, entryId, parsed));
   }
+
+  const sourceOf = new Map(
+    prepLinks
+      .filter((link) => link.sourceEntryId !== null)
+      .map((link) => [link.dependentEntryId, link.sourceEntryId!]),
+  );
+  const servesCount = new Map<string, number>();
+  for (const link of prepLinks) {
+    if (!link.sourceEntryId) continue;
+    servesCount.set(
+      link.sourceEntryId,
+      (servesCount.get(link.sourceEntryId) ?? 0) + 1,
+    );
+  }
+  const unsourced = new Set(
+    prepLinks
+      .filter((link) => link.sourceEntryId === null)
+      .map((link) => link.dependentEntryId),
+  );
 
   const plannedSlots = slots.filter((slot) => slot.state !== "hidden");
 
@@ -128,6 +172,13 @@ export function WeekGrid({
   return (
     <div className="flex flex-col gap-4">
       <Feedback {...feedback} />
+
+      {unsourced.size > 0 ? (
+        <p className="rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm">
+          {t("prepUnsourcedBanner", { count: unsourced.size })}
+        </p>
+      ) : null}
+
       <p className="text-xs opacity-60">{t("dragHint")}</p>
 
       <DndContext
@@ -209,6 +260,15 @@ export function WeekGrid({
                                 ? (activeTimeByRecipeId[entry.recipeId] ?? null)
                                 : null
                             }
+                            servesOthers={servesCount.get(entry.id) ?? 0}
+                            sourceDay={
+                              sourceOf.has(entry.id)
+                                ? (entries.find(
+                                    (row) => row.id === sourceOf.get(entry.id),
+                                  )?.dayOfWeek ?? null)
+                                : null
+                            }
+                            unsourced={unsourced.has(entry.id)}
                             onOpen={() => setOpenEntryId(entry.id)}
                           />
                         ))}
@@ -265,6 +325,31 @@ export function WeekGrid({
                               }
                               onClear={() =>
                                 void run(() => clearEntryAction(week, entry.id))
+                              }
+                              prepSourceId={sourceOf.get(entry.id) ?? null}
+                              // Only meals cooked the same day or earlier can
+                              // feed this one: you cannot eat on Tuesday what
+                              // you cook on Thursday.
+                              prepCandidates={entries
+                                .filter(
+                                  (row) =>
+                                    row.id !== entry.id &&
+                                    row.dayOfWeek <= entry.dayOfWeek,
+                                )
+                                .map((row) => ({
+                                  entryId: row.id,
+                                  dayOfWeek: row.dayOfWeek,
+                                  label: `${days(String(row.dayOfWeek))} · ${row.recipeTitleSnapshot}`,
+                                }))}
+                              onLinkPrep={(sourceEntryId) =>
+                                void runPlain(() =>
+                                  linkPrepAction(week, sourceEntryId, entry.id),
+                                )
+                              }
+                              onUnlinkPrep={() =>
+                                void runPlain(() =>
+                                  unlinkPrepAction(week, entry.id),
+                                )
                               }
                             />
                           </div>
@@ -339,13 +424,21 @@ function SlotCell({
 function EntryCard({
   entry,
   activeTimeMin,
+  servesOthers,
+  sourceDay,
+  unsourced,
   onOpen,
 }: {
   entry: PlanEntryView;
   activeTimeMin: number | null;
+  servesOthers: number;
+  sourceDay: number | null;
+  unsourced: boolean;
   onOpen: () => void;
 }) {
   const common = useTranslations("common");
+  const t = useTranslations("week");
+  const days = useTranslations("week.days");
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({ id: entry.id });
 
@@ -378,6 +471,21 @@ function EntryCard({
       </span>
       {entry.note ? (
         <span className="text-xs italic opacity-70">{entry.note}</span>
+      ) : null}
+      {servesOthers > 0 ? (
+        <span className="text-xs text-emerald-700 dark:text-emerald-400">
+          {t("prepSource", { count: servesOthers })}
+        </span>
+      ) : null}
+      {sourceDay !== null ? (
+        <span className="text-xs text-emerald-700 dark:text-emerald-400">
+          {t("prepDependent", { day: days(String(sourceDay)) })}
+        </span>
+      ) : null}
+      {unsourced ? (
+        <span className="text-xs text-amber-700 dark:text-amber-400">
+          {t("prepUnsourced")}
+        </span>
       ) : null}
     </div>
   );

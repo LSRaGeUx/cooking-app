@@ -355,7 +355,7 @@ random pick and the user has nothing to correct but the dish itself.
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid | PK |
-| source_entry_id | uuid | FK, the cooking session |
+| source_entry_id | uuid | FK, **nullable**, the cooking session |
 | dependent_entry_id | uuid | FK, the reheat or assembly |
 | servings_drawn | smallint | |
 | note | text | nullable |
@@ -365,6 +365,15 @@ both entries must belong to the same plan version, and the sum of
 `servings_drawn` plus the source's own consumption must not exceed the source
 entry's servings (violation is a warning, not a rejection, because a user may
 knowingly stretch a dish).
+
+Two things the original spec did not account for, both settled in phase 8:
+
+- **`source_entry_id` is nullable.** Clearing the cooking session must not
+  delete the meal that depended on it, so the link survives unsourced and the
+  week screen flags it. A unique index on `dependent_entry_id` keeps it to one
+  source per meal, because two would make the shortfall arithmetic ambiguous.
+- **Links are remapped when a week is edited**, exactly like feedback: plan
+  versions are immutable, so every edit rewrites both entries a link points at.
 
 ### `entry_feedback`
 | Column | Type | Notes |

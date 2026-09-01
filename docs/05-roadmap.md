@@ -351,7 +351,7 @@ be declared rather than rendered as silence.
 
 ---
 
-## Phase 8 - Prep and batch planning
+## Phase 8 - Prep and batch planning  [DONE 2026-09-01]
 
 Goal: turn the time budget data into something that pays off.
 
@@ -361,6 +361,22 @@ Goal: turn the time budget data into something that pays off.
 - Week grid visualization of a cooking session feeding several slots.
 
 Ship: "cook double Sunday, eat Tuesday in 10 minutes."
+
+Built as specified, with three things worth recording:
+
+- **`source_entry_id` is nullable, which the spec did not say.** Clearing the
+  Sunday cooking session must not delete Tuesday's meal, so the link survives
+  with no source and the week shows it as unsourced. Deleting the dependent
+  would lose a meal the user still intends to eat.
+- **Links are carried across versions, both ends at once.** A week is immutable,
+  so every edit rewrites the entry rows a link points at. The remap runs beside
+  the feedback remap in the same place.
+- **One source per dependent meal**, enforced by a unique index. Two sources
+  would make the shortfall arithmetic ambiguous and the screen unreadable.
+
+The split between error and warning is the one the spec asks for: eating on
+Tuesday what you cook on Thursday is impossible and refused, while stretching
+four portions across five meals is merely optimistic and only flagged.
 
 ---
 

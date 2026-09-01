@@ -489,6 +489,28 @@ export const proposeWeekSchema = z.object({
       "Recettes à créer dans le même appel. Elles sont créées et assignées en une seule transaction : si une entrée est refusée, aucune recette n'est créée.",
     ),
   entries: z.array(proposedEntrySchema).min(1).max(50),
+  prepLinks: z
+    .array(
+      z.object({
+        sourceIndex: z
+          .number()
+          .int()
+          .min(0)
+          .describe("Position dans `entries` du repas réellement cuisiné."),
+        dependentIndex: z
+          .number()
+          .int()
+          .min(0)
+          .describe("Position dans `entries` du repas qui n'est qu'un réchauffage."),
+        servingsDrawn: z.number().int().min(1).max(50).nullable().default(null),
+        note: z.string().max(500).nullable().default(null),
+      }),
+    )
+    .max(20)
+    .default([])
+    .describe(
+      "Sessions de cuisine qui servent plusieurs repas : « on double dimanche, on remange mardi ». C'est ce qui rend utilisable un créneau au budget très serré. La session doit être le même jour ou avant.",
+    ),
 });
 
 export type ProposeWeekInput = z.infer<typeof proposeWeekSchema>;

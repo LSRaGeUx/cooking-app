@@ -13,6 +13,7 @@ import { isoWeekSchema } from "@/domain/schemas";
 import type { IsoWeek } from "@/domain/week";
 import { inScope, type ServiceContext } from "./context";
 import { loadPantryCoverage, type PantryCoverage } from "./pantry-service";
+import { loadPrepLinks } from "./prep-service";
 import { loadRecipeBaskets } from "./recipe-service";
 
 /**
@@ -279,11 +280,36 @@ async function aggregateForVersion(
   ];
   const baskets = await loadRecipeBaskets(ctx, recipeIds);
 
+  // Batch cooking: a meal served by another entry's session was bought once,
+  // with that session. Its own ingredients must not be counted a second time,
+  // and the source is scaled to cover everything drawn from it.
+  const links = await loadPrepLinks(
+    ctx,
+    entries.map((entry) => entry.id),
+  );
+  const dependentEntryIds = new Set(
+    links
+      .filter((link) => link.sourceEntryId !== null)
+      .map((link) => link.dependentEntryId),
+  );
+  const drawnBySource = new Map<string, number>();
+  for (const link of links) {
+    if (!link.sourceEntryId) continue;
+    drawnBySource.set(
+      link.sourceEntryId,
+      (drawnBySource.get(link.sourceEntryId) ?? 0) + link.servingsDrawn,
+    );
+  }
+
   const sourceLines: GrocerySourceLine[] = [];
   for (const entry of entries) {
     if (entry.recipeId === null) continue;
+    if (dependentEntryIds.has(entry.id)) continue;
+
     const basket = baskets.get(entry.recipeId);
     if (!basket) continue;
+
+    const servings = entry.servings + (drawnBySource.get(entry.id) ?? 0);
 
     for (const line of basket.lines) {
       sourceLines.push({
@@ -291,7 +317,7 @@ async function aggregateForVersion(
         ingredientId: line.ingredientId,
         displayName: line.displayName,
         aisle: line.aisle,
-        quantity: scaleQuantity(line.quantity, basket.servings, entry.servings),
+        quantity: scaleQuantity(line.quantity, basket.servings, servings),
         unit: line.unit,
         optional: line.optional,
         densityGPerMl: line.densityGPerMl,

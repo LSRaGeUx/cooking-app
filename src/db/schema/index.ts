@@ -10,6 +10,7 @@ export * from "./facts";
 export * from "./slots";
 export * from "./recipes";
 export * from "./plans";
+export * from "./prep";
 export * from "./feedback";
 export * from "./pantry";
 export * from "./grocery";

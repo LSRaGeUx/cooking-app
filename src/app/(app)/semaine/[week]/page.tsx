@@ -15,6 +15,7 @@ import { locale } from "@/i18n/request";
 import { requireUser } from "@/lib/session";
 import { pendingFeedback } from "@/services/feedback-service";
 import { getWeekView, listVersions } from "@/services/plan-service";
+import { loadPrepLinks } from "@/services/prep-service";
 import { loadRecipeSummaries, searchRecipes } from "@/services/recipe-service";
 
 /**
@@ -36,6 +37,10 @@ export default async function WeekPage({
   const view = await getWeekView(ctx, isoWeek);
   const versions = await listVersions(ctx, isoWeek);
   const awaiting = await pendingFeedback(ctx, isoWeek);
+  const prepLinks = await loadPrepLinks(
+    ctx,
+    view.entries.map((entry) => entry.id),
+  );
   const library = await searchRecipes(ctx, { limit: 30 });
 
   // Titles come from the entry snapshots, but the attended time has to come
@@ -137,6 +142,7 @@ export default async function WeekPage({
           activeTimeMin: recipe.activeTimeMin,
           servings: recipe.servings,
         }))}
+        prepLinks={prepLinks}
         activeTimeByRecipeId={activeTimeByRecipeId}
         dayLabels={dayLabels}
       />

@@ -354,6 +354,8 @@ export interface RecipeSummary {
   readonly title: string;
   readonly servings: number;
   readonly activeTimeMin: number | null;
+  /** Whether it doubles and keeps, which decides if it can feed other meals. */
+  readonly batchFriendly: boolean;
 }
 
 export interface RecipeIndexEntry {
@@ -590,6 +592,7 @@ export async function loadRecipeSummaries(
         activeTimeMin: recipe.activeTimeMin,
         prepTimeMin: recipe.prepTimeMin,
         cookTimeMin: recipe.cookTimeMin,
+        batchFriendly: recipe.batchFriendly,
       })
       .from(recipe)
       .where(
@@ -603,6 +606,7 @@ export async function loadRecipeSummaries(
           id: row.id,
           title: row.title,
           servings: row.servings,
+          batchFriendly: row.batchFriendly,
           // The same fallback the time budget rule uses, so the grid shows the
           // number the rule will compare against.
           activeTimeMin:

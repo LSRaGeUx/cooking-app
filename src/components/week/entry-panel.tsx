@@ -10,22 +10,36 @@ import type { PlanEntryView } from "@/services/plan-service";
  * slot is how a user expresses leftovers before prep links exist, so it is a
  * first-class button rather than a hidden gesture.
  */
+export interface PrepCandidate {
+  readonly entryId: string;
+  readonly dayOfWeek: number;
+  readonly label: string;
+}
+
 export function EntryPanel({
   entry,
   slots,
   disabled = false,
+  prepSourceId,
+  prepCandidates,
   onSave,
   onDuplicate,
   onClear,
   onClose,
+  onLinkPrep,
+  onUnlinkPrep,
 }: {
   entry: PlanEntryView;
   slots: readonly SlotDefinition[];
   disabled?: boolean;
+  prepSourceId: string | null;
+  prepCandidates: readonly PrepCandidate[];
   onSave: (changes: { servings: number; note: string | null }) => void;
   onDuplicate: (target: { dayOfWeek: number; mealTypeId: string }) => void;
   onClear: () => void;
   onClose: () => void;
+  onLinkPrep: (sourceEntryId: string) => void;
+  onUnlinkPrep: () => void;
 }) {
   const t = useTranslations("week");
   const common = useTranslations("common");
@@ -119,6 +133,30 @@ export function EntryPanel({
         >
           {t("duplicate")}
         </button>
+      </div>
+
+      <div className="flex flex-col gap-1 border-t border-black/10 pt-3 dark:border-white/15">
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium">{t("prepLink")}</span>
+          <select
+            value={prepSourceId ?? ""}
+            disabled={disabled}
+            onChange={(event) =>
+              event.target.value === ""
+                ? onUnlinkPrep()
+                : onLinkPrep(event.target.value)
+            }
+            className="rounded-md border border-black/15 px-2 py-1 dark:border-white/20"
+          >
+            <option value="">{t("prepLinkNone")}</option>
+            {prepCandidates.map((candidate) => (
+              <option key={candidate.entryId} value={candidate.entryId}>
+                {candidate.label}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs opacity-70">{t("prepLinkHelp")}</span>
+        </label>
       </div>
 
       <button
