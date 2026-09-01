@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { LocaleSwitch } from "@/components/locale-switch";
 
 export function AppNav({
   weekHref,
@@ -25,6 +26,7 @@ export function AppNav({
     { href: "/profil", label: t("profile"), match: "/profil" },
     { href: "/faits", label: t("facts"), match: "/faits" },
     { href: "/agent", label: t("agent"), match: "/agent" },
+    { href: "/compte", label: t("account"), match: "/compte" },
   ];
 
   async function signOut() {
@@ -56,6 +58,7 @@ export function AppNav({
           );
         })}
       </ul>
+      <LocaleSwitch />
       <button
         type="button"
         onClick={signOut}

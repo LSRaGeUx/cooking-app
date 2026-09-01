@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { revokeClientAction } from "@/app/actions/agent-actions";
 import { Feedback, type FeedbackState } from "@/components/feedback";
 import type { ConnectedClient } from "@/services/agent-client-service";
@@ -24,6 +24,7 @@ export function ConnectionPanel({
   clients: readonly ConnectedClient[];
   lastCallAt: string | null;
 }) {
+  const locale = useLocale();
   const t = useTranslations("agent");
   const consent = useTranslations("consent");
   const router = useRouter();
@@ -156,12 +157,12 @@ export function ConnectionPanel({
                 </div>
                 <p className="text-xs opacity-60">
                   {t("connectedAt", {
-                    date: new Date(client.connectedAt).toLocaleString("fr-FR"),
+                    date: new Date(client.connectedAt).toLocaleString(locale),
                   })}
                   {" · "}
                   {client.lastSeenAt
                     ? t("lastSeen", {
-                        date: new Date(client.lastSeenAt).toLocaleString("fr-FR"),
+                        date: new Date(client.lastSeenAt).toLocaleString(locale),
                       })
                     : t("neverSeen")}
                   {" · "}

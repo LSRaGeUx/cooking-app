@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { ConnectionPanel } from "@/components/agent/connection-panel";
-import { locale } from "@/i18n/request";
 import { requireUser } from "@/lib/session";
 import { lastAgentCall, listAgentActivity } from "@/services/activity-service";
 import { listConnectedClients } from "@/services/agent-client-service";
@@ -16,7 +15,7 @@ export default async function AgentPage() {
   const lastCall = await lastAgentCall(ctx);
   const recent = await listAgentActivity(ctx, { limit: 10 });
 
-  const formatter = new Intl.DateTimeFormat(locale, {
+  const formatter = new Intl.DateTimeFormat(await getLocale(), {
     dateStyle: "medium",
     timeStyle: "short",
   });

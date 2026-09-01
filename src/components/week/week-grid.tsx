@@ -22,6 +22,8 @@ import {
   moveEntryAction,
   updateEntryAction,
 } from "@/app/actions/plan-actions";
+import { EmptyState } from "@/components/empty-state";
+import { gridKeyboardCoordinates } from "./keyboard-coordinates";
 import { Feedback, type FeedbackState } from "@/components/feedback";
 import type { DomainWarning } from "@/domain/errors";
 import type { SlotDefinition } from "@/domain/slots";
@@ -80,7 +82,7 @@ export function WeekGrid({
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: gridKeyboardCoordinates }),
   );
 
   async function run(
@@ -160,12 +162,10 @@ export function WeekGrid({
 
   if (plannedSlots.length === 0) {
     return (
-      <div className="flex flex-col gap-3">
-        <p className="text-sm opacity-70">{t("noPlannedSlots")}</p>
-        <a href="/creneaux" className="text-sm underline">
-          {t("configureSlots")}
-        </a>
-      </div>
+      <EmptyState
+        message={t("noPlannedSlots")}
+        action={{ href: "/creneaux", label: t("configureSlots") }}
+      />
     );
   }
 
@@ -403,11 +403,14 @@ function SlotCell({
   children: React.ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: slotId, disabled });
+  const days = useTranslations("week.days");
 
   return (
     <div
       ref={setNodeRef}
-      aria-label={`${slot.mealTypeLabel} ${slot.dayOfWeek}`}
+      // Spoken by a screen reader during a keyboard drag, so it has to name the
+      // day rather than number it.
+      aria-label={`${slot.mealTypeLabel}, ${days(String(slot.dayOfWeek))}`}
       className={`rounded-md border p-2 transition-colors ${
         disabled
           ? "border-black/10 bg-black/5 opacity-60 dark:border-white/10 dark:bg-white/5"
@@ -453,16 +456,31 @@ function EntryCard({
       className={`flex flex-col gap-0.5 rounded-md border border-black/15 bg-white px-2 py-1.5 text-sm dark:border-white/20 dark:bg-neutral-900 ${
         isDragging ? "opacity-60 shadow-lg" : ""
       }`}
-      {...attributes}
-      {...listeners}
     >
-      <button
-        type="button"
-        onClick={onOpen}
-        className="text-left font-medium underline-offset-2 hover:underline"
-      >
-        {entry.recipeTitleSnapshot}
-      </button>
+      {/*
+        The handle carries the drag, not the whole card. Spreading the listeners
+        on the card would put a keyboard drag and the "open this meal" button on
+        the same element, and space would do one of two things depending on
+        where focus happened to be.
+      */}
+      <div className="flex items-start gap-1">
+        <button
+          type="button"
+          aria-label={t("dragHandle", { title: entry.recipeTitleSnapshot })}
+          className="cursor-grab touch-none px-1 text-xs opacity-40 hover:opacity-80"
+          {...attributes}
+          {...listeners}
+        >
+          ⠿
+        </button>
+        <button
+          type="button"
+          onClick={onOpen}
+          className="flex-1 text-left font-medium underline-offset-2 hover:underline"
+        >
+          {entry.recipeTitleSnapshot}
+        </button>
+      </div>
       <span className="text-xs opacity-60">
         {common("servings", { count: entry.servings })}
         {activeTimeMin !== null

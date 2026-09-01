@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { GroceryList } from "@/components/grocery/grocery-list";
 import { formatIsoWeek, parseIsoWeek } from "@/domain/week";
-import { locale } from "@/i18n/request";
 import { requireUser } from "@/lib/session";
 import { getGroceryList } from "@/services/grocery-service";
 import { getWeekView } from "@/services/plan-service";
@@ -39,7 +38,7 @@ export default async function GroceryPage({
           {list ? (
             <p className="text-xs opacity-50">
               {t("generatedAt", {
-                date: new Intl.DateTimeFormat(locale, {
+                date: new Intl.DateTimeFormat(await getLocale(), {
                   dateStyle: "medium",
                   timeStyle: "short",
                 }).format(list.updatedAt),

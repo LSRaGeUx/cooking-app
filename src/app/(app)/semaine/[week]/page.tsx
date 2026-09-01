@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { VersionHistory } from "@/components/week/version-history";
 import { WeekGrid } from "@/components/week/week-grid";
 import {
@@ -11,7 +11,6 @@ import {
   parseIsoWeek,
   shiftIsoWeek,
 } from "@/domain/week";
-import { locale } from "@/i18n/request";
 import { requireUser } from "@/lib/session";
 import { pendingFeedback } from "@/services/feedback-service";
 import { getWeekView, listVersions } from "@/services/plan-service";
@@ -58,7 +57,7 @@ export default async function WeekPage({
   );
 
   const dates = isoWeekDates(isoWeek);
-  const dateFormatter = new Intl.DateTimeFormat(locale, {
+  const dateFormatter = new Intl.DateTimeFormat(await getLocale(), {
     day: "numeric",
     month: "short",
     timeZone: "UTC",

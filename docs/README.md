@@ -19,6 +19,7 @@ agent the user already pays for. Marginal cost per user tends to zero.
 | [05-roadmap.md](05-roadmap.md) | Ten phases, each shippable alone |
 | [06-open-questions.md](06-open-questions.md) | Assumptions, questions, unknowns to resolve by experiment |
 | [07-phase-0-findings.md](07-phase-0-findings.md) | What the phase 0 spike proved, and the six things the spec got wrong |
+| [08-self-hosting.md](08-self-hosting.md) | Running your own instance: requirements, configuration, backups, upgrades, troubleshooting |
 
 ## The five decisions that shape everything
 
@@ -35,7 +36,7 @@ agent the user already pays for. Marginal cost per user tends to zero.
 
 ## Status
 
-Phases 0 to 9 complete. A person with no agent can configure their weekly grid,
+All ten phases complete. A person with no agent can configure their weekly grid,
 build a recipe library, plan a week with immutable versions and revert, shop
 from a generated grocery list that survives the plan changing under it, and
 maintain a deep structured profile plus an atomic fact store. The strict
@@ -56,4 +57,9 @@ Phase 0 closed fully alongside phase 1: login and consent screens shipped, so
 the OAuth 2.1 flow now runs end to end into an authenticated MCP call
 (`npm run verify:oauth`).
 
-Next step is phase 10, polish.
+Phase 10 added the polish that makes it liveable: an installable app whose
+grocery list works with no signal and replays what you ticked, recipe photos,
+empty states that say what to do next, a week grid a keyboard can operate slot
+by slot, data export and real account deletion, an English translation with a
+test that stops the two catalogues drifting, and
+[08-self-hosting.md](08-self-hosting.md) for operators.

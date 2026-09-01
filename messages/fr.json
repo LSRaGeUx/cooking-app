@@ -12,6 +12,7 @@
     "facts": "Faits",
     "pantry": "Placards",
     "agent": "Agent",
+    "account": "Compte",
     "signOut": "Se déconnecter",
     "skipToContent": "Aller au contenu"
   },
@@ -126,7 +127,8 @@
     "prepLinkHelp": "Un repas peut être servi par la cuisine d'un autre repas du même jour ou d'un jour précédent. La liste de courses ne compte alors ses ingrédients qu'une fois.",
     "prepLinkNone": "Cuisiné sur place",
     "prepUnlink": "Ne plus relier",
-    "dragHint": "Glissez un repas pour le déplacer. Au clavier : espace pour saisir, flèches pour déplacer, espace pour déposer.",
+    "dragHint": "Glissez un repas pour le déplacer. Au clavier : tabulation jusqu'à la poignée, espace pour saisir, flèches pour aller de créneau en créneau, espace pour déposer, échap pour annuler.",
+    "dragHandle": "Déplacer {title}",
     "warnings": "À savoir",
     "feedbackPrompt": "{count, plural, one {# repas passé attend votre retour} other {# repas passés attendent votre retour}}.",
     "feedbackPromptHelp": "Répondre est facultatif, et un repas sans retour n'est pas un repas raté. Mais c'est ce qui rend la semaine 20 meilleure que la semaine 1.",
@@ -237,6 +239,7 @@
     "searchPlaceholder": "Chercher par titre, description ou étiquette",
     "empty": "Votre bibliothèque est vide. La première recette prend moins d'une minute.",
     "emptySearch": "Aucune recette ne correspond à cette recherche.",
+    "clearSearch": "Effacer la recherche",
     "filters": "Filtres",
     "maxActiveTime": "Temps actif maximum",
     "batchFriendly": "Se cuisine en grande quantité",
@@ -265,6 +268,9 @@
       "name": "Titre",
       "namePlaceholder": "Gratin de courgettes",
       "description": "Description",
+      "imageUrl": "Photo (adresse)",
+      "imageUrlPlaceholder": "https://…",
+      "imageUrlHelp": "L'image n'est pas copiée sur ce serveur : elle est chargée depuis son site d'origine, qui voit donc que vous consultez la recette. Laissez vide si cela vous gêne.",
       "servings": "Portions",
       "prepTime": "Préparation (min)",
       "cookTime": "Cuisson (min)",
@@ -321,6 +327,9 @@
     "noAisle": "Autres",
     "alreadyHave": "Vous devriez déjà avoir",
     "alreadyHaveHelp": "Ces produits sont dans vos placards. Ils restent listés pour que vous puissiez vérifier plutôt que de le découvrir en cuisinant.",
+    "offline": "Hors ligne. Les cases cochées seront enregistrées au retour du réseau.",
+    "queued": "{count, plural, one {# case cochée en attente d'envoi} other {# cases cochées en attente d'envoi}}.",
+    "checkFailed": "Cette case n'a pas pu être enregistrée. Rechargez la liste pour voir son état réel.",
     "useSoonMark": "À finir",
     "unmergeable": "Quantités non additionnables",
     "unmergeableHelp": "Ces lignes concernent le même ingrédient dans des unités qui ne se convertissent pas. Elles sont affichées séparément plutôt que fusionnées au hasard.",
@@ -474,7 +483,7 @@
   },
   "agent": {
     "title": "Agent",
-    "intro": "Connectez votre assistant à ce compte. Il pourra lire votre profil, vos recettes et vos semaines. Il ne peut encore rien écrire : les outils d'écriture arrivent en phase 5.",
+    "intro": "Connectez votre assistant à ce compte. Il lit votre profil, vos recettes et vos semaines, et peut proposer des faits, des recettes et des semaines. Ce qu'il écrit reste réversible, et rien de sensible ne s'applique sans vous.",
     "endpoint": "Adresse à coller dans votre client",
     "endpointHelp": "Une seule adresse suffit. Votre client découvre tout seul où s'autoriser, ouvre une page de consentement dans votre navigateur, et repart avec un jeton propre à lui.",
     "copy": "Copier",
@@ -522,6 +531,20 @@
     "directionWrite": "écriture",
     "total": "{count, plural, one {# entrée} other {# entrées}}"
   },
+  "account": {
+    "title": "Compte",
+    "intro": "Vos données vous appartiennent et ce compte peut être quitté.",
+    "signedInAs": "Connecté en tant que {email}",
+    "export": "Exporter mes données",
+    "exportHelp": "Un seul fichier JSON contenant tout : profil, faits, recettes, semaines, courses, retours, journal d'agent. Lisible sans cette application.",
+    "exportDownload": "Télécharger l'export",
+    "delete": "Supprimer le compte",
+    "deleteHelp": "Efface définitivement toutes vos données et révoque tous les agents connectés. Il n'y a ni délai de grâce ni retour en arrière.",
+    "deleteConfirmLabel": "Tapez SUPPRIMER pour confirmer",
+    "deleteConfirmWord": "SUPPRIMER",
+    "deleteSubmit": "Supprimer définitivement",
+    "deleting": "Suppression…"
+  },
   "errors": {
     "title": "Action refusée",
     "STRICT_ALLERGEN": "Allergène strict",
@@ -551,7 +574,7 @@
     "TIME_BUDGET_TIGHT": "Budget de temps juste"
   },
   "home": {
-    "status": "Phase 1 : boucle manuelle",
+    "status": "Planifiez votre semaine, seul ou avec votre agent.",
     "mcpReady": "Point de terminaison MCP",
     "docs": "La spécification complète se trouve dans le dossier docs."
   }

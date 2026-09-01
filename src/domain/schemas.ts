@@ -317,6 +317,17 @@ export const recipeStepInputSchema = z.object({
 export const recipeInputSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(4000).nullable().default(null),
+  imageUrl: z
+    .url()
+    .max(2000)
+    .refine((value) => value.startsWith("https://"), {
+      message: "L'adresse d'une image doit être en https.",
+    })
+    .nullable()
+    .default(null)
+    .describe(
+      "Adresse https d'une photo du plat. L'image n'est pas copiée sur le serveur : elle est chargée depuis son site d'origine, qui voit donc la visite.",
+    ),
   servings: z
     .number()
     .int()

@@ -422,11 +422,57 @@ path so ingredient linking and allergen derivation apply as usual.
 
 ## Phase 10 - Polish
 
+**Shipped.**
+
 - PWA with offline grocery list and queued check-state replay.
 - Recipe images, empty states, keyboard operation of the grid.
 - Data export and account deletion.
 - English translation, proving the i18n groundwork.
 - Documentation for self-hosters.
+
+What the phase settled, beyond ticking its own list:
+
+- **The service worker caches the grocery list and nothing else.** Caching the
+  application shell would serve a stale plan or a stale profile, which is worse
+  than an error message. The one screen used in a place with no signal is the
+  one screen that is cached.
+- **The check queue lives in localStorage, not in the worker.** A queued tick
+  has to survive the worker being evicted, and it has to be replayed by code
+  that knows which server action to call. It is keyed by line, so ticking and
+  unticking the same item collapses to one write rather than replaying a history
+  nobody cares about. A queued tick stays on screen; only a refusal from the
+  server rolls it back.
+- **Recipe images are addresses, not uploads.** A self-hosted install should not
+  grow an image store, a thumbnailer and a cleanup job for a field
+  `06-open-questions.md` A4 already calls nice to have. The cost is that the
+  host sees the reader, which the form says in as many words, and that a dead
+  link renders as nothing at all rather than a broken-image icon.
+- **The drag handle is its own button.** Spreading the drag listeners over the
+  whole card put a keyboard drag and the "open this meal" button on the same
+  element, so space did one of two things depending on where focus happened to
+  be. The handle is a sibling of the title, and the keyboard sensor got a
+  coordinate getter that jumps from slot to slot: dnd-kit's default nudges by 25
+  pixels, which across a seven-column grid is a dozen key presses with no idea
+  where the meal will land.
+- **The locale is a cookie, not a URL segment.** The addresses in this
+  application get bookmarked and pasted, and a `/fr/` prefix would make one page
+  two addresses. The choice is per-browser rather than shareable, which is the
+  right trade here.
+- **`tests/messages.test.ts` is what makes the second locale worth having.** It
+  fails on a key present in one catalogue and missing from the other, on
+  mismatched ICU placeholders, on an empty translation, and on an em dash. A
+  missing key does not crash next-intl: it renders the key path into the page,
+  which is the kind of thing that ships.
+- **Deletion is real, and pays a cost recorded in the data model.** Domain
+  tables carry no foreign key to `user`, because the two migrators run in
+  sequence, so nothing cascades on its own. `deleteAccount` removes children
+  before parents across twenty tables and then deletes the Better Auth user,
+  which does cascade the sessions, the registered clients and their consents.
+- **One real defect fell out of the audit.** The runtime pool fell back from
+  `APP_DATABASE_URL` to `DATABASE_URL`. That kept the application running while
+  connecting as the table owner, which Postgres exempts from row-level security,
+  so tenancy enforcement would have been silently gone with nothing failing. The
+  fallback is removed and the boot error says why.
 
 ---
 

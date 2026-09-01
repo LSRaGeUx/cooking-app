@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { getTranslations } from "next-intl/server";
-import { locale } from "@/i18n/request";
+import { getLocale, getTranslations } from "next-intl/server";
 import { requireUser } from "@/lib/session";
 import { listAgentActivity } from "@/services/activity-service";
 
@@ -26,7 +25,7 @@ export default async function ActivityPage({
     offset: (page - 1) * pageSize,
   });
 
-  const formatter = new Intl.DateTimeFormat(locale, {
+  const formatter = new Intl.DateTimeFormat(await getLocale(), {
     dateStyle: "medium",
     timeStyle: "medium",
   });

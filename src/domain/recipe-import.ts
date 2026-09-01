@@ -21,6 +21,7 @@ import { parseIngredientLine } from "./ingredient-parser";
 export interface ImportedRecipe {
   readonly title: string;
   readonly description: string | null;
+  readonly imageUrl: string | null;
   readonly servings: number;
   readonly prepTimeMin: number | null;
   readonly cookTimeMin: number | null;
@@ -73,6 +74,7 @@ export function extractRecipe(
 interface RawRecipe {
   name?: unknown;
   description?: unknown;
+  image?: unknown;
   recipeYield?: unknown;
   prepTime?: unknown;
   cookTime?: unknown;
@@ -184,6 +186,7 @@ function normalize(raw: RawRecipe): ImportedRecipe {
   return {
     title: cap(firstString(raw.name) ?? "Recette importée", 200),
     description: capOrNull(firstString(raw.description), 4000),
+    imageUrl: pickImage(raw.image),
     servings: parseYield(raw.recipeYield),
     prepTimeMin: prep,
     cookTimeMin: cook,
@@ -219,6 +222,30 @@ function normalize(raw: RawRecipe): ImportedRecipe {
       ? { cookTimeMin: total }
       : {}),
   };
+}
+
+/**
+ * `image` is a URL, a list of URLs, or an ImageObject with a `url`.
+ *
+ * Only https survives. The image is not copied onto the server, so the address
+ * ends up in the reader's browser, and an http one would be a mixed-content
+ * request the page would block anyway.
+ */
+function pickImage(value: unknown): string | null {
+  const candidates: unknown[] = Array.isArray(value) ? value : [value];
+
+  for (const candidate of candidates) {
+    const text =
+      typeof candidate === "object" && candidate !== null
+        ? firstString((candidate as Record<string, unknown>).url)
+        : firstString(candidate);
+
+    if (text && /^https:\/\//i.test(text.trim()) && text.length <= 2000) {
+      return text.trim();
+    }
+  }
+
+  return null;
 }
 
 /** Instructions come as a string, a list of strings, or HowToStep objects. */

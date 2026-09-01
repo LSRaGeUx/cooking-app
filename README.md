@@ -10,7 +10,7 @@ Marginal cost per user tends to zero.
 
 ## Status
 
-**Phases 0 to 9 complete.** The product as pitched, with the loop closed. You can configure your weekly grid, build a recipe
+**All ten phases complete.** The product as pitched, with the loop closed. You can configure your weekly grid, build a recipe
 library, plan a week by hand, shop from a grocery list generated out of it, and
 maintain the profile and fact store that make the planning personal. Plan
 versions are immutable and revertible, and the strict allergen block, slot state
@@ -39,11 +39,17 @@ Regenerating the grocery list merges rather than wipes: what you already ticked
 off stays ticked, lines you added by hand survive, and the screen tells you what
 moved.
 
+It installs as an app, and the grocery list is the one screen that works with no
+signal: a tick that cannot reach the server is queued and replayed rather than
+reverted, and the screen says how many are waiting. The week grid is operable
+from a keyboard slot by slot, recipes carry a photo, and the interface exists in
+French and English with a test that stops the two catalogues drifting apart.
+
+You can take everything out in one JSON file, and delete the account for real.
+
 Phase 0 closed alongside phase 1: the login and consent screens shipped, so the
 OAuth 2.1 flow now runs end to end into an authenticated MCP call. See
 [`docs/07-phase-0-findings.md`](docs/07-phase-0-findings.md).
-
-Next: phase 10, polish.
 
 Full specs live in [`docs/`](docs/README.md). Start with
 [`docs/README.md`](docs/README.md), then read in numbered order.
@@ -59,6 +65,11 @@ npm run db:setup            # container, role, migrations, auth tables
 npm run verify              # dep check, typecheck, tests
 npm run dev
 ```
+
+Running your own instance for real, rather than trying it: read
+[`docs/08-self-hosting.md`](docs/08-self-hosting.md), which covers configuration,
+the two database roles, TLS and reverse proxies, backups, upgrades and
+troubleshooting.
 
 Then open http://localhost:3000, create an account, and you land on the current
 week. A new account is seeded with three meal types, dinner planned every day,
@@ -105,13 +116,13 @@ write results back.
 
 TypeScript end to end. Next.js, PostgreSQL 18, Drizzle, Better Auth acting as an
 OAuth 2.1 provider, the MCP TypeScript SDK, Zod as the single source of
-validation, next-intl for French copy, dnd-kit for the week grid, and linkedom
-for reading schema.org recipes out of a page. Reasoning
+validation, next-intl for the French and English copy, dnd-kit for the week
+grid, and linkedom for reading schema.org recipes out of a page. Reasoning
 and the rejected alternatives are in
 [`docs/04-tech-spec.md`](docs/04-tech-spec.md).
 
 Layout: `src/domain` holds pure rules with no I/O, `src/services` is the one
-service layer both entry points call, `src/app` is the French UI plus the MCP and
+service layer both entry points call, `src/app` is the UI plus the MCP and
 auth routes, `src/db` is the Drizzle schema and the tenancy-scoped client.
 
 ## Non-negotiable constraints

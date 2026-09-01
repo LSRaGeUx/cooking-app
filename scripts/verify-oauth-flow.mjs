@@ -337,10 +337,14 @@ const pantryPayload = safeJson(
   pantry.payload?.result?.contents?.[0]?.text ?? "",
 );
 step(
-  "an unbuilt section says so instead of looking empty",
-  pantryPayload.available === false &&
-    typeof pantryPayload.reason === "string",
-  pantryPayload.reason?.slice(0, 60),
+  // Placeholder until phase 8, real since. An empty list here means nothing has
+  // been entered, which is not the same as an empty cupboard, and the resource
+  // description says so to the agent.
+  "the pantry resource is real, and separates staples from what to use soon",
+  Array.isArray(pantryPayload.staples) && Array.isArray(pantryPayload.use_soon),
+  `${pantryPayload.staples?.length ?? "?"} staples, ${
+    pantryPayload.use_soon?.length ?? "?"
+  } to use soon`,
 );
 
 // 9. The phase 5 write surface, driven the way an agent would.
@@ -519,8 +523,10 @@ const snapshotWithHistory = await rpc("tools/call", {
 const snapshotHistoryText = toolText(snapshotWithHistory.payload);
 step(
   "the snapshot now carries the history and signal sections",
-  snapshotHistoryText.includes("## 7. Historique récent") &&
-    snapshotHistoryText.includes("## 8. Signaux non résolus"),
+  // Sections 7 and 8 until the pantry took 7 in phase 8. The numbers follow the
+  // order the spec gives, so they move when a section is inserted.
+  snapshotHistoryText.includes("## 8. Historique récent") &&
+    snapshotHistoryText.includes("## 9. Signaux non résolus"),
   `${snapshotHistoryText.length} characters`,
 );
 

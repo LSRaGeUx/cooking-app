@@ -109,6 +109,7 @@ export async function createRecipe(
         userId: ctx.userId,
         title: parsed.title,
         description: parsed.description,
+        imageUrl: parsed.imageUrl,
         source,
         sourceUrl: options.sourceUrl ?? null,
         sourceClientId: ctx.actor === "agent" ? (ctx.clientId ?? null) : null,
@@ -162,6 +163,7 @@ export async function updateRecipe(
       .set({
         title: parsed.title,
         description: parsed.description,
+        imageUrl: parsed.imageUrl,
         servings: parsed.servings,
         prepTimeMin: parsed.prepTimeMin,
         cookTimeMin: parsed.cookTimeMin,

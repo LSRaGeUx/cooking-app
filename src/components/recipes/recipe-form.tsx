@@ -45,6 +45,7 @@ export function RecipeForm({ recipe }: { recipe?: RecipeDetail }) {
   const [description, setDescription] = useState(
     recipe?.recipe.description ?? "",
   );
+  const [imageUrl, setImageUrl] = useState(recipe?.recipe.imageUrl ?? "");
   const [servings, setServings] = useState(String(recipe?.recipe.servings ?? 2));
   const [prepTime, setPrepTime] = useState(numberField(recipe?.recipe.prepTimeMin));
   const [cookTime, setCookTime] = useState(numberField(recipe?.recipe.cookTimeMin));
@@ -110,6 +111,7 @@ export function RecipeForm({ recipe }: { recipe?: RecipeDetail }) {
     const payload = {
       title: title.trim(),
       description: description.trim().length > 0 ? description.trim() : null,
+      imageUrl: imageUrl.trim().length > 0 ? imageUrl.trim() : null,
       servings: Number(servings),
       prepTimeMin: optionalNumber(prepTime),
       cookTimeMin: optionalNumber(cookTime),
@@ -182,6 +184,20 @@ export function RecipeForm({ recipe }: { recipe?: RecipeDetail }) {
             onChange={(event) => setDescription(event.target.value)}
             className={field}
           />
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium">{t("imageUrl")}</span>
+          <input
+            value={imageUrl}
+            type="url"
+            inputMode="url"
+            maxLength={2000}
+            placeholder={t("imageUrlPlaceholder")}
+            onChange={(event) => setImageUrl(event.target.value)}
+            className={field}
+          />
+          <span className="text-xs opacity-70">{t("imageUrlHelp")}</span>
         </label>
 
         <div className="grid gap-3 sm:grid-cols-4">

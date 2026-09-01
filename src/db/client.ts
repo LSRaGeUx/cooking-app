@@ -7,12 +7,21 @@ import * as schema from "./schema";
  * Runtime connections use APP_DATABASE_URL, which is the non-owner role, so
  * row-level security applies. DATABASE_URL is the owner and is reserved for
  * migrations.
+ *
+ * There is deliberately no fallback to DATABASE_URL. Postgres exempts a table
+ * owner from row-level security, so falling back would keep the application
+ * running while quietly removing the second line of defence on every
+ * user-owned table, and nothing in the test suite would notice. Refusing to
+ * boot is the loud failure this deserves.
  */
-const connectionString =
-  process.env.APP_DATABASE_URL ?? process.env.DATABASE_URL;
+const connectionString = process.env.APP_DATABASE_URL;
 
 if (!connectionString) {
-  throw new Error("APP_DATABASE_URL or DATABASE_URL must be set");
+  throw new Error(
+    "APP_DATABASE_URL must be set. It is the NOBYPASSRLS role the application " +
+      "connects as at runtime; DATABASE_URL is the owner and is for migrations " +
+      "only. Run `npm run db:bootstrap` to create the role.",
+  );
 }
 
 const pool = new Pool({ connectionString, max: 10 });

@@ -13,6 +13,7 @@ import {
 import { Feedback, type FeedbackState } from "@/components/feedback";
 import { pluralizeUnit } from "@/domain/units";
 import type { IsoWeek } from "@/domain/week";
+import { useOfflineChecks } from "@/lib/offline-queue";
 import type {
   GroceryEntrySource,
   GroceryLineView,
@@ -23,12 +24,13 @@ import type {
  * The shopping screen. Mobile is the primary viewport: it is used one-handed,
  * in a shop, on a bad connection.
  *
- * That shapes two decisions. Ticking a line updates local state immediately and
- * writes in the background, rolling back only if the write fails, because a
- * checkbox that waits for a round trip is unusable while walking. And the
- * regenerate button is deliberately explicit rather than automatic: the list is
- * a snapshot the user is working from, and rearranging it under them without
- * being asked is the one thing this screen must never do.
+ * That shapes three decisions. Ticking a line updates local state immediately
+ * and writes in the background, because a checkbox that waits for a round trip
+ * is unusable while walking. A tick that cannot reach the server is queued and
+ * replayed rather than reverted, so a dead spot in the shop does not undo the
+ * shopping. And the regenerate button is deliberately explicit rather than
+ * automatic: the list is a snapshot the user is working from, and rearranging it
+ * under them without being asked is the one thing this screen must never do.
  */
 export function GroceryList({
   week,
@@ -53,6 +55,7 @@ export function GroceryList({
   const [feedback, setFeedback] = useState<FeedbackState>({});
   const [pending, setPending] = useState(false);
   const [diffSummary, setDiffSummary] = useState<string | null>(null);
+  const offline = useOfflineChecks(setLineCheckedAction);
 
   // Staples are set aside rather than dropped. The one week you are out of
   // flour is the week a silently missing line ruins dinner, so they stay
@@ -97,15 +100,18 @@ export function GroceryList({
       current.map((row) => (row.id === line.id ? { ...row, checked: next } : row)),
     );
 
-    const result = await setLineCheckedAction(line.id, next);
-    if (!result.ok) {
-      // Put the tick back where the server says it is.
+    const outcome = await offline.submit(line.id, next);
+    // A queued tick stays on screen: it is going to be written. Only a refusal
+    // from the server puts the box back where the server says it is.
+    if (outcome === "refused") {
       setLines((current) =>
         current.map((row) =>
           row.id === line.id ? { ...row, checked: line.checked } : row,
         ),
       );
-      setFeedback({ error: { code: result.code, message: result.message } });
+      setFeedback({
+        error: { code: "CONFLICT", message: t("checkFailed") },
+      });
     }
   }
 
@@ -180,6 +186,17 @@ export function GroceryList({
       {list.stale ? (
         <p className="rounded-md border border-amber-500/40 px-3 py-2 text-sm">
           {t("stale")}
+        </p>
+      ) : null}
+
+      {!offline.online || offline.pendingCount > 0 ? (
+        <p
+          role="status"
+          className="rounded-md border border-black/15 px-3 py-2 text-sm dark:border-white/20"
+        >
+          {offline.pendingCount > 0
+            ? t("queued", { count: offline.pendingCount })
+            : t("offline")}
         </p>
       ) : null}
 

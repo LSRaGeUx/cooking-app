@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
+import { EmptyState } from "@/components/empty-state";
+import { RecipeImage } from "@/components/recipes/recipe-image";
 import { requireUser } from "@/lib/session";
 import { searchRecipes } from "@/services/recipe-service";
 
@@ -78,29 +80,40 @@ export default async function RecipesPage({
       </form>
 
       {result.recipes.length === 0 ? (
-        <p className="text-sm opacity-70">
-          {query.length > 0 ? t("emptySearch") : t("empty")}
-        </p>
+        <EmptyState
+          message={query.length > 0 ? t("emptySearch") : t("empty")}
+          action={
+            query.length > 0
+              ? { href: "/recettes", label: t("clearSearch") }
+              : { href: "/recettes/nouvelle", label: t("new") }
+          }
+        />
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {result.recipes.map((recipe) => (
             <li key={recipe.id}>
               <Link
                 href={`/recettes/${recipe.id}`}
-                className="flex h-full flex-col gap-1 rounded-md border border-black/15 p-3 hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/5"
+                className="flex h-full flex-col gap-1 overflow-hidden rounded-md border border-black/15 hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/5"
               >
-                <span className="font-medium">{recipe.title}</span>
-                <span className="text-xs opacity-60">
+                <RecipeImage
+                  src={recipe.imageUrl}
+                  alt=""
+                  className="h-32 w-full object-cover"
+                />
+                <span className="px-3 pt-3 font-medium">{recipe.title}</span>
+                <span className="px-3 text-xs opacity-60">
                   {common("servings", { count: recipe.servings })}
                   {recipe.activeTimeMin !== null
                     ? ` · ${common("minutes", { count: recipe.activeTimeMin })}`
                     : ""}
                 </span>
                 {recipe.tags.length > 0 ? (
-                  <span className="text-xs opacity-50">
+                  <span className="px-3 text-xs opacity-50">
                     {recipe.tags.join(" · ")}
                   </span>
                 ) : null}
+                <span className="pb-3" />
               </Link>
             </li>
           ))}

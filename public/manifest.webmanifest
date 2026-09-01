@@ -1,0 +1,18 @@
+{
+  "name": "Cooking App",
+  "short_name": "Cooking",
+  "description": "Votre semaine de cuisine, pilotée par votre agent.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "lang": "fr",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import { isDomainError } from "@/domain/errors";
+import { RecipeImage } from "@/components/recipes/recipe-image";
 import { pluralizeUnit } from "@/domain/units";
 import { requireUser } from "@/lib/session";
 import { getRecipe, type RecipeDetail } from "@/services/recipe-service";
@@ -46,6 +47,12 @@ export default async function RecipePage({
           {common("edit")}
         </Link>
       </header>
+
+      <RecipeImage
+        src={recipe.imageUrl}
+        alt={recipe.title}
+        className="max-h-80 w-full rounded-md object-cover"
+      />
 
       {recipe.deletedAt ? (
         <p className="rounded-md border border-amber-500/40 px-3 py-2 text-sm">

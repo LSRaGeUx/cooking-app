@@ -82,6 +82,39 @@ describe("reading schema.org JSON-LD", () => {
     expect(outcome.recipe.cookTimeMin).toBe(120);
   });
 
+  it("takes an image, in whichever of the three shapes the page used", () => {
+    const shapes: Array<[unknown, string | null]> = [
+      ["https://example.test/tarte.jpg", "https://example.test/tarte.jpg"],
+      [
+        ["https://example.test/a.jpg", "https://example.test/b.jpg"],
+        "https://example.test/a.jpg",
+      ],
+      [
+        { "@type": "ImageObject", url: "https://example.test/c.jpg" },
+        "https://example.test/c.jpg",
+      ],
+      // Not copied onto the server, so the address lands in the reader's
+      // browser and an http one would be blocked as mixed content anyway.
+      ["http://example.test/insecure.jpg", null],
+      [undefined, null],
+    ];
+
+    for (const [image, expected] of shapes) {
+      const outcome = extractRecipe(
+        jsonLd({
+          "@type": "Recipe",
+          name: "Tarte",
+          image,
+          recipeIngredient: ["1 pomme"],
+        }),
+        "text/html",
+      );
+
+      expect(outcome.ok).toBe(true);
+      if (outcome.ok) expect(outcome.recipe.imageUrl).toBe(expected);
+    }
+  });
+
   it("finds a Recipe buried in an @graph", () => {
     const outcome = extractRecipe(
       jsonLd({
