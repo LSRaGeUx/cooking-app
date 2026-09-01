@@ -10,7 +10,7 @@ Marginal cost per user tends to zero.
 
 ## Status
 
-**Phases 0 to 6 complete.** The product as pitched, with the loop closed. You can configure your weekly grid, build a recipe
+**Phases 0 to 7 complete.** The product as pitched, with the loop closed. You can configure your weekly grid, build a recipe
 library, plan a week by hand, shop from a grocery list generated out of it, and
 maintain the profile and fact store that make the planning personal. Plan
 versions are immutable and revertible, and the strict allergen block, slot state
@@ -43,7 +43,7 @@ Phase 0 closed alongside phase 1: the login and consent screens shipped, so the
 OAuth 2.1 flow now runs end to end into an authenticated MCP call. See
 [`docs/07-phase-0-findings.md`](docs/07-phase-0-findings.md).
 
-Next: phase 7, the pantry.
+Next: phase 8, prep and batch planning.
 
 Full specs live in [`docs/`](docs/README.md). Start with
 [`docs/README.md`](docs/README.md), then read in numbered order.

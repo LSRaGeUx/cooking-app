@@ -166,25 +166,40 @@ describe("the composed document", () => {
     ).toBe(false);
   });
 
-  it("says which sections are not yet measured, instead of showing them empty", async () => {
-    const { markdown, snapshot } = await composeProfileSnapshot(ctx);
-    // History and signals became real in phase 6; only the pantry is still to
-    // come, and it still says so rather than rendering empty.
-    expect(snapshot.unavailable.map((row) => row.section)).toEqual([
-      "Placards",
-    ]);
-    // An agent must not read a missing section as "nothing to report".
-    expect(markdown).toContain("Ne supposez pas que les placards sont vides.");
+  it("has no unfilled section left to declare", async () => {
+    const { snapshot } = await composeProfileSnapshot(ctx);
+    // Every section the model defines is built as of phase 7. The field stays
+    // so a future gap can be declared rather than rendered as silence.
+    expect(snapshot.unavailable).toEqual([]);
   });
 
-  it("carries the history and signal sections, empty but explained", async () => {
+  it("carries all nine sections in the order the spec fixes", async () => {
     const { markdown } = await composeProfileSnapshot(ctx);
-    expect(markdown).toContain("## 7. Historique récent");
-    expect(markdown).toContain("## 8. Signaux non résolus");
-    // No feedback has been recorded for this user, and the document says what
-    // that does and does not mean.
+    const order = [
+      "## 1. Contraintes absolues",
+      "## 2. Préférences fortes",
+      "## 3. La forme de la semaine",
+      "## 4. La cuisine",
+      "## 5. Organisation",
+      "## 6. Goûts",
+      "## 7. Placards",
+      "## 8. Historique récent",
+      "## 9. Signaux non résolus",
+    ];
+    const positions = order.map((heading) => markdown.indexOf(heading));
+    expect(positions.every((position) => position > -1)).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+  });
+
+  it("says what an empty section means, rather than leaving it bare", async () => {
+    const { markdown } = await composeProfileSnapshot(ctx);
+    // Nothing recorded for this user, and the document is explicit that this
+    // is absence of data rather than absence of the thing.
     expect(markdown).toContain(
       "Absence de retour ne veut pas dire que rien n'a été cuisiné.",
+    );
+    expect(markdown).toContain(
+      "Cela ne veut pas dire que les placards sont vides",
     );
   });
 });

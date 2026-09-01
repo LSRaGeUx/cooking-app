@@ -43,6 +43,13 @@
       "when": 1788250415346,
       "tag": "0005_entry_feedback",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788251748743,
+      "tag": "0006_pantry",
+      "breakpoints": true
     }
   ]
 }

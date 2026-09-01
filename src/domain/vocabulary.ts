@@ -138,6 +138,15 @@ export type FeedbackOutcome = (typeof FEEDBACK_OUTCOMES)[number];
 export const PORTION_ISSUES = ["too_much", "too_little"] as const;
 export type PortionIssue = (typeof PORTION_ISSUES)[number];
 
+/**
+ * `staple` is always in the cupboard and is left off the grocery list.
+ * `use_soon` is something to eat before it goes, and is a planning priority.
+ */
+export const PANTRY_KINDS = ["staple", "use_soon"] as const;
+export type PantryKind = (typeof PANTRY_KINDS)[number];
+
+export const PANTRY_SOURCES = ["user", "agent"] as const;
+
 /** `derived` lines come from the plan, `manual` ones the user typed. */
 export const GROCERY_LINE_ORIGINS = ["derived", "manual"] as const;
 export type GroceryLineOrigin = (typeof GROCERY_LINE_ORIGINS)[number];

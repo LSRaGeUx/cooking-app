@@ -10,6 +10,7 @@
     "slots": "Créneaux",
     "profile": "Profil",
     "facts": "Faits",
+    "pantry": "Placards",
     "agent": "Agent",
     "signOut": "Se déconnecter",
     "skipToContent": "Aller au contenu"
@@ -169,6 +170,25 @@
     "budgetApply": "Appliquer",
     "budgetApplied": "Budget mis à jour."
   },
+  "pantry": {
+    "title": "Placards",
+    "intro": "Deux listes courtes, sans comptabilité. Ce qui est toujours là sort de la liste de courses ; ce qui est à consommer bientôt devient une priorité pour votre agent.",
+    "staples": "Toujours en stock",
+    "staplesHelp": "Ces produits sont retirés de la liste de courses, mais restent visibles dans une section repliée : la semaine où vous êtes à court de farine est celle où une ligne disparue en silence gâche le dîner.",
+    "useSoon": "À consommer bientôt",
+    "useSoonHelp": "Votre agent proposera en priorité des plats qui les utilisent.",
+    "name": "Produit",
+    "namePlaceholder": "Farine, demi-chou, restes de poulet…",
+    "quantityNote": "Quantité",
+    "quantityNotePlaceholder": "Un demi-paquet, il en reste peu…",
+    "quantityNoteHelp": "Texte libre. Volontairement pas un nombre : compter mène à une comptabilité que personne ne tient.",
+    "expiresOn": "À consommer avant le",
+    "addStaple": "Ajouter aux produits toujours en stock",
+    "addUseSoon": "Ajouter aux produits à consommer bientôt",
+    "empty": "Rien pour l'instant.",
+    "expires": "avant le {date}",
+    "addedByAgent": "ajouté par votre agent"
+  },
   "proposal": {
     "title": "Proposition pour la semaine {week} de {year}",
     "intro": "Voici ce que votre agent propose, créneau par créneau, comparé à ce qui est planifié aujourd'hui. Rien n'est appliqué avant votre accord.",
@@ -285,6 +305,9 @@
     "added": "Nouvelle",
     "manual": "Ajoutée à la main",
     "noAisle": "Autres",
+    "alreadyHave": "Vous devriez déjà avoir",
+    "alreadyHaveHelp": "Ces produits sont dans vos placards. Ils restent listés pour que vous puissiez vérifier plutôt que de le découvrir en cuisinant.",
+    "useSoonMark": "À finir",
     "unmergeable": "Quantités non additionnables",
     "unmergeableHelp": "Ces lignes concernent le même ingrédient dans des unités qui ne se convertissent pas. Elles sont affichées séparément plutôt que fusionnées au hasard.",
     "usedIn": "Pour : {meals}",

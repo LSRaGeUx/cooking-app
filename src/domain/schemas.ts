@@ -10,6 +10,7 @@ import {
   FACT_STATUSES,
   FEEDBACK_OUTCOMES,
   INGREDIENT_CATEGORIES,
+  PANTRY_KINDS,
   PORTION_ISSUES,
   SLOT_STATES,
 } from "./vocabulary";
@@ -237,6 +238,31 @@ export const feedbackInputSchema = z.object({
 });
 
 export type FeedbackInput = z.infer<typeof feedbackInputSchema>;
+
+export const pantryItemInputSchema = z.object({
+  kind: z
+    .enum(PANTRY_KINDS)
+    .describe(
+      "`staple` pour ce qui est toujours là et n'a pas besoin d'être acheté, `use_soon` pour ce qu'il faut manger avant que ça ne se perde.",
+    ),
+  name: z.string().min(1).max(120),
+  quantityNote: z
+    .string()
+    .max(120)
+    .nullable()
+    .default(null)
+    .describe(
+      "Quantité en texte libre, « un demi-paquet », « il en reste peu ». Volontairement pas un nombre : compter mène à une comptabilité que personne ne tient.",
+    ),
+  expiresOn: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .default(null)
+    .describe("Date limite, au format AAAA-MM-JJ. Surtout utile pour `use_soon`."),
+});
+
+export type PantryItemInput = z.infer<typeof pantryItemInputSchema>;
 
 export const ingredientInputSchema = z.object({
   canonicalName: z.string().min(1).max(120),

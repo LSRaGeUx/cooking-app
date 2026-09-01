@@ -12,6 +12,7 @@ import {
 import { isoWeekSchema } from "@/domain/schemas";
 import type { IsoWeek } from "@/domain/week";
 import { inScope, type ServiceContext } from "./context";
+import { loadPantryCoverage, type PantryCoverage } from "./pantry-service";
 import { loadRecipeBaskets } from "./recipe-service";
 
 /**
@@ -25,8 +26,9 @@ import { loadRecipeBaskets } from "./recipe-service";
  * state survives, manual lines survive, and the caller is told exactly what
  * moved so the screen can highlight it.
  *
- * Pantry subtraction is phase 7. The column is already there and every line is
- * written with `coveredByPantry` false until then.
+ * Pantry subtraction marks lines rather than deleting them: a staple you have
+ * is shown in a collapsed "you should already have" section, because the one
+ * week you are out of flour is the week a silently missing line ruins dinner.
  */
 
 export interface GroceryLineView {
@@ -39,6 +41,8 @@ export interface GroceryLineView {
   readonly origin: string;
   readonly checked: boolean;
   readonly coveredByPantry: boolean;
+  /** Something to eat before it goes. Marked, never removed. */
+  readonly useSoon: boolean;
   readonly unmergeableGroup: string | null;
   readonly sourceEntryIds: string[];
 }
@@ -117,6 +121,7 @@ export async function generateGroceryList(
     }
 
     const aggregated = await aggregateForVersion(scoped, active.id);
+    const coverage = await loadPantryCoverage(scoped);
     const existing = await findLiveList(scoped, isoWeek);
 
     if (!existing) {
@@ -130,7 +135,12 @@ export async function generateGroceryList(
         .returning({ id: groceryList.id });
 
       const listId = created[0]!.id;
-      const inserted = await insertDerivedLines(scoped, listId, aggregated);
+      const inserted = await insertDerivedLines(
+        scoped,
+        listId,
+        aggregated,
+        coverage,
+      );
 
       return {
         list: await loadListView(scoped, listId),
@@ -144,7 +154,12 @@ export async function generateGroceryList(
       };
     }
 
-    const diff = await mergeIntoList(scoped, existing.listId, aggregated);
+    const diff = await mergeIntoList(
+      scoped,
+      existing.listId,
+      aggregated,
+      coverage,
+    );
     await tx
       .update(groceryList)
       .set({ planVersionId: active.id, updatedAt: new Date() })
@@ -212,7 +227,7 @@ export async function addManualLine(
         origin: "manual",
       })
       .returning();
-    return toLineView(rows[0]!);
+    return toLineView(rows[0]!, await loadPantryCoverage({ ...ctx, tx }));
   });
 }
 
@@ -296,6 +311,7 @@ async function mergeIntoList(
   ctx: ServiceContext & { tx: NonNullable<ServiceContext["tx"]> },
   listId: string,
   aggregated: readonly AggregatedGroceryLine[],
+  coverage: PantryCoverage,
 ): Promise<GroceryDiff> {
   const { tx } = ctx;
 
@@ -325,7 +341,7 @@ async function mergeIntoList(
     if (!existing) {
       const inserted = await tx
         .insert(groceryLine)
-        .values(derivedValues(ctx.userId, listId, line))
+        .values(derivedValues(ctx.userId, listId, line, coverage))
         .returning({ id: groceryLine.id });
       added += 1;
       changedLineIds.push(inserted[0]!.id);
@@ -343,6 +359,9 @@ async function mergeIntoList(
         unit: line.unit,
         aisle: line.aisle,
         sourceEntryIds: line.sourceEntryIds,
+        // Re-evaluated on every regeneration: a staple added since last time
+        // should drop off the list now, not next week.
+        coveredByPantry: isCovered(line, coverage),
         unmergeableGroup: line.unmergeableGroup,
       })
       .where(eq(groceryLine.id, existing.id));
@@ -378,11 +397,14 @@ async function insertDerivedLines(
   ctx: ServiceContext & { tx: NonNullable<ServiceContext["tx"]> },
   listId: string,
   lines: readonly AggregatedGroceryLine[],
+  coverage: PantryCoverage,
 ): Promise<string[]> {
   if (lines.length === 0) return [];
   const inserted = await ctx.tx
     .insert(groceryLine)
-    .values(lines.map((line) => derivedValues(ctx.userId, listId, line)))
+    .values(
+      lines.map((line) => derivedValues(ctx.userId, listId, line, coverage)),
+    )
     .returning({ id: groceryLine.id });
   return inserted.map((row) => row.id);
 }
@@ -391,6 +413,7 @@ function derivedValues(
   userId: string,
   listId: string,
   line: AggregatedGroceryLine,
+  coverage: PantryCoverage,
 ) {
   return {
     userId,
@@ -402,8 +425,33 @@ function derivedValues(
     aisle: line.aisle,
     origin: "derived" as const,
     sourceEntryIds: line.sourceEntryIds,
+    coveredByPantry: isCovered(line, coverage),
     unmergeableGroup: line.unmergeableGroup,
   };
+}
+
+/**
+ * A line is covered when the pantry says so, by linked ingredient or by name.
+ * Matching on the name too is what makes an unlinked staple still useful.
+ */
+function isCovered(
+  line: AggregatedGroceryLine,
+  coverage: PantryCoverage,
+): boolean {
+  if (line.ingredientId && coverage.stapleIngredientIds.has(line.ingredientId)) {
+    return true;
+  }
+  return coverage.stapleNames.has(line.displayName.trim().toLowerCase());
+}
+
+function isUseSoon(
+  line: { ingredientId: string | null; displayName: string },
+  coverage: PantryCoverage,
+): boolean {
+  if (line.ingredientId && coverage.useSoonIngredientIds.has(line.ingredientId)) {
+    return true;
+  }
+  return coverage.useSoonNames.has(line.displayName.trim().toLowerCase());
 }
 
 /**
@@ -522,6 +570,8 @@ async function loadListView(
     .where(eq(groceryLine.groceryListId, listId))
     .orderBy(asc(groceryLine.displayName));
 
+  const coverage = await loadPantryCoverage(ctx);
+
   const entryIds = [...new Set(lines.flatMap((line) => line.sourceEntryIds))];
   const sources =
     entryIds.length === 0
@@ -545,12 +595,17 @@ async function loadListView(
     stale: list.versionState !== "active",
     generatedAt: list.generatedAt,
     updatedAt: list.updatedAt,
-    lines: lines.map(toLineView).sort(compareLines),
+    lines: lines
+      .map((row) => toLineView(row, coverage))
+      .sort(compareLines),
     sources,
   };
 }
 
-function toLineView(row: typeof groceryLine.$inferSelect): GroceryLineView {
+function toLineView(
+  row: typeof groceryLine.$inferSelect,
+  coverage: PantryCoverage,
+): GroceryLineView {
   return {
     id: row.id,
     ingredientId: row.ingredientId,
@@ -561,6 +616,7 @@ function toLineView(row: typeof groceryLine.$inferSelect): GroceryLineView {
     origin: row.origin,
     checked: row.checked,
     coveredByPantry: row.coveredByPantry,
+    useSoon: isUseSoon(row, coverage),
     unmergeableGroup: row.unmergeableGroup,
     sourceEntryIds: row.sourceEntryIds,
   };

@@ -323,7 +323,7 @@ rating is not a good one.
 
 ---
 
-## Phase 7 - Pantry
+## Phase 7 - Pantry  [DONE 2026-09-01]
 
 Goal: less waste, better context, minimum friction.
 
@@ -333,6 +333,21 @@ Goal: less waste, better context, minimum friction.
 - Use-soon items surfaced in the snapshot as a planning priority.
 
 Ship: the agent plans around what is already in your kitchen.
+
+Built as specified, with three things worth recording:
+
+- **A covered staple is set aside, not deleted.** It appears in a collapsed
+  "you should already have" section, because the one week you are out of flour
+  is the week a silently missing line ruins dinner.
+- **Coverage is re-evaluated on every regeneration**, so a staple declared today
+  drops off today's list rather than next week's.
+- **The section numbering in the snapshot is now the spec's.** Pantry is 7,
+  history 8, signals 9. Phase 6 had temporarily shifted history and signals up
+  because the pantry did not exist yet.
+
+With the pantry built, every section the snapshot model defines is filled, and
+`unavailable` is empty for the first time. The field stays, so a future gap can
+be declared rather than rendered as silence.
 
 ---
 

@@ -8,6 +8,7 @@ import { registerGetProfileSnapshot } from "./tools/get-profile-snapshot";
 import { registerGetHistory } from "./tools/get-history";
 import { registerGetRecipe } from "./tools/get-recipe";
 import { registerGetWeek } from "./tools/get-week";
+import { registerPantryTools } from "./tools/pantry";
 import { registerProposeWeek } from "./tools/propose-week";
 import { registerRecipeWrites } from "./tools/recipe-writes";
 import { registerSearchRecipes } from "./tools/search-recipes";
@@ -42,6 +43,7 @@ export function buildServer(ctx: McpCallerContext): McpServer {
   registerUpdateSlot(server, ctx);
   registerRecipeWrites(server, ctx);
   registerFactWrites(server, ctx);
+  registerPantryTools(server, ctx);
 
   registerResources(server, ctx);
   registerPrompts(server, ctx);

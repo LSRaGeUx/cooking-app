@@ -11,4 +11,5 @@ export * from "./slots";
 export * from "./recipes";
 export * from "./plans";
 export * from "./feedback";
+export * from "./pantry";
 export * from "./grocery";

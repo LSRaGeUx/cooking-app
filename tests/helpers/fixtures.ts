@@ -12,6 +12,7 @@ import {
   groceryList,
   ingredient,
   mealType,
+  pantryItem,
   plan,
   planEntry,
   planVersion,
@@ -55,6 +56,7 @@ export async function cleanupUser(ctx: ServiceContext): Promise<void> {
     await tx.delete(recipe).where(eq(recipe.userId, ctx.userId));
     await tx.delete(slotConfig).where(eq(slotConfig.userId, ctx.userId));
     await tx.delete(mealType).where(eq(mealType.userId, ctx.userId));
+    await tx.delete(pantryItem).where(eq(pantryItem.userId, ctx.userId));
     await tx.delete(ingredient).where(eq(ingredient.userId, ctx.userId));
     await tx.delete(allergen).where(eq(allergen.userId, ctx.userId));
     await tx.delete(exclusion).where(eq(exclusion.userId, ctx.userId));

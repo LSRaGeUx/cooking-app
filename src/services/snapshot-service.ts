@@ -13,6 +13,7 @@ import { DEFAULT_FACT_CAP } from "@/domain/vocabulary";
 import { inScope, type ServiceContext } from "./context";
 import { listFacts, markFactsReferenced } from "./fact-service";
 import { loadHistory, loadSignals } from "./history-service";
+import { listPantry, type PantryItemView } from "./pantry-service";
 import { loadEnforcementContext } from "./profile-service";
 import { loadSlotDefinitions } from "./slot-service";
 
@@ -40,6 +41,14 @@ export interface ComposeOptions {
   readonly markReferenced?: boolean;
 }
 
+function toSnapshotPantryItem(item: PantryItemView) {
+  return {
+    name: item.name,
+    quantityNote: item.quantityNote,
+    expiresOn: item.expiresOn,
+  };
+}
+
 export async function composeProfileSnapshot(
   ctx: ServiceContext,
   options: ComposeOptions = {},
@@ -56,6 +65,7 @@ export async function composeProfileSnapshot(
     // enough that the document stays readable.
     const history = await loadHistory(scoped, 4);
     const { signals } = await loadSignals(scoped);
+    const pantry = await listPantry(scoped);
 
     const ranked: RankedFact[] = activeFacts.map((row) => ({
       id: row.id,
@@ -147,6 +157,15 @@ export async function composeProfileSnapshot(
       },
       organizationFacts: organization,
       tasteFacts: orderTasteFacts(taste),
+      pantry: {
+        staples: pantry
+          .filter((item) => item.kind === "staple")
+          .map(toSnapshotPantryItem),
+        // Expiring first: this list exists to change what gets cooked next.
+        useSoon: pantry
+          .filter((item) => item.kind === "use_soon")
+          .map(toSnapshotPantryItem),
+      },
       recentHistory: history.map((historyWeek) => ({
         year: historyWeek.year,
         week: historyWeek.week,
@@ -162,15 +181,9 @@ export async function composeProfileSnapshot(
         code: signal.code,
         message: signal.message,
       })),
-      // Saying so beats a silently empty section: an agent must not read
-      // "no staples listed" as "there are no staples".
-      unavailable: [
-        {
-          section: "Placards",
-          reason:
-            "la gestion des placards arrive en phase 7. Ne supposez pas que les placards sont vides.",
-        },
-      ],
+      // Every section the model defines is now filled. The field stays so a
+      // future gap can be declared rather than rendered as silence.
+      unavailable: [],
     };
 
     if (options.markReferenced) {

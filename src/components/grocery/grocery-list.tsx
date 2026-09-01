@@ -54,8 +54,19 @@ export function GroceryList({
   const [pending, setPending] = useState(false);
   const [diffSummary, setDiffSummary] = useState<string | null>(null);
 
-  const groups = useMemo(() => groupByAisle(lines), [lines]);
-  const checkedCount = lines.filter((line) => line.checked).length;
+  // Staples are set aside rather than dropped. The one week you are out of
+  // flour is the week a silently missing line ruins dinner, so they stay
+  // visible in a collapsed section you can check.
+  const toBuy = useMemo(
+    () => lines.filter((line) => !line.coveredByPantry),
+    [lines],
+  );
+  const covered = useMemo(
+    () => lines.filter((line) => line.coveredByPantry),
+    [lines],
+  );
+  const groups = useMemo(() => groupByAisle(toBuy), [toBuy]);
+  const checkedCount = toBuy.filter((line) => line.checked).length;
 
   async function regenerate(): Promise<void> {
     setPending(true);
@@ -174,7 +185,7 @@ export function GroceryList({
 
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-sm opacity-70">
-          {t("progress", { checked: checkedCount, total: lines.length })}
+          {t("progress", { checked: checkedCount, total: toBuy.length })}
         </span>
         <button
           type="button"
@@ -254,6 +265,28 @@ export function GroceryList({
           })}
         </div>
       )}
+
+      {covered.length > 0 ? (
+        <details className="rounded-md border border-black/10 px-3 py-2 dark:border-white/15">
+          <summary className="cursor-pointer text-sm">
+            {t("alreadyHave")} ({covered.length})
+          </summary>
+          <p className="pt-2 text-xs opacity-70">{t("alreadyHaveHelp")}</p>
+          <ul className="flex flex-wrap gap-2 pt-2">
+            {covered.map((line) => (
+              <li key={line.id} className="text-sm opacity-70">
+                {[
+                  line.quantity !== null ? formatQuantity(line.quantity) : null,
+                  pluralizeUnit(line.unit, line.quantity),
+                  line.displayName,
+                ]
+                  .filter((part) => part !== null && part !== "")
+                  .join(" ")}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
 
       <form
         action={addLine}
@@ -359,6 +392,11 @@ function LineRow({
               .filter((part) => part !== null && part !== "")
               .join(" ")}
           </span>
+          {line.useSoon ? (
+            <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
+              {t("useSoonMark")}
+            </span>
+          ) : null}
           {meals.length > 0 ? (
             <span className="text-xs opacity-50">
               {t("usedIn", { meals: meals.join(", ") })}

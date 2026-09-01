@@ -5,6 +5,7 @@ import {
 import { DomainError } from "@/domain/errors";
 import { currentIsoWeek, formatIsoWeek, parseIsoWeek } from "@/domain/week";
 import { loadHistory, loadSignals } from "@/services/history-service";
+import { listPantry } from "@/services/pantry-service";
 import { getWeekView } from "@/services/plan-service";
 import { getRecipe, loadRecipeIndex } from "@/services/recipe-service";
 import { loadSlotDefinitions } from "@/services/slot-service";
@@ -256,18 +257,45 @@ export function registerResources(
     }),
   );
 
-  // The two sections the model defines but this build cannot fill. They are
-  // served as explicit placeholders rather than omitted, so an agent that looks
-  // for them learns why they are empty instead of concluding there is nothing
-  // to know.
-  registerPlaceholder(
-    server,
-    caller,
+  server.registerResource(
     "pantry",
     "cooking://pantry",
-    "Placards",
-    "pantry:read",
-    "La gestion des placards arrive en phase 7. Ne supposez pas que les placards sont vides : cette information n'est pas encore collectée.",
+    {
+      title: "Placards",
+      description:
+        "Ce qui est toujours en stock, et ce qu'il faut consommer bientôt. Les " +
+        "seconds sont une priorité de planification. Une liste vide signifie " +
+        "« rien de saisi », pas « placard vide ».",
+      mimeType: "application/json",
+    },
+    async (uri) => ({
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: "application/json",
+          text: await runResource(
+            caller,
+            {
+              name: "resource:pantry",
+              direction: "read",
+              requiredScopes: ["pantry:read"],
+            },
+            async (ctx) => {
+              const items = await listPantry(ctx);
+              return JSON.stringify(
+                {
+                  staples: items.filter((item) => item.kind === "staple"),
+                  use_soon: items.filter((item) => item.kind === "use_soon"),
+                  note: "Une liste vide signifie « rien de saisi », pas « placard vide ».",
+                },
+                null,
+                2,
+              );
+            },
+          ),
+        },
+      ],
+    }),
   );
 
   server.registerResource(
@@ -306,40 +334,6 @@ export function registerResources(
                 2,
               );
             },
-          ),
-        },
-      ],
-    }),
-  );
-}
-
-function registerPlaceholder(
-  server: McpServer,
-  caller: McpCallerContext,
-  name: string,
-  uri: string,
-  title: string,
-  scope: string,
-  reason: string,
-): void {
-  server.registerResource(
-    name,
-    uri,
-    { title, description: reason, mimeType: "application/json" },
-    async (resourceUri) => ({
-      contents: [
-        {
-          uri: resourceUri.href,
-          mimeType: "application/json",
-          text: await runResource(
-            caller,
-            {
-              name: `resource:${name}`,
-              direction: "read",
-              requiredScopes: [scope],
-            },
-            async () =>
-              JSON.stringify({ available: false, reason }, null, 2),
           ),
         },
       ],

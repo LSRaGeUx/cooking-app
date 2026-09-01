@@ -20,6 +20,7 @@ export function AppNav({
     { href: weekHref, label: t("week"), match: "/semaine" },
     { href: groceryHref, label: t("grocery"), match: "/courses" },
     { href: "/recettes", label: t("recipes"), match: "/recettes" },
+    { href: "/placards", label: t("pantry"), match: "/placards" },
     { href: "/creneaux", label: t("slots"), match: "/creneaux" },
     { href: "/profil", label: t("profile"), match: "/profil" },
     { href: "/faits", label: t("facts"), match: "/faits" },

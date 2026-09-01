@@ -72,10 +72,20 @@ export interface ProfileSnapshot {
   };
   readonly organizationFacts: SnapshotFact[];
   readonly tasteFacts: SnapshotFact[];
+  readonly pantry: {
+    readonly staples: SnapshotPantryItem[];
+    readonly useSoon: SnapshotPantryItem[];
+  };
   readonly recentHistory: SnapshotHistoryWeek[];
   readonly unresolvedSignals: SnapshotSignal[];
   /** Sections the spec defines that this build cannot fill yet. */
   readonly unavailable: UnavailableSection[];
+}
+
+export interface SnapshotPantryItem {
+  readonly name: string;
+  readonly quantityNote: string | null;
+  readonly expiresOn: string | null;
 }
 
 export interface SnapshotHistoryWeek {
@@ -342,7 +352,37 @@ export function renderSnapshotMarkdown(snapshot: ProfileSnapshot): string {
   pushFacts(out, snapshot.tasteFacts);
   out.push("");
 
-  out.push("## 7. Historique récent");
+  out.push("## 7. Placards");
+  out.push("");
+  if (snapshot.pantry.useSoon.length > 0) {
+    out.push(
+      "**À consommer bientôt.** Ce sont des priorités de planification : proposez de préférence des plats qui les utilisent :",
+    );
+    for (const item of snapshot.pantry.useSoon) {
+      const note = item.quantityNote ? `, ${item.quantityNote}` : "";
+      const expiry = item.expiresOn ? `, avant le ${item.expiresOn}` : "";
+      out.push(`- ${item.name}${note}${expiry}`);
+    }
+    out.push("");
+  }
+  if (snapshot.pantry.staples.length > 0) {
+    out.push(
+      `Toujours en stock, inutile de les faire acheter : ${snapshot.pantry.staples
+        .map((item) => item.name)
+        .join(", ")}.`,
+    );
+  }
+  if (
+    snapshot.pantry.useSoon.length === 0 &&
+    snapshot.pantry.staples.length === 0
+  ) {
+    out.push(
+      "Rien de déclaré. Cela ne veut pas dire que les placards sont vides, seulement que rien n'a été saisi.",
+    );
+  }
+  out.push("");
+
+  out.push("## 8. Historique récent");
   out.push("");
   if (snapshot.recentHistory.length === 0) {
     out.push(
@@ -370,7 +410,7 @@ export function renderSnapshotMarkdown(snapshot: ProfileSnapshot): string {
   }
   out.push("");
 
-  out.push("## 8. Signaux non résolus");
+  out.push("## 9. Signaux non résolus");
   out.push("");
   if (snapshot.unresolvedSignals.length === 0) {
     out.push("Rien à signaler.");
