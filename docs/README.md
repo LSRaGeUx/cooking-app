@@ -35,7 +35,7 @@ agent the user already pays for. Marginal cost per user tends to zero.
 
 ## Status
 
-Phases 0 to 8 complete. A person with no agent can configure their weekly grid,
+Phases 0 to 9 complete. A person with no agent can configure their weekly grid,
 build a recipe library, plan a week with immutable versions and revert, shop
 from a generated grocery list that survives the plan changing under it, and
 maintain a deep structured profile plus an atomic fact store. The strict
@@ -56,4 +56,4 @@ Phase 0 closed fully alongside phase 1: login and consent screens shipped, so
 the OAuth 2.1 flow now runs end to end into an authenticated MCP call
 (`npm run verify:oauth`).
 
-Next step is phase 9, recipe URL import.
+Next step is phase 10, polish.

@@ -380,7 +380,7 @@ four portions across five meals is merely optimistic and only flagged.
 
 ---
 
-## Phase 9 - Recipe URL import
+## Phase 9 - Recipe URL import  [DONE 2026-09-01]
 
 Goal: solve the cold-start library problem with recipes the user already likes.
 
@@ -393,6 +393,30 @@ Goal: solve the cold-start library problem with recipes the user already likes.
 Deliberately late: it is valuable but not load-bearing, it carries the security
 risk in the project, and the agent-generated recipe path already fills the
 library.
+
+Built as specified. The security work is the substance, so it is written down:
+
+- **`src/lib/safe-fetch.ts` is the only outbound request in the application**,
+  and it takes a required `purpose`. Scheme allowlist, address validated after
+  resolution, redirect cap of three with every hop revalidated, 2 MB cap, eight
+  second timeout.
+- **The validated address is pinned onto the socket.** Resolving a name, finding
+  it public, and then calling `fetch` is nearly useless, because the name can
+  resolve differently the second time. A custom `lookup` hands the connection
+  the address that was actually checked, which closes DNS rebinding.
+- **Every private range is refused**, loopback, RFC 1918, carrier NAT, multicast
+  and, the one that matters most, 169.254.169.254. IPv4-mapped IPv6 is unwrapped
+  first, because a loopback wearing an IPv6 hat is still a loopback.
+- **Attended time is never inferred.** No site publishes it, and it is the field
+  the slot budget compares against, so a guess there would quietly break
+  planning. It is left empty.
+- **A failure is specific and actionable.** `PARSE_FAILED` tells the agent to
+  fetch the page itself and post a structured recipe, which is the tier-two path
+  the spec describes rather than a workaround.
+
+Nothing from the page is ever rendered: only text fields are extracted, every
+string is length-capped, and the recipe is stored through the ordinary create
+path so ingredient linking and allergen derivation apply as usual.
 
 ---
 

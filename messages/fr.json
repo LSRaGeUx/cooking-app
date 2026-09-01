@@ -255,6 +255,12 @@
     },
     "form": {
       "titleNew": "Nouvelle recette",
+      "import": "Importer depuis une adresse",
+      "importHelp": "La plupart des sites de cuisine publient leurs recettes dans un format lisible par une machine. Si celui-ci ne le fait pas, l'import échoue clairement plutôt que de deviner de travers : demandez alors à votre agent de lire la page et de créer la recette.",
+      "importPlaceholder": "https://…",
+      "importSubmit": "Importer",
+      "importing": "Lecture de la page…",
+      "or": "ou saisissez la recette à la main",
       "titleEdit": "Modifier la recette",
       "name": "Titre",
       "namePlaceholder": "Gratin de courgettes",

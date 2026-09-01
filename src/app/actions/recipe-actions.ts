@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { parseIngredientBlock, type ParsedIngredientLine } from "@/domain/ingredient-parser";
 import { requireUser } from "@/lib/session";
+import { importRecipeFromUrl } from "@/services/import-service";
 import {
   createRecipe,
   searchRecipes,
@@ -40,6 +41,19 @@ export async function deleteRecipeAction(
 ): Promise<ActionResult<void>> {
   const { ctx } = await requireUser();
   const result = await runAction(() => softDeleteRecipe(ctx, recipeId));
+  if (result.ok) revalidatePath("/recettes");
+  return result;
+}
+
+/**
+ * The user-facing half of the two-tier import. A refusal is shown as it comes
+ * from the service, which already says what to do next.
+ */
+export async function importRecipeAction(
+  url: string,
+): Promise<ActionResult<RecipeDetail>> {
+  const { ctx } = await requireUser();
+  const result = await runAction(() => importRecipeFromUrl(ctx, url));
   if (result.ok) revalidatePath("/recettes");
   return result;
 }

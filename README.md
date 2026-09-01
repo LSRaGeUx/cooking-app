@@ -10,7 +10,7 @@ Marginal cost per user tends to zero.
 
 ## Status
 
-**Phases 0 to 8 complete.** The product as pitched, with the loop closed. You can configure your weekly grid, build a recipe
+**Phases 0 to 9 complete.** The product as pitched, with the loop closed. You can configure your weekly grid, build a recipe
 library, plan a week by hand, shop from a grocery list generated out of it, and
 maintain the profile and fact store that make the planning personal. Plan
 versions are immutable and revertible, and the strict allergen block, slot state
@@ -43,7 +43,7 @@ Phase 0 closed alongside phase 1: the login and consent screens shipped, so the
 OAuth 2.1 flow now runs end to end into an authenticated MCP call. See
 [`docs/07-phase-0-findings.md`](docs/07-phase-0-findings.md).
 
-Next: phase 9, recipe URL import.
+Next: phase 10, polish.
 
 Full specs live in [`docs/`](docs/README.md). Start with
 [`docs/README.md`](docs/README.md), then read in numbered order.
@@ -105,7 +105,8 @@ write results back.
 
 TypeScript end to end. Next.js, PostgreSQL 18, Drizzle, Better Auth acting as an
 OAuth 2.1 provider, the MCP TypeScript SDK, Zod as the single source of
-validation, next-intl for French copy, and dnd-kit for the week grid. Reasoning
+validation, next-intl for French copy, dnd-kit for the week grid, and linkedom
+for reading schema.org recipes out of a page. Reasoning
 and the rejected alternatives are in
 [`docs/04-tech-spec.md`](docs/04-tech-spec.md).
 
