@@ -46,7 +46,11 @@ export function DeleteAccount() {
           setPending(false);
           if (result && !result.ok) {
             setFeedback({
-              error: { code: result.code, message: result.message },
+              error: {
+              code: result.code,
+              message: result.message,
+              details: result.details,
+            },
             });
           }
         }}

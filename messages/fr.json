@@ -329,7 +329,6 @@
     "alreadyHaveHelp": "Ces produits sont dans vos placards. Ils restent listés pour que vous puissiez vérifier plutôt que de le découvrir en cuisinant.",
     "offline": "Hors ligne. Les cases cochées seront enregistrées au retour du réseau.",
     "queued": "{count, plural, one {# case cochée en attente d'envoi} other {# cases cochées en attente d'envoi}}.",
-    "checkFailed": "Cette case n'a pas pu être enregistrée. Rechargez la liste pour voir son état réel.",
     "useSoonMark": "À finir",
     "unmergeable": "Quantités non additionnables",
     "unmergeableHelp": "Ces lignes concernent le même ingrédient dans des unités qui ne se convertissent pas. Elles sont affichées séparément plutôt que fusionnées au hasard.",
@@ -547,6 +546,19 @@
   },
   "errors": {
     "title": "Action refusée",
+    "messages": {
+      "STRICT_ALLERGEN": "« {recipeTitle} » contient {ingredient}, qui correspond à l'allergène strict « {allergen} » (terme « {matchedTerm} »). Un allergène strict ne peut jamais être placé dans un créneau, sans exception. Choisissez une autre recette, ou retirez cet ingrédient de la recette.",
+      "SLOT_NOT_PLANNED": "Le créneau {slot} est {state, select, skipped {marqué sauté} hidden {marqué masqué} other {non planifié}} et ne doit pas être rempli. {availableCount, plural, =0 {Aucun créneau n'est planifiable.} other {Créneaux planifiables : {available}.}}",
+      "SLOT_UNKNOWN": "Aucun créneau {day} ne correspond à ce type de repas dans votre configuration. {availableCount, plural, =0 {Aucun créneau n'est planifiable.} other {Créneaux planifiables : {available}.}}",
+      "TIME_BUDGET_EXCEEDED": "{slot} a un budget de {budget} min de cuisine active, et cette recette en demande {active} min, soit {over} min de trop (tolérance : {tolerance} min). Choisissez une recette plus rapide, augmentez le budget de ce créneau, ou cuisinez-la en avance depuis un autre créneau.",
+      "VERSION_CONFLICT": "Cette semaine a changé pendant que vous la modifiiez : vous partiez de la version {expected}, la version actuelle est la {current}. Rechargez la page, puis refaites votre modification.",
+      "PREP_LINK_ORDER": "Vous ne pouvez pas servir {dependent} un plat cuisiné {source}. La session de cuisine doit venir le même jour ou avant. Inversez les deux créneaux, ou choisissez une autre source.",
+      "MISSING_RATIONALE": "« {recipeTitle} » a été proposé pour {slot} sans justification. Chaque repas proposé par un agent doit dire pourquoi.",
+      "FACT_CAP_REACHED": "Vous avez {active} faits actifs pour un plafond de {cap}. Retirez d'abord un fait devenu inutile.",
+      "MISSING_SCOPE": "Cette connexion n'a pas les autorisations nécessaires : {missing}. Reconnectez le client depuis l'écran Agent pour les accorder.",
+      "CLIENT_REVOKED": "Cet accès a été révoqué. Le client doit se reconnecter depuis l'écran Agent.",
+      "RATE_LIMITED": "Ce client a dépassé {limit} appels par minute. Attendez une minute avant de réessayer."
+    },
     "STRICT_ALLERGEN": "Allergène strict",
     "SLOT_NOT_PLANNED": "Créneau non planifié",
     "SLOT_UNKNOWN": "Créneau inconnu",
@@ -564,6 +576,14 @@
     "FORBIDDEN": "Accès refusé"
   },
   "warnings": {
+    "messages": {
+      "EXCLUDED_INGREDIENT": "« {recipeTitle} » contient {ingredient}, {kind, select, allergen {qui correspond à l'allergène « {reason} » que vous évitez} other {un ingrédient que vous avez exclu (« {reason} »)}}.",
+      "EQUIPMENT_MISSING": "« {recipeTitle} » demande un équipement que vous n'avez pas déclaré : {equipment}.",
+      "REPEAT_RECIPE_THIS_WEEK": "« {recipeTitle} » apparaît {count} fois cette semaine, alors que votre préférence de variété est de {variety} sur 5.",
+      "SERVINGS_SHORTFALL": "« {recipeTitle} » est prévu pour {servings} portions, et {drawn} de plus sont tirées pour d'autres repas. Prévoyez {required} portions au total, ou réduisez ce qui est tiré.",
+      "NOT_BATCH_FRIENDLY": "« {recipeTitle} » n'est pas marquée comme se doublant et se conservant bien. Elle peut quand même servir de session de cuisine, mais vérifiez qu'elle tient jusqu'au repas qui en dépend.",
+      "TIME_BUDGET_TIGHT": "{slot} dépasse son budget de {over} min ({active} min pour un budget de {budget} min), ce qui reste dans la tolérance."
+    },
     "DIET_MISMATCH": "Régime alimentaire",
     "EXCLUDED_INGREDIENT": "Ingrédient à éviter",
     "EQUIPMENT_MISSING": "Équipement manquant",

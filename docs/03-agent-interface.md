@@ -276,6 +276,36 @@ Compare:
 The second one gets fixed on retry with no human involved. This is the highest
 leverage per line of code in the entire project.
 
+### 6.1 The same refusal, in two places
+
+That agent-facing sentence is French, because French is the language of
+everything the agent reads about this user, and it is one string, because a
+model needs the whole rule at once. Neither property suits a screen: the
+interface exists in two languages, and a sentence that arrived pre-assembled
+cannot be translated.
+
+So `details` carries the parts, and the screen rebuilds the sentence in the
+reader's language from the code plus those parts. That is the second reason
+details exist, alongside giving an agent the corrective information. Two
+consequences worth knowing before changing an error:
+
+- **Dropping a field from a `details` object is a UI regression**, not a
+  cosmetic change. The message degrades silently to the French sentence rather
+  than failing. `tests/domain/error-params.test.ts` throws each rule for real
+  and renders both catalogues to catch it.
+- **Slot-bearing errors carry `dayOfWeek` and `mealTypeLabel`** as well as the
+  assembled French `slot` label, because a day name baked into the details
+  cannot be translated either.
+
+`VALIDATION`, `NOT_FOUND`, `FORBIDDEN` and `RECIPE_NOT_FOUND` deliberately have
+no screen template. They are thrown from dozens of unrelated places, so nothing
+general would beat the sentence the service already wrote, and they fall back to
+it.
+
+`DIET_MISMATCH` and `BUDGET_EXCEEDED` are declared in the taxonomy but never
+emitted: the first has nothing to test against until Q7 is settled, and the
+second needs ingredient prices, which assumption A7 puts out of scope.
+
 ## 7. Published prompt pack
 
 Since there is no server-side prompt, we ship the steering as downloadable

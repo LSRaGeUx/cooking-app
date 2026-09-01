@@ -329,7 +329,6 @@
     "alreadyHaveHelp": "These items are in your pantry. They stay listed so you can check, rather than find out while cooking.",
     "offline": "Offline. Ticked boxes will be saved when the network comes back.",
     "queued": "{count, plural, one {# ticked box waiting to be sent} other {# ticked boxes waiting to be sent}}.",
-    "checkFailed": "That box could not be saved. Reload the list to see its real state.",
     "useSoonMark": "Use up",
     "unmergeable": "Quantities that cannot be added up",
     "unmergeableHelp": "These lines are the same ingredient in units that do not convert. They are shown separately rather than merged at random.",
@@ -547,6 +546,19 @@
   },
   "errors": {
     "title": "Action refused",
+    "messages": {
+      "STRICT_ALLERGEN": "\"{recipeTitle}\" contains {ingredient}, which matches the strict allergen \"{allergen}\" (term \"{matchedTerm}\"). A strict allergen can never be placed in a slot, no exceptions. Pick another recipe, or take that ingredient out of the recipe.",
+      "SLOT_NOT_PLANNED": "The {slot} slot is {state, select, skipped {marked skipped} hidden {marked hidden} other {not planned}} and must not be filled. {availableCount, plural, =0 {No slot is plannable.} other {Plannable slots: {available}.}}",
+      "SLOT_UNKNOWN": "No {day} slot matches this meal type in your setup. {availableCount, plural, =0 {No slot is plannable.} other {Plannable slots: {available}.}}",
+      "TIME_BUDGET_EXCEEDED": "{slot} has a budget of {budget} min of hands-on cooking, and this recipe wants {active} min, which is {over} min too many (tolerance: {tolerance} min). Pick a faster recipe, raise this slot's budget, or cook it ahead from another slot.",
+      "VERSION_CONFLICT": "This week changed while you were editing it: you started from version {expected}, and the current one is {current}. Reload the page, then make your change again.",
+      "PREP_LINK_ORDER": "You cannot serve on {dependent} a dish cooked on {source}. The cooking session has to come the same day or earlier. Swap the two slots, or pick another source.",
+      "MISSING_RATIONALE": "\"{recipeTitle}\" was proposed for {slot} with no reason given. Every meal an agent proposes has to say why.",
+      "FACT_CAP_REACHED": "You have {active} active facts against a cap of {cap}. Retire one that is no longer useful first.",
+      "MISSING_SCOPE": "This connection lacks the permissions needed: {missing}. Reconnect the client from the Agent screen to grant them.",
+      "CLIENT_REVOKED": "This access was revoked. The client has to connect again from the Agent screen.",
+      "RATE_LIMITED": "This client went over {limit} calls per minute. Wait a minute before trying again."
+    },
     "STRICT_ALLERGEN": "Strict allergen",
     "SLOT_NOT_PLANNED": "Slot not planned",
     "SLOT_UNKNOWN": "Unknown slot",
@@ -564,6 +576,14 @@
     "FORBIDDEN": "Access refused"
   },
   "warnings": {
+    "messages": {
+      "EXCLUDED_INGREDIENT": "\"{recipeTitle}\" contains {ingredient}, {kind, select, allergen {which matches the allergen \"{reason}\" you avoid} other {an ingredient you excluded (\"{reason}\")}}.",
+      "EQUIPMENT_MISSING": "\"{recipeTitle}\" needs equipment you have not declared: {equipment}.",
+      "REPEAT_RECIPE_THIS_WEEK": "\"{recipeTitle}\" appears {count} times this week, while your variety preference is {variety} out of 5.",
+      "SERVINGS_SHORTFALL": "\"{recipeTitle}\" is planned for {servings} servings, and {drawn} more are drawn for other meals. Plan {required} servings in total, or draw less from it.",
+      "NOT_BATCH_FRIENDLY": "\"{recipeTitle}\" is not marked as doubling and keeping well. It can still be a cooking session, but check it lasts until the meal that depends on it.",
+      "TIME_BUDGET_TIGHT": "{slot} goes {over} min over its budget ({active} min against a budget of {budget} min), which is still inside the tolerance."
+    },
     "DIET_MISMATCH": "Diet",
     "EXCLUDED_INGREDIENT": "Ingredient to avoid",
     "EQUIPMENT_MISSING": "Missing equipment",

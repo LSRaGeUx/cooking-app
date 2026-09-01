@@ -1,7 +1,7 @@
 # 06 - Open Questions and Assumptions
 
 Status: living document
-Last updated: 2026-08-31
+Last updated: 2026-09-01
 
 Nothing here blocks starting phase 0. Each item names who decides and when it
 must be decided by.
@@ -30,7 +30,7 @@ must be decided by.
 | Q6 | Public repository or private. It affects whether the UI language decision matters for contributors | Phase 0 |
 | Q7 | **Raised in phase 1.** Diet is specified as a hard filter on recipe assignment, but no recipe field says which diets a recipe satisfies, so there is nothing to filter on. Options: derive it from linked ingredient categories (cheap, wrong at the edges), add an explicit `diets` array on `recipe` that the user or their agent sets, or drop diet to advisory and let facts carry it. Allergens and exclusions are enforced either way | Phase 3 |
 | Q8 | **Raised in phase 1.** Every manual edit creates a plan version, so a session of dragging produces a dozen. Immutability requires it. Should the history screen collapse consecutive user edits made within a few minutes into one entry for display, keeping every version revertible underneath | Phase 6, cosmetic until the history is used in anger |
-| Q9 | **Raised in phase 1.** Rejection messages are written in French by the service layer and shown verbatim, with only the heading localized through next-intl. Adding English means keying every message off its code plus details. Worth doing when English lands, not before | Phase 10 |
+| ~~Q9~~ | **ANSWERED 2026-09-01 by building it.** Screens now rebuild the sentence from the code plus the details, one template per code rather than one per throw site: 64 throws share 15 codes, and a template per site would be the second copy of every rule the taxonomy exists to prevent. The service keeps writing one French sentence for the agent, which is what a model needs. `VALIDATION`, `NOT_FOUND`, `FORBIDDEN` and `RECIPE_NOT_FOUND` have no template on purpose: they are thrown from dozens of unrelated places, so the service sentence beats anything generic, and they fall back to it. `tests/domain/error-params.test.ts` throws each rule for real and renders both catalogues, because a dropped detail field degrades silently to French rather than failing | Done |
 
 ## Technical unknowns to resolve by experiment
 

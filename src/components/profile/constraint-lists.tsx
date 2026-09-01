@@ -65,13 +65,24 @@ export function ConstraintLists({
   const [exclusionMatches, setExclusionMatches] = useState("");
   const [customEquipment, setCustomEquipment] = useState("");
 
-  async function run(action: () => Promise<{ ok: boolean; code?: string; message?: string }>) {
+  async function run(
+    action: () => Promise<{
+      ok: boolean;
+      code?: string;
+      message?: string;
+      details?: Record<string, unknown>;
+    }>,
+  ) {
     setPending(true);
     const result = await action();
     setPending(false);
     if (!result.ok) {
       setFeedback({
-        error: { code: result.code ?? "INTERNAL", message: result.message ?? "" },
+        error: {
+          code: result.code ?? "INTERNAL",
+          message: result.message ?? "",
+          details: result.details,
+        },
       });
       return false;
     }

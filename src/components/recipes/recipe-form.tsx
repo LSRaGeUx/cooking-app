@@ -87,7 +87,13 @@ export function RecipeForm({ recipe }: { recipe?: RecipeDetail }) {
     const result = await parseIngredientsAction(paste);
     setPending(false);
     if (!result.ok) {
-      setFeedback({ error: { code: result.code, message: result.message } });
+      setFeedback({
+        error: {
+          code: result.code,
+          message: result.message,
+          details: result.details,
+        },
+      });
       return;
     }
     setIngredients((current) => [
@@ -149,7 +155,13 @@ export function RecipeForm({ recipe }: { recipe?: RecipeDetail }) {
 
     setPending(false);
     if (!result.ok) {
-      setFeedback({ error: { code: result.code, message: result.message } });
+      setFeedback({
+        error: {
+          code: result.code,
+          message: result.message,
+          details: result.details,
+        },
+      });
       return;
     }
 

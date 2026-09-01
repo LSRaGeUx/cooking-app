@@ -11,7 +11,6 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "lint": "next lint",
     "db:up": "podman compose up -d db",
     "db:down": "podman compose down",
     "db:generate": "drizzle-kit generate",

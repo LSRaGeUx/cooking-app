@@ -29,7 +29,13 @@ export function RecipeImport() {
     setPending(false);
 
     if (!result.ok) {
-      setFeedback({ error: { code: result.code, message: result.message } });
+      setFeedback({
+        error: {
+          code: result.code,
+          message: result.message,
+          details: result.details,
+        },
+      });
       return;
     }
     router.push(`/recettes/${result.data.recipe.id}`);

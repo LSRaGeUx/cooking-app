@@ -40,7 +40,13 @@ export function VersionHistory({
     const result = await revertToVersionAction(week, versionNumber);
     setPending(false);
     if (!result.ok) {
-      setFeedback({ error: { code: result.code, message: result.message } });
+      setFeedback({
+        error: {
+          code: result.code,
+          message: result.message,
+          details: result.details,
+        },
+      });
       return;
     }
     setFeedback({});

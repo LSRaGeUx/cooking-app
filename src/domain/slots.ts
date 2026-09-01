@@ -78,7 +78,12 @@ export function resolvePlannableSlot(
     throw new DomainError(
       "SLOT_UNKNOWN",
       `Aucun créneau ${dayName(ref.dayOfWeek)} ne correspond à ce type de repas dans votre configuration. Créneaux planifiables : ${available.join(", ") || "aucun"}.`,
-      { dayOfWeek: ref.dayOfWeek, mealTypeId: ref.mealTypeId, available },
+      {
+        dayOfWeek: ref.dayOfWeek,
+        mealTypeId: ref.mealTypeId,
+        available,
+        availableCount: available.length,
+      },
     );
   }
 
@@ -86,7 +91,17 @@ export function resolvePlannableSlot(
     throw new DomainError(
       "SLOT_NOT_PLANNED",
       `Le créneau ${describeSlot(slot)} est configuré comme « ${slot.state === "skipped" ? "sauté" : "masqué"} » et ne doit pas être rempli. Créneaux planifiables : ${available.join(", ") || "aucun"}.`,
-      { slot: describeSlot(slot), state: slot.state, available },
+      {
+        // `slot` is the French label an agent reads. The screen needs the parts
+        // instead, because it words the same rule in the reader's language and
+        // cannot translate a sentence that arrived pre-assembled.
+        slot: describeSlot(slot),
+        dayOfWeek: slot.dayOfWeek,
+        mealTypeLabel: slot.mealTypeLabel,
+        state: slot.state,
+        available,
+        availableCount: available.length,
+      },
     );
   }
 
@@ -127,6 +142,8 @@ export function checkTimeBudget({
       `${label} a un budget de ${budget} min de cuisine active, et cette recette en demande ${activeTimeMin} min, soit ${over} min de trop (tolérance : ${toleranceMin} min). Choisissez une recette plus rapide, augmentez le budget de ce créneau, ou cuisinez-la en avance depuis un autre créneau.`,
       {
         slot: label,
+        dayOfWeek: slot.dayOfWeek,
+        mealTypeLabel: slot.mealTypeLabel,
         budgetMin: budget,
         activeTimeMin,
         overByMin: over,
@@ -138,7 +155,14 @@ export function checkTimeBudget({
   return {
     code: "TIME_BUDGET_TIGHT",
     message: `${label} dépasse son budget de ${over} min (${activeTimeMin} min pour un budget de ${budget} min), ce qui reste dans la tolérance.`,
-    details: { slot: label, budgetMin: budget, activeTimeMin, overByMin: over },
+    details: {
+      slot: label,
+      dayOfWeek: slot.dayOfWeek,
+      mealTypeLabel: slot.mealTypeLabel,
+      budgetMin: budget,
+      activeTimeMin,
+      overByMin: over,
+    },
   };
 }
 

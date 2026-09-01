@@ -1388,7 +1388,12 @@ async function validateWeek(
       warnings.push({
         code: "REPEAT_RECIPE_THIS_WEEK",
         message: `« ${title} » apparaît ${count} fois cette semaine, alors que votre préférence de variété est de ${enforcement.profile.varietyPreference} sur 5.`,
-        details: { recipeId, count },
+        details: {
+          recipeId,
+          recipeTitle: title,
+          count,
+          varietyPreference: enforcement.profile.varietyPreference,
+        },
       });
     }
   }

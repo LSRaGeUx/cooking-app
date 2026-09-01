@@ -67,6 +67,7 @@ export function checkPrepCapacity(
     code: "SERVINGS_SHORTFALL",
     message: `« ${source.recipeTitle} » est prévu pour ${source.servings} portions, et ${drawn} de plus sont tirées pour d'autres repas. Prévoyez ${required} portions au total, ou réduisez ce qui est tiré.`,
     details: {
+      recipeTitle: source.recipeTitle,
       sourceServings: source.servings,
       drawn,
       required,

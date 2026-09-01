@@ -77,7 +77,13 @@ export function GroceryList({
     setPending(false);
 
     if (!result.ok) {
-      setFeedback({ error: { code: result.code, message: result.message } });
+      setFeedback({
+        error: {
+          code: result.code,
+          message: result.message,
+          details: result.details,
+        },
+      });
       return;
     }
 
@@ -103,15 +109,13 @@ export function GroceryList({
     const outcome = await offline.submit(line.id, next);
     // A queued tick stays on screen: it is going to be written. Only a refusal
     // from the server puts the box back where the server says it is.
-    if (outcome === "refused") {
+    if (outcome.kind === "refused") {
       setLines((current) =>
         current.map((row) =>
           row.id === line.id ? { ...row, checked: line.checked } : row,
         ),
       );
-      setFeedback({
-        error: { code: "CONFLICT", message: t("checkFailed") },
-      });
+      setFeedback({ error: outcome.error });
     }
   }
 
@@ -120,7 +124,13 @@ export function GroceryList({
     const result = await deleteLineAction(week, lineId);
     setPending(false);
     if (!result.ok) {
-      setFeedback({ error: { code: result.code, message: result.message } });
+      setFeedback({
+        error: {
+          code: result.code,
+          message: result.message,
+          details: result.details,
+        },
+      });
       return;
     }
     setLines((current) => current.filter((row) => row.id !== lineId));
@@ -141,7 +151,13 @@ export function GroceryList({
     setPending(false);
 
     if (!result.ok) {
-      setFeedback({ error: { code: result.code, message: result.message } });
+      setFeedback({
+        error: {
+          code: result.code,
+          message: result.message,
+          details: result.details,
+        },
+      });
       return;
     }
     setLines((current) => [...current, result.data]);

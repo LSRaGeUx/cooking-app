@@ -66,14 +66,23 @@ export function FactBoard({
   const unconfirmed = facts.filter((row) => row.status === "unconfirmed").length;
 
   async function run(
-    action: () => Promise<{ ok: boolean; code?: string; message?: string }>,
+    action: () => Promise<{
+      ok: boolean;
+      code?: string;
+      message?: string;
+      details?: Record<string, unknown>;
+    }>,
   ): Promise<boolean> {
     setPending(true);
     const result = await action();
     setPending(false);
     if (!result.ok) {
       setFeedback({
-        error: { code: result.code ?? "INTERNAL", message: result.message ?? "" },
+        error: {
+          code: result.code ?? "INTERNAL",
+          message: result.message ?? "",
+          details: result.details,
+        },
       });
       return false;
     }

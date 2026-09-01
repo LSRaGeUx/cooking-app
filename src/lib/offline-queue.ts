@@ -57,7 +57,12 @@ function writeQueue(queue: Queue): void {
  * screen because it will be written; a refused one is rolled back because it
  * never will be.
  */
-export type SubmitOutcome = "sent" | "queued" | "refused";
+export type SubmitOutcome =
+  | { readonly kind: "sent" }
+  | { readonly kind: "queued" }
+  // The server's own refusal travels back, so the screen can say what the rule
+  // was instead of inventing a message for a failure it did not diagnose.
+  | { readonly kind: "refused"; readonly error: SendRefusal };
 
 export interface OfflineChecks {
   /** Number of ticks waiting to reach the server. */
@@ -68,8 +73,23 @@ export interface OfflineChecks {
   readonly submit: (lineId: string, checked: boolean) => Promise<SubmitOutcome>;
 }
 
+interface SendRefusal {
+  readonly code: string;
+  readonly message: string;
+  readonly details?: Record<string, unknown>;
+}
+
+type SendResult =
+  | { ok: true }
+  | {
+      ok: false;
+      code: string;
+      message: string;
+      details?: Record<string, unknown> | undefined;
+    };
+
 export function useOfflineChecks(
-  send: (lineId: string, checked: boolean) => Promise<{ ok: boolean }>,
+  send: (lineId: string, checked: boolean) => Promise<SendResult>,
 ): OfflineChecks {
   const [queue, setQueue] = useState<Queue>({});
   const [online, setOnline] = useState(true);
@@ -128,7 +148,15 @@ export function useOfflineChecks(
       try {
         const result = await sendRef.current(lineId, checked);
         // A refusal is the server answering, not the connection failing.
-        return result.ok ? "sent" : "refused";
+        if (result.ok) return { kind: "sent" };
+        return {
+          kind: "refused",
+          error: {
+            code: result.code,
+            message: result.message,
+            details: result.details,
+          },
+        };
       } catch {
         const next = {
           ...readQueue(),
@@ -137,7 +165,7 @@ export function useOfflineChecks(
         writeQueue(next);
         setQueue(next);
         setOnline(false);
-        return "queued";
+        return { kind: "queued" };
       }
     },
     [],

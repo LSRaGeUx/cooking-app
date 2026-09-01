@@ -50,14 +50,23 @@ export function FeedbackBoard({
   const [pending, setPending] = useState(false);
 
   async function run(
-    action: () => Promise<{ ok: boolean; code?: string; message?: string }>,
+    action: () => Promise<{
+      ok: boolean;
+      code?: string;
+      message?: string;
+      details?: Record<string, unknown>;
+    }>,
   ): Promise<void> {
     setPending(true);
     const result = await action();
     setPending(false);
     if (!result.ok) {
       setFeedbackState({
-        error: { code: result.code ?? "INTERNAL", message: result.message ?? "" },
+        error: {
+          code: result.code ?? "INTERNAL",
+          message: result.message ?? "",
+          details: result.details,
+        },
       });
       return;
     }
@@ -160,7 +169,12 @@ function FeedbackRowForm({
   dayLabel: string;
   disabled: boolean;
   onRun: (
-    action: () => Promise<{ ok: boolean; code?: string; message?: string }>,
+    action: () => Promise<{
+      ok: boolean;
+      code?: string;
+      message?: string;
+      details?: Record<string, unknown>;
+    }>,
   ) => Promise<void>;
 }) {
   const t = useTranslations("feedback");

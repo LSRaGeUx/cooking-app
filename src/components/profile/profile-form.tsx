@@ -65,7 +65,13 @@ export function ProfileForm({ profile }: { profile: ProfileFormValues }) {
 
     setPending(false);
     if (!result.ok) {
-      setFeedback({ error: { code: result.code, message: result.message } });
+      setFeedback({
+        error: {
+          code: result.code,
+          message: result.message,
+          details: result.details,
+        },
+      });
       return;
     }
     setSaved(true);

@@ -49,7 +49,13 @@ export function ConnectionPanel({
     const result = await revokeClientAction(clientId);
     setPending(false);
     if (!result.ok) {
-      setFeedback({ error: { code: result.code, message: result.message } });
+      setFeedback({
+        error: {
+          code: result.code,
+          message: result.message,
+          details: result.details,
+        },
+      });
       return;
     }
     setFeedback({});

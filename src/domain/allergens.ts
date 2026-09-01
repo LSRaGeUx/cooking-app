@@ -161,7 +161,15 @@ export function collectIngredientWarnings(
     warnings.push({
       code: "EXCLUDED_INGREDIENT",
       message: `« ${recipeTitle} » contient ${hit.ingredientName}, qui correspond à l'allergène « ${hit.allergenName} » à éviter.`,
-      details: { allergen: hit.allergenName, ingredient: hit.ingredientName },
+      // `kind` separates the two things this one code covers: an allergen the
+      // user marked "avoid", and an ingredient they simply refuse. The screen
+      // words them differently; an agent gets both fields either way.
+      details: {
+        kind: "allergen",
+        allergen: hit.allergenName,
+        ingredient: hit.ingredientName,
+        recipeTitle,
+      },
     });
   }
 
@@ -174,7 +182,12 @@ export function collectIngredientWarnings(
       warnings.push({
         code: "EXCLUDED_INGREDIENT",
         message: `« ${recipeTitle} » contient ${ingredient.rawName}, un ingrédient que vous avez exclu (« ${exclusion.name} »).`,
-        details: { exclusion: exclusion.name, ingredient: ingredient.rawName },
+        details: {
+          kind: "exclusion",
+          exclusion: exclusion.name,
+          ingredient: ingredient.rawName,
+          recipeTitle,
+        },
       });
     }
   }

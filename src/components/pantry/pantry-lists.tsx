@@ -27,14 +27,23 @@ export function PantryLists({ items }: { items: readonly PantryItemView[] }) {
   const [pending, setPending] = useState(false);
 
   async function run(
-    action: () => Promise<{ ok: boolean; code?: string; message?: string }>,
+    action: () => Promise<{
+      ok: boolean;
+      code?: string;
+      message?: string;
+      details?: Record<string, unknown>;
+    }>,
   ): Promise<boolean> {
     setPending(true);
     const result = await action();
     setPending(false);
     if (!result.ok) {
       setFeedback({
-        error: { code: result.code ?? "INTERNAL", message: result.message ?? "" },
+        error: {
+          code: result.code ?? "INTERNAL",
+          message: result.message ?? "",
+          details: result.details,
+        },
       });
       return false;
     }
@@ -94,7 +103,12 @@ function PantrySection({
   items: readonly PantryItemView[];
   disabled: boolean;
   onRun: (
-    action: () => Promise<{ ok: boolean; code?: string; message?: string }>,
+    action: () => Promise<{
+      ok: boolean;
+      code?: string;
+      message?: string;
+      details?: Record<string, unknown>;
+    }>,
   ) => Promise<boolean>;
 }) {
   const t = useTranslations("pantry");

@@ -2,22 +2,31 @@
 
 import { useTranslations } from "next-intl";
 import type { DomainWarning } from "@/domain/errors";
+import {
+  useErrorMessage,
+  useWarningMessage,
+  type RenderableError,
+} from "@/lib/error-message";
 
 export interface FeedbackState {
-  readonly error?: { code: string; message: string } | null;
+  readonly error?: RenderableError | null;
   readonly warnings?: readonly DomainWarning[];
 }
 
 /**
  * How a refused write reaches the user.
  *
- * The heading is localized from the error code and the sentence comes from the
- * service layer, which already words it as a corrective instruction. Restating
- * the rule here would create a second place to keep it accurate.
+ * Both the heading and the sentence are built here from the code and the
+ * details, so the screen speaks the reader's language while the service keeps
+ * writing one French sentence for the agent. A code with no template falls back
+ * to that sentence: see src/lib/error-message.ts for why that is the right
+ * failure.
  */
 export function Feedback({ error, warnings = [] }: FeedbackState) {
   const errors = useTranslations("errors");
   const warningLabels = useTranslations("warnings");
+  const errorMessage = useErrorMessage();
+  const warningMessage = useWarningMessage();
 
   if (!error && warnings.length === 0) return null;
 
@@ -29,7 +38,7 @@ export function Feedback({ error, warnings = [] }: FeedbackState) {
           className="rounded-md border border-red-500/40 bg-red-500/5 px-3 py-2 text-sm"
         >
           <p className="font-medium">{headingFor(errors, error.code)}</p>
-          <p className="opacity-90">{error.message}</p>
+          <p className="opacity-90">{errorMessage(error)}</p>
         </div>
       ) : null}
 
@@ -41,7 +50,7 @@ export function Feedback({ error, warnings = [] }: FeedbackState) {
           <p className="font-medium">
             {headingFor(warningLabels, warning.code)}
           </p>
-          <p className="opacity-90">{warning.message}</p>
+          <p className="opacity-90">{warningMessage(warning)}</p>
         </div>
       ))}
     </div>

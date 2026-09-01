@@ -93,7 +93,13 @@ export function WeekGrid({
     setPending(false);
 
     if (!result.ok) {
-      setFeedback({ error: { code: result.code, message: result.message } });
+      setFeedback({
+        error: {
+          code: result.code,
+          message: result.message,
+          details: result.details,
+        },
+      });
       return;
     }
 
@@ -109,14 +115,23 @@ export function WeekGrid({
    * server stays the authority: the screen re-reads rather than guessing.
    */
   async function runPlain(
-    action: () => Promise<{ ok: boolean; code?: string; message?: string }>,
+    action: () => Promise<{
+      ok: boolean;
+      code?: string;
+      message?: string;
+      details?: Record<string, unknown>;
+    }>,
   ): Promise<void> {
     setPending(true);
     const result = await action();
     setPending(false);
     if (!result.ok) {
       setFeedback({
-        error: { code: result.code ?? "INTERNAL", message: result.message ?? "" },
+        error: {
+          code: result.code ?? "INTERNAL",
+          message: result.message ?? "",
+          details: result.details,
+        },
       });
       return;
     }
