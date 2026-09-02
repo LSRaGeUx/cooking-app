@@ -1,0 +1,41 @@
+# One database dump, run by cooking-backup.timer.
+#
+# Copy both files to /etc/systemd/system/, edit the two paths below, then:
+#
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now cooking-backup.timer
+#   sudo systemctl start cooking-backup.service   # once, to prove it works
+#
+# Two lines need changing for your machine: User and WorkingDirectory. The rest
+# is the same everywhere.
+#
+# Logs go to journald, so there is no log file to rotate:
+#
+#   journalctl -u cooking-backup.service
+
+[Unit]
+Description=Dump the cooking-app database
+Documentation=file:/srv/cooking-app/scripts/backup.sh
+# The dump goes through `docker compose exec`, so there is no point starting
+# before the container engine is up.
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+
+# EDIT: the user that owns the checkout, and is in the `docker` group.
+User=cooking
+# EDIT: where the checkout is. scripts/backup.sh writes BACKUP_DIR relative to
+# it, so this decides where the dumps land.
+WorkingDirectory=/srv/cooking-app
+
+# How many days of dumps to keep. The script prunes with `find -mtime +N` after
+# a successful dump, so a failed run never deletes the last good one. At roughly
+# 130 kB a dump, a fortnight costs under two megabytes.
+Environment=BACKUP_KEEP_DAYS=14
+
+# On a machine without Docker:
+# Environment=COMPOSE_CMD=podman-compose
+
+ExecStart=/bin/sh scripts/backup.sh

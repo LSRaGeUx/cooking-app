@@ -392,10 +392,39 @@ behind something that looks like a complete backup. Defaults match
 `compose.yaml`, so on an ordinary install it takes no arguments. On a machine
 without Docker, set `COMPOSE_CMD=podman-compose`.
 
-Nightly, in the crontab of the user that owns the checkout:
+#### Scheduling it
+
+Two units in `deploy/` do this, and they are the recommended way:
 
 ```sh
-17 4 * * * cd /srv/cooking-app && sh scripts/backup.sh >> backups/backup.log 2>&1
+sudo cp deploy/cooking-backup.{service,timer} /etc/systemd/system/
+sudo systemctl edit --full cooking-backup.service   # set User and WorkingDirectory
+sudo systemctl daemon-reload
+sudo systemctl enable --now cooking-backup.timer
+sudo systemctl start cooking-backup.service         # once, to prove it works
+```
+
+```sh
+systemctl list-timers cooking-backup.timer   # when it next runs
+journalctl -u cooking-backup.service         # what it did
+```
+
+A timer rather than a crontab line for two reasons. `Persistent=true` runs a
+dump that was missed while the machine was down, on the next boot, where cron
+skips the day and says nothing, and that is likeliest on exactly the kind of
+small instance that reboots overnight for a kernel update. And the output goes
+to journald, which is already capped and rotated, so there is no log file
+growing beside the dumps.
+
+There is also a more basic reason to reach for the timer first: a minimal Debian
+13 image ships no cron at all, so `crontab` is not a command there until you
+install one.
+
+If you do have cron, this is equivalent apart from the missed-run behaviour, in
+the crontab of the user that owns the checkout:
+
+```sh
+17 4 * * * cd /srv/cooking-app && BACKUP_KEEP_DAYS=14 sh scripts/backup.sh >> backups/backup.log 2>&1
 ```
 
 Restoring, into the database the stack is already running:

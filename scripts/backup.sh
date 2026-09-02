@@ -16,7 +16,13 @@
 #   sh scripts/backup.sh
 #   npm run backup
 #
-# In cron, as the user that owns the checkout:
+# Scheduled by the two units in deploy/, which is the recommended way and the
+# only one that works on an image with no cron installed, such as a minimal
+# Debian 13:
+#
+#   sudo cp deploy/cooking-backup.{service,timer} /etc/systemd/system/
+#
+# In cron instead, as the user that owns the checkout:
 #
 #   17 4 * * * cd /srv/cooking-app && sh scripts/backup.sh >> backups/backup.log 2>&1
 #

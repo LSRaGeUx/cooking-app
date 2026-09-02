@@ -1,0 +1,23 @@
+# When cooking-backup.service runs. See that file for installation.
+#
+#   systemctl list-timers cooking-backup.timer
+
+[Unit]
+Description=Dump the cooking-app database daily
+
+[Timer]
+# Early enough to be quiet, and not on the hour, where everything else is.
+OnCalendar=*-*-* 04:17:00
+
+# The reason this is a timer and not a crontab line. A machine that was off at
+# 04:17 runs the dump on its next boot instead of skipping the day silently,
+# which matters most on exactly the kind of small instance that gets rebooted
+# for a kernel update overnight.
+Persistent=true
+
+# Nothing else is scheduled here yet, but a few minutes of spread costs nothing
+# and keeps a second job off the same instant later.
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
