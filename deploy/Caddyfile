@@ -1,0 +1,47 @@
+# TLS for the deployment, and nothing else.
+#
+# Caddy is here for one reason: OAuth 2.1 and the MCP resource identifier both
+# need https once the instance leaves loopback, and getting a certificate by
+# hand is the step most likely to be skipped. Caddy obtains and renews one from
+# Let's Encrypt on its own, so the operator sets a hostname and stops thinking
+# about it.
+#
+# Mounted read-only at /etc/caddy/Caddyfile by `deploy/compose.proxy.yaml`.
+# Both variables come from .env: APP_DOMAIN is required and Compose refuses to
+# start without it, ACME_EMAIL is optional and only decides whether the
+# certificate authority can warn you before an expiry.
+#
+# Port 80 stays open because the ACME HTTP challenge answers on it, under
+# /.well-known/acme-challenge/. That path does not collide with the two OAuth
+# discovery paths this application serves, and everything else on 80 is
+# redirected to https by Caddy's own default.
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$APP_DOMAIN} {
+	encode zstd gzip
+
+	# Requests are forwarded with the path untouched, which is load-bearing.
+	# Two rewrites in next.config.ts are what let an MCP client discover the
+	# authorization server, and a proxy that strips or rewrites /.well-known/
+	# breaks the paste-one-URL connection story. Do not add a handle block for
+	# it here.
+	reverse_proxy app:3000
+
+	header {
+		# Caddy does not send HSTS on its own. A year, because this host serves
+		# an OAuth authorization server and a downgrade to http on it is worth
+		# refusing outright. Drop the preload question: submitting a household
+		# hostname to the browser list is not reversible on a useful timescale.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		# The application version is nobody's business.
+		-Server
+	}
+
+	log {
+		output stderr
+		format console
+	}
+}

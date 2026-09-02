@@ -1,26 +1,43 @@
 # Plain Compose spec only. No Docker-only extensions, so this file runs
 # unchanged under Podman (dev) and Docker (self-hosters).
 #
-# Dev runs the database alone: `npm run db:up` starts `db` and nothing else.
-# A self-hoster runs the whole thing with the `serve` profile:
+# Two ways to run it:
 #
-#   docker compose --profile serve up -d --build
+#   npm run db:up                                  # the database alone, for dev
+#   docker compose --profile serve up -d --build   # the whole application
 #
-# The two services in that profile are the application and a one-shot migrator
-# that has to finish before the application starts.
+# TLS is a third file, `deploy/compose.proxy.yaml`, layered on top of this one.
+# It is separate rather than a profile because Compose interpolates every service
+# in a file whichever profile is active, so a required APP_DOMAIN in here would
+# make `npm run db:up` demand a public hostname on a laptop.
+
+# Docker keeps container logs forever by default, and on the smallest VPS the
+# thing that fills the disk first is a year of them. Every service caps them.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
     image: docker.io/library/postgres:18-alpine
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-cooking}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cooking}
       POSTGRES_DB: ${POSTGRES_DB:-cooking}
-      # Needed because the app connects as a non-superuser role for RLS to bite.
+      # Checksums detect a page corrupted underneath Postgres, on a disk this
+      # project does not choose. They can only be turned on at initdb time, so
+      # the choice is made here or never: enabling it later means dumping and
+      # reloading the cluster.
       POSTGRES_INITDB_ARGS: "--data-checksums"
     ports:
       # Loopback only. On a VPS, publishing 5432 on every interface puts the
-      # database on the public internet, and the dev workflow does not need it.
+      # database on the public internet, and nothing outside this machine needs
+      # it: the application reaches it over the compose network, and a backup
+      # runs through `docker compose exec`.
       - "127.0.0.1:5432:5432"
     volumes:
       # Postgres 18+ images place data in a major-version subdirectory, so the
@@ -39,6 +56,7 @@ services:
     build:
       context: .
       target: migrator
+    logging: *logging
     environment: &db_env
       DATABASE_URL: postgres://${POSTGRES_USER:-cooking}:${POSTGRES_PASSWORD:-cooking}@db:5432/${POSTGRES_DB:-cooking}
       APP_DATABASE_URL: postgres://cooking_app:${APP_DB_PASSWORD:-cooking_app}@db:5432/${POSTGRES_DB:-cooking}
@@ -53,6 +71,11 @@ services:
       context: .
       target: runtime
     restart: unless-stopped
+    logging: *logging
+    # Compose injects only what this block lists. A value sitting in .env is
+    # available for interpolation on the right-hand side, but it does not reach
+    # the process unless it is named here, so every variable the application
+    # reads at runtime has to appear below.
     environment:
       <<: *db_env
       # No defaults on purpose. A deployment that silently came up with a
@@ -61,8 +84,19 @@ services:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?generate one with openssl rand -base64 32}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:?the public https origin, not localhost}
       MCP_RESOURCE: ${MCP_RESOURCE:?the public https origin plus /api/mcp}
+      # Required for the same reason. The Google pair is the only sign-in method
+      # this profile offers, because AUTH_PASSWORD_LOGIN is deliberately absent
+      # from this block: the password endpoints exist for `npm run verify:oauth`
+      # and a container facing the internet has no business opening them.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?the Google OAuth client id, or there is no way to sign in}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?the matching secret}
+      # Empty is closed in production, so an instance without this starts fine
+      # and then lets nobody in, including you. Refusing at `up` is the louder
+      # failure and the message carries the fix.
+      ALLOWED_EMAILS: ${ALLOWED_EMAILS:?comma separated addresses allowed to hold an account}
     ports:
-      # Loopback only: TLS is terminated by the reverse proxy in front.
+      # Loopback only: TLS is terminated by the reverse proxy in front, whether
+      # that is deploy/compose.proxy.yaml or something already on the machine.
       - "127.0.0.1:3000:3000"
     depends_on:
       db:
@@ -70,7 +104,10 @@ services:
       migrate:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/login || exit 1"]
+      # /api/health runs `select 1` on the runtime pool, so an application that
+      # is listening but cannot reach Postgres reports unhealthy instead of
+      # serving an error on every screen. wget is busybox's, present in Alpine.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3

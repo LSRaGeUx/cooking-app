@@ -20,7 +20,9 @@ over MCP.
 | A domain and TLS, for anything beyond localhost | OAuth 2.1 and the MCP resource identifier both need https off the loopback |
 
 Roughly 300 MB of disk for the database after a year of ordinary use, plus the
-Node install. It runs comfortably on the smallest VPS you can rent.
+Node install. Serving it needs very little: one household generates no load
+worth the name. Building it is what sets the floor, so 2 GB of RAM, or 1 GB and
+a gigabyte of swap, or an image built elsewhere and pushed to a registry.
 
 ---
 
@@ -48,21 +50,35 @@ bootstrap and both migrators once, and only then starts the application. The
 `serve` profile is what keeps this out of the way in development: `npm run
 db:up` still brings up the database alone.
 
-Three variables have no default and the stack refuses to start without them,
-which is deliberate: an instance that came up with a placeholder secret, or with
-`localhost` as its OAuth issuer, fails in a way nobody notices until an agent
-cannot connect.
+Six variables have no default and `docker compose` refuses to start without
+them, naming the missing one and what it is for. That is deliberate: every one
+of them fails silently rather than loudly if it is wrong, and an instance that
+came up with a placeholder secret, with `localhost` as its OAuth issuer, or with
+nobody on its allowlist, is broken in a way nobody notices until an agent cannot
+connect or you cannot sign in.
 
 - `BETTER_AUTH_SECRET`
 - `BETTER_AUTH_URL`
 - `MCP_RESOURCE`
+- `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
+- `ALLOWED_EMAILS`
 
-A fourth thing is checked at start-up: there has to be a way in. Set
-`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, or `AUTH_PASSWORD_LOGIN=true`,
-or the application refuses to boot. Only the Google pair puts a button on the
-login screen; the password flag opens the auth API and nothing else, so an
-instance meant for people to use needs the Google side. Section 3 has it, and
-the allowlist that decides who the button actually lets in.
+The Google pair is required here because it is the only sign-in the container
+offers. `AUTH_PASSWORD_LOGIN` is not passed into it at all, whatever `.env`
+says: those endpoints exist for `npm run verify:oauth` to drive, and a container
+facing the internet has no business opening them. Running from source is where
+that flag applies.
+
+`ALLOWED_EMAILS` is required for a different reason. Empty is closed in
+production, so an instance without it starts, looks healthy, and lets nobody in,
+including you. Section 3 has both, and the difference between proving an address
+and granting access.
+
+Compose injects only the variables it names, which is worth knowing before
+adding one: a value sitting in `.env` is available for interpolation on the
+right-hand side of `environment:` and does not otherwise reach the process. A
+new variable the application reads needs a line in `compose.yaml` as well as in
+`.env`.
 
 The database URLs are built by `compose.yaml` and point at the `db` service, so
 the values in `.env` for those two are used only when running from source.
@@ -70,8 +86,8 @@ Override the credentials with `POSTGRES_USER`, `POSTGRES_PASSWORD`,
 `POSTGRES_DB` and `APP_DB_PASSWORD`.
 
 Both the application and Postgres publish on loopback only. Nothing is reachable
-from outside the machine until a reverse proxy is put in front, which is covered
-in section 3.
+from outside the machine until a reverse proxy is put in front, which is section
+2.3.
 
 Updating is the same command:
 
@@ -83,6 +99,12 @@ The image is Next's standalone output: about 230 MB, with no npm and no
 TypeScript toolchain in it. Schema changes need `drizzle-kit` and `tsx`, which
 are development dependencies, so they run from a separate one-shot `migrate`
 service rather than being carried into the image that faces the internet.
+
+`--build` compiles on the server, and `next build` is the only step here that
+wants real memory. On a VPS with 1 GB it can be killed by the kernel partway
+through, which surfaces as a build that stops with no error worth reading. Give
+the machine 2 GB, or a gigabyte of swap, or build the image elsewhere and push
+it to a registry.
 
 ### 2.2 From source
 
@@ -111,6 +133,49 @@ There is no admin user and no invite screen. Access is decided by
 editing the file and restarting. That is the whole mechanism, and it is enough
 for a household. `docs/04-tech-spec.md` section 5.3 says why it is not a table.
 
+### 2.3 TLS
+
+Anything past localhost needs https: the OAuth 2.1 flow and the MCP resource
+identifier both refuse to work over http off the loopback. Two ways.
+
+If the server has nothing on ports 80 and 443, let this stack terminate TLS.
+Point an A record at the machine, put the hostname in `.env` as `APP_DOMAIN`,
+and add the overlay:
+
+```sh
+docker compose -f compose.yaml -f deploy/compose.proxy.yaml \
+  --profile serve up -d --build
+```
+
+That adds Caddy, which obtains a certificate from Let's Encrypt on the first
+request and renews it on its own. Set `COMPOSE_FILE` in `.env` to stop typing
+both files:
+
+```sh
+COMPOSE_FILE=compose.yaml:deploy/compose.proxy.yaml
+```
+
+It is an overlay rather than a third profile because Compose interpolates every
+service in a file whichever profile is selected, so a required `APP_DOMAIN` in
+`compose.yaml` would make `npm run db:up` demand a public hostname on a laptop.
+
+If the server already runs nginx, Traefik or Caddy for something else, leave the
+overlay out and proxy to `127.0.0.1:3000`, which is where the `app` service
+publishes. The two things that have to be right either way are in section 3
+under *Behind a reverse proxy*.
+
+### 2.4 Is it up
+
+```sh
+curl -fsS https://your-host/api/health   # {"status":"ok"}
+```
+
+It runs `select 1` on the runtime pool, so it answers `ok` only if the
+application can also reach Postgres as the least-privileged role. The container
+healthcheck polls the same endpoint, which is why `docker compose ps` reporting
+`healthy` means more than "the process is listening". It is unauthenticated, and
+says nothing beyond up or not up.
+
 ---
 
 ## 3. Configuration
@@ -134,6 +199,15 @@ here reaches a browser.
 | `VERIFY_DATABASE_URL` | no | Development only. Where the database `npm run dev:test` serves lives. Defaults to `DATABASE_URL` with `_verify` appended, and the name must end in `_verify`. Separate from the test database on purpose: that server holds sessions the suite's truncate would delete |
 | `VERIFY_APP_DATABASE_URL` | no | Development only. The runtime role's URL for that same database, under the same two rules as `TEST_APP_DATABASE_URL` |
 | `DEV_TEST_PORT` | no | Development only. Where `npm run dev:test` serves and `npm run verify:oauth` looks. Defaults to 3100, loopback only |
+| `POSTGRES_USER` | no | Containers only. The owner role Postgres initialises with. Defaults to `cooking`. Changing it after the first start changes nothing: the volume already holds an initialised cluster |
+| `POSTGRES_PASSWORD` | no | Containers only. Its password. Defaults to `cooking`, which is fine on a laptop and not on a machine with a public address. Same caveat about the first start |
+| `POSTGRES_DB` | no | Containers only. The database name. Defaults to `cooking` |
+| `APP_DB_PASSWORD` | no | Containers only. The runtime role's password. Compose builds `APP_DATABASE_URL` from it and `npm run db:bootstrap` reads it back out of that URL, so it is set here and nowhere else |
+| `APP_DOMAIN` | with the TLS overlay | The public hostname Caddy gets a certificate for, without the scheme. The same host as `BETTER_AUTH_URL` and `MCP_RESOURCE` |
+| `ACME_EMAIL` | no | Where Let's Encrypt writes about an expiry it could not renew. Empty is a valid choice |
+| `BACKUP_DIR` | no | Where `scripts/backup.sh` writes. Defaults to `./backups`, which is git-ignored |
+| `BACKUP_KEEP_DAYS` | no | How long a dump survives there. Defaults to 14 |
+| `COMPOSE_CMD` | no | What `scripts/backup.sh` calls. Defaults to `docker compose`; set `podman-compose` on a machine without Docker |
 
 Three variables exist only for `npm run verify:oauth` and are irrelevant in
 production: `VERIFY_BASE_URL`, `VERIFY_EMAIL`, `VERIFY_PASSWORD`.
@@ -203,6 +277,10 @@ address inherits the account that already holds it.
 
 ### Behind a reverse proxy
 
+`deploy/compose.proxy.yaml` and `deploy/Caddyfile` do this already, and section
+2.3 is how to switch them on. What follows matters when you would rather use the
+proxy the machine already has.
+
 Terminate TLS at the proxy and forward to the Node process. The two things that
 must be right:
 
@@ -243,11 +321,33 @@ Postgres itself. A development machine also has `cooking_test` and
 backup.
 
 ```sh
-podman compose exec -T db pg_dump -U cooking -Fc cooking > cooking-$(date +%F).dump
+npm run backup          # or: sh scripts/backup.sh
 ```
 
-Restore into an empty database with `pg_restore -d cooking -U cooking`. Take a
-dump before every upgrade.
+It writes one custom-format dump into `BACKUP_DIR`, `./backups` by default and
+git-ignored, and deletes dumps older than `BACKUP_KEEP_DAYS`, 14 by default. The
+dump lands under a `.partial` name first, so an interrupted run cannot leave
+behind something that looks like a complete backup. Defaults match
+`compose.yaml`, so on an ordinary install it takes no arguments. On a machine
+without Docker, set `COMPOSE_CMD=podman-compose`.
+
+Nightly, in the crontab of the user that owns the checkout:
+
+```sh
+17 4 * * * cd /srv/cooking-app && sh scripts/backup.sh >> backups/backup.log 2>&1
+```
+
+Restoring, into the database the stack is already running:
+
+```sh
+docker compose exec -T db pg_restore -U cooking -d cooking --clean --if-exists \
+  < backups/cooking-2026-09-02T041700.dump
+```
+
+Take a dump before every upgrade. And copy `BACKUP_DIR` off the machine on some
+schedule, because a dump sitting on the disk that held the database is not a
+backup of that disk: `rsync`, `restic`, or whatever the host offers as a
+snapshot.
 
 Users can also export their own data from the Account screen: one JSON file with
 the profile, facts, recipes, weeks, grocery lists, feedback and the agent log,
@@ -280,11 +380,17 @@ sign-up route at all, and no password form anywhere in the interface. With
 `/api/auth/sign-up/email` answer on the API for `npm run verify:oauth` to drive,
 still behind the allowlist. Unset in production, they do not exist.
 
-One endpoint is deliberately open and worth knowing about: OAuth dynamic client
-registration accepts unauthenticated registrations, because an MCP client
-arriving cold has no `client_id` and no way to get one otherwise. Registering a
-client grants nothing on its own. Nothing is readable until a signed-in user
-completes consent, and that user has to be on the allowlist.
+Two endpoints are deliberately open and worth knowing about.
+
+OAuth dynamic client registration accepts unauthenticated registrations, because
+an MCP client arriving cold has no `client_id` and no way to get one otherwise.
+Registering a client grants nothing on its own. Nothing is readable until a
+signed-in user completes consent, and that user has to be on the allowlist.
+
+`/api/health` answers anybody, because a container healthcheck and an uptime
+monitor both run without a session. It says `ok` or `unavailable` and nothing
+else: no version, no configuration, no error text. The reason for a failure goes
+to the server log, where it needs an account on the machine to read.
 
 The MCP endpoint is at `/api/mcp`. A user connects a client by pasting that one
 address; discovery, dynamic client registration and consent follow from it.
@@ -357,6 +463,11 @@ a cached response never turns into a confusing bug.
 | Consent page opens but the client never returns | The client's registered redirect URI does not match the one it is now using. Revoke it from the Agent screen and connect again |
 | Recipe import says the page publishes no structured recipe | It genuinely does not. This is a deliberate clean refusal rather than a guess: ask the agent to read the page and call `create_recipe` |
 | Everyone signed out after a deploy | `BETTER_AUTH_SECRET` changed |
+| `required variable X is missing a value` from `docker compose` | One of the six required variables is absent from `.env`. The message names it and says what it is for |
+| `npm run db:up` asks for `APP_DOMAIN` | The TLS overlay is loaded for a command that only wants the database. Drop it from `COMPOSE_FILE`, or pass `-f compose.yaml` alone |
+| The container is `unhealthy` although the site answers | `/api/health` reaches the application but not Postgres. `docker compose logs app` names the failure; usually `APP_DB_PASSWORD` changed without the role being altered to match |
+| `next build` dies during `--profile serve up --build` with no error | The kernel killed it for memory. 2 GB, or a gigabyte of swap, or build the image somewhere else |
+| Caddy will not get a certificate | The A record does not point here yet, or ports 80 and 443 are not reachable, or something else on the machine already holds them. `docker compose logs proxy` says which |
 
 The Agent screen carries an activity log of every read and write an agent has
 made, with the tool, the client, the result and the time. It is the first place

@@ -23,14 +23,27 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# `next build` imports the auth module to collect route data, and that module
-# reads its configuration at import time and throws when it is absent. So the
-# compile needs values present, not correct: nothing here opens a connection.
-# The CI workflow does the same thing for the same reason.
+# `next build` imports the auth module to collect route data for
+# /api/auth/[...all], and that module reads its configuration at import time and
+# throws when it is absent. So the compile needs values present, not correct:
+# nothing here opens a connection or reaches Google.
+#
+# The Google pair is on the list for that reason and not by accident. The auth
+# module also refuses a configuration with no way in at all, so a build without
+# it fails at page-data collection, not at run time. The CI workflow satisfies
+# the same check with AUTH_PASSWORD_LOGIN; here it is the Google pair, so the
+# build has the shape the container actually runs with.
 #
 # These stay in this stage. The runtime image starts from a clean base, and
 # compose.yaml refuses to start the app without the real ones.
-ENV NODE_ENV=production     DATABASE_URL=postgres://build:build@127.0.0.1:5432/build     APP_DATABASE_URL=postgres://build:build@127.0.0.1:5432/build     BETTER_AUTH_SECRET=build-time-placeholder-never-used-at-runtime     BETTER_AUTH_URL=http://localhost:3000     MCP_RESOURCE=http://localhost:3000/api/mcp
+ENV NODE_ENV=production \
+    DATABASE_URL=postgres://build:build@127.0.0.1:5432/build \
+    APP_DATABASE_URL=postgres://build:build@127.0.0.1:5432/build \
+    BETTER_AUTH_SECRET=build-time-placeholder-never-used-at-runtime \
+    BETTER_AUTH_URL=http://localhost:3000 \
+    MCP_RESOURCE=http://localhost:3000/api/mcp \
+    GOOGLE_CLIENT_ID=build-time-placeholder \
+    GOOGLE_CLIENT_SECRET=build-time-placeholder
 RUN npm run build
 
 # Schema changes. Runs once per deploy, then exits.

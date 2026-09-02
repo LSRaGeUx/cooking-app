@@ -1,0 +1,55 @@
+# TLS in front of the application. Layered on top of compose.yaml, never used
+# alone:
+#
+#   docker compose -f compose.yaml -f deploy/compose.proxy.yaml \
+#     --profile serve up -d --build
+#
+# Set COMPOSE_FILE in .env to stop typing both every time:
+#
+#   COMPOSE_FILE=compose.yaml:deploy/compose.proxy.yaml
+#
+# It is a separate file rather than a third profile because Compose interpolates
+# every service in a file whatever profile is selected. A required APP_DOMAIN in
+# compose.yaml would therefore make `npm run db:up` demand a public hostname on a
+# development machine. Splitting it also means a server that already runs nginx
+# or Traefik on ports 80 and 443 never loads a second thing that wants them.
+services:
+  proxy:
+    # Same profile as the application: this file is the opt-in, and the profile
+    # keeps `depends_on: app` satisfiable.
+    profiles: ["serve"]
+    image: docker.io/library/caddy:2-alpine
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?the public hostname, for example cuisine.example.com}
+      # Optional. It only decides whether the certificate authority can reach you
+      # before an expiry, so an empty value is a valid choice.
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    ports:
+      # The two that have to be public, and nothing else. 443/udp is HTTP/3.
+      # Port 80 is not decoration: the ACME HTTP challenge answers on it, and
+      # Caddy redirects everything else from it to https.
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      # Paths are relative to compose.yaml, which is the first -f and therefore
+      # the project directory, not to this file.
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and their private keys. Losing this volume means re-issuing
+      # on the next start, which the rate limits at Let's Encrypt will eventually
+      # refuse, so it is a named volume and not a temporary filesystem.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  caddy_data:
+  caddy_config:

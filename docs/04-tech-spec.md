@@ -217,7 +217,24 @@ An architectural constraint that decays silently unless it is mechanical:
 - Imported and agent-authored content is data, never instruction. Recipe text and
   fact statements are never interpolated into anything executable, and the
   activity log stores payload summaries rather than raw payloads.
-- Secrets from environment only. No secrets in the repository.
+- Secrets from environment only. No secrets in the repository. Compose names
+  every variable the runtime reads, because a value present in `.env` is
+  available for interpolation but does not reach the process unless it is
+  listed. `AUTH_PASSWORD_LOGIN` is deliberately not listed, so the container
+  cannot open the password endpoints however the file is edited.
+- Response headers are set in `next.config.ts`: `nosniff`,
+  `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY`,
+  a `Cross-Origin-Opener-Policy` that still allows a sign-in popup, and a
+  `Permissions-Policy` that turns off the device APIs nothing here uses.
+  `Strict-Transport-Security` belongs to the proxy, which terminates the TLS the
+  header is about, and `deploy/Caddyfile` sends it. There is no
+  Content-Security-Policy yet: Next inlines its own bootstrap script, so a
+  useful policy needs per-request nonces threaded through the root layout, and
+  one loose enough to skip that buys nothing. Recorded as a gap.
+- `/api/health` is unauthenticated on purpose, because a container healthcheck
+  and an uptime monitor both run without a session. It answers `select 1` on the
+  runtime pool as up or not up, and carries no version, no configuration and no
+  error text. The reason for a failure goes to the server log.
 - Soft deletes plus a 30-day retention window, then a purge job.
 
 ### 5.4 Performance
@@ -258,7 +275,9 @@ the app needs offline support in v1.
     i18n/               message catalogues, fr default
   agent-pack/           published prompt templates and skill pack
   tests/
-  compose.yaml
+  scripts/              operator and development commands, backup.sh among them
+  deploy/               Caddyfile and the compose overlay that mounts it
+  compose.yaml          database for development, whole stack under --profile serve
 ```
 
 `src/mcp/tools/` holding schema, description, and handler in one file per tool is
