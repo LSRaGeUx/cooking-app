@@ -66,9 +66,24 @@ npm run verify              # dep check, typecheck, tests
 npm run dev
 ```
 
-Running your own instance for real, rather than trying it: read
-[`docs/08-self-hosting.md`](docs/08-self-hosting.md), which covers configuration,
-the two database roles, TLS and reverse proxies, backups, upgrades and
+Running your own instance for real, rather than trying it, needs a server with a
+hostname pointed at it and nothing on it but Docker. The images are built by CI,
+so the server only pulls:
+
+```sh
+cp .env.example .env        # then fill in the six values it refuses to start without
+echo "$GHCR_TOKEN" | docker login ghcr.io -u <you> --password-stdin
+docker compose -f compose.yaml -f deploy/compose.proxy.yaml pull
+docker compose -f compose.yaml -f deploy/compose.proxy.yaml \
+  --profile serve up -d --no-build --wait
+```
+
+That migrates, starts the application, and gets a certificate from Let's
+Encrypt. Leave the overlay file out if the machine already has a proxy on ports
+80 and 443, and leave it out until DNS resolves to the machine either way, since
+failed Let's Encrypt challenges count against the rate limit for that hostname.
+[`docs/08-self-hosting.md`](docs/08-self-hosting.md) covers configuration, the
+registry token, the two database roles, TLS, backups, upgrades, rollback and
 troubleshooting.
 
 Then open http://localhost:3000, create an account, and you land on the current

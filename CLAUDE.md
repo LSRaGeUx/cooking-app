@@ -104,6 +104,39 @@ Schema ownership is split on purpose: Better Auth migrates its own 12 tables
 (`npm run db:generate` then `db:migrate`). Do not hand-copy auth tables into
 the Drizzle schema. Reasoning in `docs/07-phase-0-findings.md` section 3.1.
 
+## Deployment
+
+`compose.yaml` runs the database alone for development and the whole stack under
+`--profile serve`. `deploy/compose.proxy.yaml` layers Caddy on top for automatic
+TLS, and is a separate file rather than a third profile because Compose
+interpolates every service whichever profile is active.
+
+**The server never builds.** CI publishes two images per commit to GHCR, one per
+shipping target of the Dockerfile, and a deploy is `git pull`, `docker compose
+pull`, `up -d --no-build --wait`. The `build:` blocks stay for CI and for local
+work. `IMAGE_TAG` selects the build and defaults to `main`; every commit also
+gets an immutable `sha-<commit>` pair, which is what a rollback names.
+
+Three things to know before touching any of it:
+
+1. **Compose injects only the variables a service's `environment:` block names.**
+   A value in `.env` is available for interpolation on the right-hand side and
+   does not otherwise reach the process. A new variable read by `src/` needs a
+   line in `compose.yaml` too.
+2. **The migrator imports `src/lib/auth.ts`**, which validates its configuration
+   at import time, so it needs the auth block and not only the database URLs.
+   `next build` imports it as well, for `/api/auth/[...all]`, which is why the
+   Dockerfile's build stage sets placeholder credentials.
+3. **A tag is spelled in two files.** `compose.yaml` names what to pull and
+   `ci.yml` names what to push. Nothing catches a disagreement at runtime:
+   Compose reports it as a pull failure, which reads like a credentials problem.
+
+`tests/deploy.test.ts` pins all three down, and a second CI job builds the image
+and brings the stack up before a third publishes anything. Neither of those
+failures can happen on a laptop, so do not trust `npm run dev` as evidence that
+a deployment change works.
+`docs/05-roadmap.md` under *Deployment* has the three defects that motivated it.
+
 ## Conventions
 
 - TypeScript strict. Zod schemas are the single source of truth for validation,

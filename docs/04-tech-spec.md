@@ -203,6 +203,9 @@ An architectural constraint that decays silently unless it is mechanical:
   sign-up route. It exists for local development and for `verify:oauth`, which
   cannot drive a Google consent screen. A second door into the same accounts is a
   second door to defend, so it is not advertised and it is closed in production.
+  Closed means the endpoints answer `400` with `EMAIL_PASSWORD_DISABLED` rather
+  than `404`, and the container is never given the flag: `compose.yaml` does not
+  pass it, and CI asserts the refusal against the running stack.
 - Account linking is disabled. One provider has nothing to link, and disabling it
   removes the case where a second identity claiming an allowlisted address
   inherits the account that already holds it.
@@ -308,3 +311,6 @@ behavior it describes.
 | 18 | Meal types as rows, days as columns | Seven day cards, each listing its own meals | Dinner is one thing across the week, not seven unrelated items. The row-by-column form is what the data is, and it makes the week readable as a pattern |
 | 19 | Settings behind a panel, not a takeover | A full-screen index | Blanking the screen to change a setting loses the thing you were changing it for. Nine screens still do not deserve permanent shelf space next to four |
 | 20 | Google sign-in plus an environment allowlist | Open sign-up behind a reverse proxy password, or an invite table with an admin screen | A proxy password is a shared secret with no identity behind it, and an invite table needs a screen, a role and a first admin. A list of addresses in the environment is the smallest thing that names who gets in, and Google supplies the proof that an address is theirs |
+| 21 | CI builds the images, the server pulls them | Building on the server with `--build` | `next build` sets the memory floor for the whole deployment, and the target is amd64 while development happens on arm64. Building in CI drops the floor to what serving needs and removes the architecture question. It also means only what passed both CI jobs can be deployed at all |
+| 22 | Server pulls, CI does not push | A deploy step that SSHes into the host | A push-based deploy needs a host key in GitHub secrets that is root-equivalent on the server. For one operator, two commands over SSH are cheaper than that blast radius |
+| 23 | One package, two tags, and a moving tag plus an immutable one | Two packages, or a tag per release | One registry repository is one login and one visibility setting to get wrong. `main-*` is what a deploy defaults to and `sha-<commit>-*` is what a rollback names, so reverting is an environment variable rather than a git operation |

@@ -4,27 +4,34 @@ import { describe, expect, it } from "vitest";
 
 /**
  * What the deployment files have to say, pinned down here because none of it
- * fails in development.
+ * fails in development and all of it fails on a server.
  *
- * The bug this file exists for: Compose injects only the variables a service's
- * `environment:` block names. A value in `.env` is available for interpolation
- * on the right-hand side and does not otherwise reach the process. The
- * container path shipped for a while with `GOOGLE_CLIENT_ID`,
- * `GOOGLE_CLIENT_SECRET` and `ALLOWED_EMAILS` missing from that block, so it
- * could not offer a way to sign in at all, and nothing in the suite noticed
- * because nothing in the suite reads compose.yaml.
+ * Three defects are the reason this file exists, and all three shipped at once
+ * because nothing in the suite read a deployment file:
+ *
+ * 1. Compose injects only the variables a service's `environment:` block names.
+ *    A value in `.env` is available for interpolation on the right-hand side and
+ *    does not otherwise reach the process. `GOOGLE_CLIENT_ID`,
+ *    `GOOGLE_CLIENT_SECRET` and `ALLOWED_EMAILS` were named nowhere, so the
+ *    container could not offer a way to sign in.
+ * 2. The build stage of the Dockerfile set placeholders for everything except a
+ *    sign-in method, and `next build` imports the auth module to collect route
+ *    data for /api/auth/[...all]. The image had never built.
+ * 3. The migrator imports that same module, and had only the database URLs, so
+ *    `up` stopped at the migrator before the application was ever started.
  */
 
 const root = join(import.meta.dirname, "..");
 const compose = readFileSync(join(root, "compose.yaml"), "utf8");
+const dockerfile = readFileSync(join(root, "Dockerfile"), "utf8");
 
 /**
  * Comments are stripped before any assertion that something is absent, because
  * the reason a setting is absent is written in a comment right next to where it
  * would have gone.
  */
-function settingsOnly(yaml: string): string {
-  return yaml
+function settingsOnly(text: string): string {
+  return text
     .split("\n")
     .filter((line) => !line.trim().startsWith("#"))
     .join("\n");
@@ -32,9 +39,9 @@ function settingsOnly(yaml: string): string {
 
 /**
  * The block for one service, from its key to the next one at the same
- * indentation. Regex rather than a YAML parser on purpose: the only dependency
- * available is a transitive one, and a test that silently stops parsing is
- * worse than no test.
+ * indentation. Regex rather than a YAML parser on purpose: the only one
+ * available is a transitive dependency, and a test that silently stops parsing
+ * is worse than no test.
  */
 function serviceBlock(name: string): string {
   const start = compose.indexOf(`\n  ${name}:\n`);
@@ -45,24 +52,29 @@ function serviceBlock(name: string): string {
 }
 
 /**
- * Every variable the running container must receive. `DATABASE_URL` and
- * `APP_DATABASE_URL` arrive through the `db_env` anchor rather than by name in
- * the app block, so they are checked against the whole file.
+ * What importing `src/lib/auth.ts` needs. Both the application and the migrator
+ * import it, so both get this block, and the shared anchor is what keeps that
+ * true.
  */
-const CONTAINER_VARS = [
+const AUTH_VARS = [
   "BETTER_AUTH_SECRET",
   "BETTER_AUTH_URL",
   "MCP_RESOURCE",
   "GOOGLE_CLIENT_ID",
   "GOOGLE_CLIENT_SECRET",
-  "ALLOWED_EMAILS",
 ] as const;
+
+/** Read per request rather than at import, so the migrator has no use for it. */
+const APP_ONLY_VARS = ["ALLOWED_EMAILS"] as const;
+
+/** Reaches both services through the other anchor. */
+const DB_VARS = ["DATABASE_URL", "APP_DATABASE_URL"] as const;
 
 /**
  * Read only by development commands, or supplied by the runtime itself. A
- * variable in neither this list nor the one above fails the scan below, which is
+ * variable in none of these lists fails the last test in this file, which is
  * the point: adding one to the application should force the question of whether
- * the container needs it.
+ * a container needs it.
  */
 const NOT_CONTAINER_VARS = new Set([
   "NODE_ENV",
@@ -78,39 +90,51 @@ const NOT_CONTAINER_VARS = new Set([
   "VERIFY_PASSWORD",
 ]);
 
-const DB_VARS = ["DATABASE_URL", "APP_DATABASE_URL"] as const;
-
-describe("compose.yaml, the app service", () => {
-  const app = serviceBlock("app");
-
-  it.each(CONTAINER_VARS)("passes %s through to the container", (name) => {
-    expect(app).toContain(`${name}: \${${name}`);
+describe("compose.yaml, the environment the containers get", () => {
+  it.each([...AUTH_VARS, ...APP_ONLY_VARS])("names %s at all", (name) => {
+    expect(compose).toContain(`${name}: \${${name}`);
   });
 
-  it.each(CONTAINER_VARS)("refuses to start without %s", (name) => {
+  it.each([...AUTH_VARS, ...APP_ONLY_VARS])("refuses to start without %s", (name) => {
     // `:?` rather than `:-`: every one of these fails quietly if it is wrong, so
     // the deployment should not come up at all rather than come up broken.
-    expect(app).toMatch(new RegExp(`${name}: \\$\\{${name}:\\?`));
+    expect(compose).toMatch(new RegExp(`${name}: \\$\\{${name}:\\?`));
   });
 
-  it("never passes the password sign-in flag", () => {
+  it.each(DB_VARS)("builds %s from the container credentials", (name) => {
+    expect(compose).toContain(`${name}: postgres://`);
+  });
+
+  it("gives the app both blocks", () => {
+    expect(serviceBlock("app")).toContain("<<: [*db_env, *auth_env]");
+  });
+
+  it("gives the migrator both blocks as well", () => {
+    // scripts/auth-migrate.ts imports src/lib/auth.ts, which validates its
+    // configuration at import time. A migrator with only the database URLs
+    // fails there, and `up` stops before the application is ever started.
+    expect(serviceBlock("migrate")).toContain("<<: [*db_env, *auth_env]");
+  });
+
+  it("gives the allowlist to the app and not to the migrator", () => {
+    expect(serviceBlock("app")).toContain("ALLOWED_EMAILS");
+    expect(settingsOnly(serviceBlock("migrate"))).not.toContain("ALLOWED_EMAILS");
+  });
+
+  it("never passes the password sign-in flag to anything", () => {
     // The endpoints it opens exist for `npm run verify:oauth`. A container
     // facing the internet has no business answering them, whatever .env says.
-    expect(settingsOnly(app)).not.toContain("AUTH_PASSWORD_LOGIN");
-  });
-
-  it("polls an endpoint that proves the database is reachable", () => {
-    expect(app).toContain("/api/health");
-  });
-
-  it("publishes on loopback only, since TLS is terminated upstream", () => {
-    expect(app).toMatch(/"127\.0\.0\.1:3000:3000"/);
+    expect(settingsOnly(compose)).not.toContain("AUTH_PASSWORD_LOGIN");
   });
 });
 
 describe("compose.yaml, the rest", () => {
-  it.each(DB_VARS)("hands %s to both the app and the migrator", (name) => {
-    expect(compose).toContain(`${name}: postgres://`);
+  it("polls an endpoint that proves the database is reachable", () => {
+    expect(serviceBlock("app")).toContain("/api/health");
+  });
+
+  it("publishes the app on loopback only, since TLS is terminated upstream", () => {
+    expect(serviceBlock("app")).toMatch(/"127\.0\.0\.1:3000:3000"/);
   });
 
   it("keeps Postgres off every interface but loopback", () => {
@@ -130,6 +154,38 @@ describe("compose.yaml, the rest", () => {
     // A required APP_DOMAIN in this file would make `npm run db:up` demand one:
     // Compose interpolates every service whichever profile is selected.
     expect(settingsOnly(compose)).not.toContain("APP_DOMAIN");
+  });
+});
+
+describe("the Dockerfile build stage", () => {
+  const build = dockerfile.slice(
+    dockerfile.indexOf("AS build"),
+    dockerfile.indexOf("AS migrator"),
+  );
+
+  it.each(["DATABASE_URL", "APP_DATABASE_URL", "BETTER_AUTH_SECRET", "MCP_RESOURCE"])(
+    "sets a placeholder for %s, which the auth module reads at import",
+    (name) => {
+      expect(build).toContain(`${name}=`);
+    },
+  );
+
+  it("sets a placeholder sign-in method", () => {
+    // `next build` collects route data for /api/auth/[...all], and the auth
+    // module refuses a configuration with no way in at all. Without this the
+    // image does not build at all.
+    expect(build).toContain("GOOGLE_CLIENT_ID=");
+    expect(build).toContain("GOOGLE_CLIENT_SECRET=");
+  });
+
+  it("keeps the placeholders out of the runtime stage", () => {
+    const runtime = dockerfile.slice(dockerfile.indexOf("AS runtime"));
+    expect(runtime).not.toContain("placeholder");
+    expect(runtime).not.toContain("DATABASE_URL");
+  });
+
+  it("runs the server as a user that is not root", () => {
+    expect(dockerfile).toContain("USER node");
   });
 });
 
@@ -167,32 +223,101 @@ describe("the TLS overlay", () => {
   });
 });
 
+/**
+ * The server pulls what CI pushed, and the only thing connecting the two is a
+ * tag spelled out in two files. Nothing catches a disagreement: Compose reports
+ * a missing image as a pull failure, which reads like a registry or credentials
+ * problem rather than a typo.
+ */
+describe("the images a server pulls", () => {
+  const workflow = readFileSync(join(root, ".github", "workflows", "ci.yml"), "utf8");
+
+  /** The tag on a service, e.g. `${IMAGE_REPO:-...}:${IMAGE_TAG:-main}-runtime`. */
+  function imageLine(service: string): string {
+    const match = serviceBlock(service).match(/^\s*image:\s*(\S+)\s*$/m);
+    expect(match, `compose.yaml gives ${service} no image, so a server has nothing to pull`)
+      .not.toBeNull();
+    return match![1]!;
+  }
+
+  it.each(["app", "migrate"])("gives %s an image as well as a build", (service) => {
+    // Both, not either: `build:` is for CI and for hacking locally, `image:` is
+    // for every machine that must not build.
+    expect(imageLine(service)).toContain("ghcr.io/");
+    expect(serviceBlock(service)).toContain("target:");
+  });
+
+  it.each(["app", "migrate"])("lets a self-hoster repoint %s", (service) => {
+    // A hardcoded registry path makes this deployable by one account only.
+    expect(imageLine(service)).toMatch(/\$\{IMAGE_REPO:-/);
+    expect(imageLine(service)).toMatch(/\$\{IMAGE_TAG:-/);
+  });
+
+  it("defaults to a lowercase registry path", () => {
+    // GHCR rejects an uppercase path outright, and the account this publishes
+    // from is spelled with capitals.
+    const path = imageLine("app").replace(/\$\{[^}]+\}/g, "");
+    expect(path).toBe(path.toLowerCase());
+  });
+
+  it("does not hand the application the migrator image", () => {
+    // One package, two tags, so the difference is a suffix, and a copy-paste
+    // between two adjacent services is invisible until the wrong thing boots.
+    expect(imageLine("app")).not.toBe(imageLine("migrate"));
+  });
+
+  it.each(["app", "migrate"])("names a tag CI actually pushes, for %s", (service) => {
+    const suffix = imageLine(service).match(/}(-[a-z]+)$/)?.[1];
+    expect(suffix, `the image for ${service} has no -suffix to match against CI`).toBeTruthy();
+    expect(workflow).toContain(`:main${suffix}`);
+    expect(workflow).toContain(`}${suffix}`);
+  });
+
+  it("publishes an immutable tag next to the moving one, so a rollback exists", () => {
+    expect(workflow).toContain("sha-${GITHUB_SHA::7}");
+  });
+
+  it("builds for the architecture a VPS has, not the one a Mac has", () => {
+    expect(workflow).toContain("platforms: linux/amd64");
+  });
+
+  it("pushes nothing that has not passed both other jobs", () => {
+    expect(workflow).toContain("needs: [verify, deploy]");
+    expect(workflow).toContain("github.ref == 'refs/heads/main'");
+  });
+});
+
 describe("every variable the application reads", () => {
-  it("is either passed to the container or marked as not for it", () => {
+  it("is either passed to a container or marked as not for one", () => {
     const read = new Set<string>();
     for (const file of sourceFiles(join(root, "src"))) {
       const text = readFileSync(file, "utf8");
-      for (const [, name] of text.matchAll(/process\.env\.([A-Z0-9_]+)/g)) {
-        if (name) read.add(name);
-      }
-      // src/lib/auth.ts reaches the environment through a helper, so the
-      // property-access pattern above does not see the name.
-      for (const [, name] of text.matchAll(/required\("([A-Z0-9_]+)"\)/g)) {
-        if (name) read.add(name);
+      // src/lib/auth.ts reaches the environment through a helper as well as by
+      // property access, so both shapes are scanned.
+      for (const pattern of [/process\.env\.([A-Z0-9_]+)/g, /required\("([A-Z0-9_]+)"\)/g]) {
+        for (const match of text.matchAll(pattern)) {
+          const name = match[1];
+          if (name) read.add(name);
+        }
       }
     }
 
-    // Sanity: a scan that found nothing would pass every assertion below.
+    // Sanity: a scan that found nothing would pass the assertion below.
     expect(read.size).toBeGreaterThan(5);
 
-    const known = new Set<string>([...CONTAINER_VARS, ...DB_VARS, ...NOT_CONTAINER_VARS]);
+    const known = new Set<string>([
+      ...AUTH_VARS,
+      ...APP_ONLY_VARS,
+      ...DB_VARS,
+      ...NOT_CONTAINER_VARS,
+    ]);
     const unclassified = [...read].filter((name) => !known.has(name)).sort();
 
     expect(
       unclassified,
       "A new environment variable reached src/ without a decision about the " +
-        "container. Add it to CONTAINER_VARS and to the app service in " +
-        "compose.yaml, or to NOT_CONTAINER_VARS if it is development only.",
+        "containers. Add it to compose.yaml and to the matching list in this " +
+        "file, or to NOT_CONTAINER_VARS if it is development only.",
     ).toEqual([]);
   });
 });
