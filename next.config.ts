@@ -51,6 +51,44 @@ const nextConfig: NextConfig = {
       fallback: [],
     };
   },
+
+  /**
+   * The headers that belong to the application rather than to whatever proxy is
+   * in front of it. Strict-Transport-Security is not here on purpose: it is only
+   * meaningful on a request that already arrived over TLS, and TLS is terminated
+   * upstream, so `deploy/Caddyfile` sends it.
+   *
+   * There is no Content-Security-Policy yet. Next inlines its own bootstrap
+   * script, so a useful policy needs per-request nonces threaded through the
+   * root layout, and a policy loose enough to skip that (`unsafe-inline`) buys
+   * nothing. Recorded as a known gap rather than shipped broken.
+   */
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          // Recipe images are addresses on other people's hosts, rendered in the
+          // reader's browser. This sends them the origin and never the path, so
+          // an image host learns that this instance exists and not which recipe
+          // was open.
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          // Nothing in this application is meant to be embedded, and the consent
+          // screen least of all: an agent that could frame it could dress it up
+          // as something else.
+          { key: "X-Frame-Options", value: "DENY" },
+          // allow-popups rather than same-origin, so a sign-in opened in a popup
+          // can still talk to the window that opened it.
+          { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
+          {
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default withNextIntl(nextConfig);

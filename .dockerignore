@@ -12,3 +12,8 @@ tsconfig.tsbuildinfo
 *.md
 docs
 tests
+
+# Operator territory, not build input. deploy/ is bind-mounted by compose at
+# run time, and backups/ holds database dumps.
+backups
+deploy

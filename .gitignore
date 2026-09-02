@@ -25,6 +25,9 @@ next-env.d.ts
 pgdata/
 postgres-data/
 
+# Database dumps from scripts/backup.sh. Real user data, never committed.
+backups/
+
 # Test and coverage
 coverage/
 .nyc_output/

@@ -25,7 +25,8 @@
     "db:setup": "npm run db:up && npm run db:bootstrap && npm run db:migrate && npm run auth:migrate && npm run db:setup:test && npm run db:setup:verify",
     "db:setup:test": "node scripts/db-setup-sibling.mjs test",
     "db:setup:verify": "node scripts/db-setup-sibling.mjs verify",
-    "dev:test": "node scripts/dev-test-server.mjs"
+    "dev:test": "node scripts/dev-test-server.mjs",
+    "backup": "sh scripts/backup.sh"
   },
   "dependencies": {
     "@better-auth/mcp": "^1.7.2",
