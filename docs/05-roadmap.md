@@ -476,6 +476,78 @@ What the phase settled, beyond ticking its own list:
 
 ---
 
+## Deployment
+
+**Shipped.** Not a phase of its own: phase 10 wrote the self-hosting
+documentation, and this is what happened when the container path in it was
+actually run.
+
+It did not work, in three places, and each one is the same kind of mistake.
+
+- **Compose injects only the variables a service names.** A value in `.env` is
+  available for interpolation on the right-hand side and does not otherwise
+  reach the process. `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and
+  `ALLOWED_EMAILS` were named nowhere, so the container had no sign-in method
+  and refused to boot. Had it booted, an empty allowlist in production locks
+  everyone out.
+- **The image had never been built.** `next build` collects route data for
+  `/api/auth/[...all]`, which imports the auth module, which refuses a
+  configuration with no way in. The build stage set placeholders for everything
+  except a sign-in method.
+- **The migrator imports that same module.** `scripts/auth-migrate.ts` reads the
+  schema out of the installed Better Auth, so it constructs the auth instance,
+  so it needs everything that instance validates at import. It had the two
+  database URLs. `up` stopped there, before the application was ever started.
+
+What the three have in common is that none of them can fail on a development
+machine, and all of them fail on the first deploy. So the response was not only
+to fix them:
+
+- `tests/deploy.test.ts` reads the deployment files and pins down what they say,
+  including that the migrator gets the auth block and that no service is ever
+  handed `AUTH_PASSWORD_LOGIN`. Its last test scans `src/` for environment
+  variables and fails on one that has not been classified, so the next variable
+  cannot repeat the first defect quietly.
+- A second CI job builds the image, brings the stack up with `--wait`, and
+  checks the health endpoint, both discovery rewrites, the RFC 9728 challenge on
+  an unauthenticated MCP call, and that the password endpoints refuse.
+
+Then the first real server made the build itself the problem. `next build` set
+the memory floor for the whole deployment, on a machine that otherwise needs
+almost nothing to serve one household, and the image had to be amd64 while
+development happens on arm64. So a third CI job publishes both shipping targets
+of the Dockerfile to GHCR and the server only pulls: `git pull`, `docker compose
+pull`, `up -d --no-build --wait`. It runs only on a push to main and only behind
+the other two, so nothing reaches the registry that has not built, come up and
+answered.
+
+That moved one risk rather than removing it. The tag is now spelled in
+`compose.yaml` and in `ci.yml`, and a disagreement surfaces as a pull failure,
+which reads like a credentials problem rather than a typo, so
+`tests/deploy.test.ts` asserts the two files agree. Each commit also publishes an
+immutable `sha-<commit>` pair next to the moving one, which makes a rollback an
+environment variable rather than a revert. Pulling stayed the server's job: a
+push-based deploy would need a host key in GitHub secrets that is
+root-equivalent on the machine, which is a poor trade for one operator.
+
+The rest was the gap between the documentation and something an operator can
+actually run: automatic TLS from Let's Encrypt in `deploy/`, split into an
+overlay because Compose interpolates every service whichever profile is active,
+so a required `APP_DOMAIN` in `compose.yaml` would make `npm run db:up` demand a
+public hostname; `/api/health`, which answers `select 1` on the runtime pool, so
+a container that is listening but cannot reach Postgres reports unhealthy;
+capped container logs, because a year of them is what fills the smallest disk
+first; `scripts/backup.sh`, writing through a `.partial` name so an interrupted
+run cannot look like a backup; and response headers in `next.config.ts`, with
+HSTS left to the proxy that terminates the TLS it is about.
+
+One gap stays open and is recorded rather than papered over: there is no
+Content-Security-Policy. Next inlines its own bootstrap script, so a useful
+policy needs per-request nonces threaded through the root layout, and one loose
+enough to skip that buys nothing.
+
+---
+
 ## Deferred, in the order they would be reconsidered
 
 1. **Household with multiple eaters.** The largest v2 feature and the most

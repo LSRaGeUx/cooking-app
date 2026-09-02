@@ -1,15 +1,33 @@
 # Plain Compose spec only. No Docker-only extensions, so this file runs
 # unchanged under Podman (dev) and Docker (self-hosters).
 #
-# Two ways to run it:
+# Three ways to run it:
 #
 #   npm run db:up                                  # the database alone, for dev
-#   docker compose --profile serve up -d --build   # the whole application
+#   docker compose --profile serve up -d --build   # build here, for CI and hacking
+#   docker compose pull && \
+#     docker compose --profile serve up -d --no-build --wait   # a deploy
+#
+# The last one is what a server runs. `next build` wants more CPU and memory than
+# the smallest VPS has, and the image has to be amd64 while a developer's Mac is
+# arm64, so the build belongs in CI and the server only pulls. That is why the two
+# application services carry both a `build:` and an `image:`: the first is for the
+# machine that builds, the second for every machine that does not.
+#
+# `--no-build` is load-bearing in that command. Without it, Compose is free to
+# decide a missing image should be built, and a server quietly building its own
+# image is the failure this arrangement exists to prevent.
 #
 # TLS is a third file, `deploy/compose.proxy.yaml`, layered on top of this one.
 # It is separate rather than a profile because Compose interpolates every service
 # in a file whichever profile is active, so a required APP_DOMAIN in here would
 # make `npm run db:up` demand a public hostname on a laptop.
+#
+# IMAGE_TAG selects which build to run and defaults to whatever CI last pushed
+# from main. Every CI build also publishes an immutable `sha-<commit>` tag, so a
+# rollback is one variable and needs no revert:
+#
+#   IMAGE_TAG=sha-1a2b3c4 docker compose --profile serve up -d --no-build --wait
 
 # Docker keeps container logs forever by default, and on the smallest VPS the
 # thing that fills the disk first is a year of them. Every service caps them.
@@ -18,6 +36,39 @@ x-logging: &logging
   options:
     max-size: "10m"
     max-file: "3"
+
+# Compose injects only the variables a service's environment block names. A
+# value sitting in .env is available for interpolation on the right-hand side
+# and does not otherwise reach the process, so everything the containers read is
+# listed here and merged in below.
+
+# Built from the credentials rather than taken from .env directly, because these
+# point at the `db` service and the values in .env point at localhost for the
+# from-source path.
+x-db-env: &db_env
+  DATABASE_URL: postgres://${POSTGRES_USER:-cooking}:${POSTGRES_PASSWORD:-cooking}@db:5432/${POSTGRES_DB:-cooking}
+  APP_DATABASE_URL: postgres://cooking_app:${APP_DB_PASSWORD:-cooking_app}@db:5432/${POSTGRES_DB:-cooking}
+
+# What importing src/lib/auth.ts requires, which is why the migrator gets it as
+# well as the application: scripts/auth-migrate.ts imports that module to read
+# the schema out of the installed Better Auth, and the module validates its
+# configuration at import time.
+#
+# No defaults on purpose. A deployment that silently came up with a placeholder
+# secret, or with localhost as its OAuth issuer, is worse than one that refuses
+# to start: see docs/08-self-hosting.md section 3.
+#
+# AUTH_PASSWORD_LOGIN is deliberately absent, whatever .env says. The endpoints
+# it opens exist for `npm run verify:oauth` to drive, and a container facing the
+# internet has no business answering them. Its absence is also what makes the
+# Google pair required here: the auth module refuses a configuration with no way
+# in at all.
+x-auth-env: &auth_env
+  BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?generate one with openssl rand -base64 32}
+  BETTER_AUTH_URL: ${BETTER_AUTH_URL:?the public https origin, not localhost}
+  MCP_RESOURCE: ${MCP_RESOURCE:?the public https origin plus /api/mcp}
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?the Google OAuth client id, or there is no way to sign in}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?the matching secret}
 
 services:
   db:
@@ -53,13 +104,19 @@ services:
   # migrates the domain tables, then lets Better Auth migrate its own twelve.
   migrate:
     profiles: ["serve"]
+    # One package, two tags, rather than two packages: a single registry
+    # repository is a single `docker login` and a single visibility setting to
+    # get wrong.
+    image: ${IMAGE_REPO:-ghcr.io/lsrageux/cooking-app}:${IMAGE_TAG:-main}-migrator
     build:
       context: .
       target: migrator
     logging: *logging
-    environment: &db_env
-      DATABASE_URL: postgres://${POSTGRES_USER:-cooking}:${POSTGRES_PASSWORD:-cooking}@db:5432/${POSTGRES_DB:-cooking}
-      APP_DATABASE_URL: postgres://cooking_app:${APP_DB_PASSWORD:-cooking_app}@db:5432/${POSTGRES_DB:-cooking}
+    # The auth block too, not just the database one. `npm run auth:migrate`
+    # imports src/lib/auth.ts, so a migrator without it fails at import and the
+    # whole `up` stops here, before the application is ever started.
+    environment:
+      <<: [*db_env, *auth_env]
     depends_on:
       db:
         condition: service_healthy
@@ -67,32 +124,20 @@ services:
 
   app:
     profiles: ["serve"]
+    image: ${IMAGE_REPO:-ghcr.io/lsrageux/cooking-app}:${IMAGE_TAG:-main}-runtime
     build:
       context: .
       target: runtime
     restart: unless-stopped
     logging: *logging
-    # Compose injects only what this block lists. A value sitting in .env is
-    # available for interpolation on the right-hand side, but it does not reach
-    # the process unless it is named here, so every variable the application
-    # reads at runtime has to appear below.
     environment:
-      <<: *db_env
-      # No defaults on purpose. A deployment that silently came up with a
-      # placeholder secret, or with localhost as its OAuth issuer, is worse than
-      # one that refuses to start: see docs/08-self-hosting.md section 3.
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?generate one with openssl rand -base64 32}
-      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?the public https origin, not localhost}
-      MCP_RESOURCE: ${MCP_RESOURCE:?the public https origin plus /api/mcp}
-      # Required for the same reason. The Google pair is the only sign-in method
-      # this profile offers, because AUTH_PASSWORD_LOGIN is deliberately absent
-      # from this block: the password endpoints exist for `npm run verify:oauth`
-      # and a container facing the internet has no business opening them.
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?the Google OAuth client id, or there is no way to sign in}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?the matching secret}
-      # Empty is closed in production, so an instance without this starts fine
-      # and then lets nobody in, including you. Refusing at `up` is the louder
-      # failure and the message carries the fix.
+      <<: [*db_env, *auth_env]
+      # Only the application, because it is read per request rather than at
+      # import: the migrator creates no account and checks nobody.
+      #
+      # Empty is closed in production, so an instance without this starts fine,
+      # looks healthy, and lets nobody in, including you. Refusing at `up` is
+      # the louder failure and the message carries the fix.
       ALLOWED_EMAILS: ${ALLOWED_EMAILS:?comma separated addresses allowed to hold an account}
     ports:
       # Loopback only: TLS is terminated by the reverse proxy in front, whether

@@ -21,8 +21,12 @@ over MCP.
 
 Roughly 300 MB of disk for the database after a year of ordinary use, plus the
 Node install. Serving it needs very little: one household generates no load
-worth the name. Building it is what sets the floor, so 2 GB of RAM, or 1 GB and
-a gigabyte of swap, or an image built elsewhere and pushed to a registry.
+worth the name.
+
+Building is what sets the floor, which is why the server does not build. CI
+publishes both images and the server pulls them, so a machine that only deploys
+needs Docker, a registry token, and no build headroom at all. If you do build on
+the server, budget 2 GB of RAM or 1 GB plus a gigabyte of swap.
 
 ---
 
@@ -33,22 +37,43 @@ source if you would rather run Node directly.
 
 ### 2.1 With containers (recommended for a server)
 
+The server pulls images that CI built. It never compiles anything, so the clone
+is there for `compose.yaml`, `deploy/` and your `.env`, and for nothing else.
+
 ```sh
 git clone <your fork> cooking-app
 cd cooking-app
 cp .env.example .env
 ```
 
-Edit `.env`, then:
+Edit `.env`. Then log in to the registry once, because the package is private:
 
 ```sh
-docker compose --profile serve up -d --build
+echo "$GHCR_TOKEN" | docker login ghcr.io -u <your github user> --password-stdin
 ```
 
-That builds the image, waits for Postgres to report healthy, runs the role
-bootstrap and both migrators once, and only then starts the application. The
-`serve` profile is what keeps this out of the way in development: `npm run
-db:up` still brings up the database alone.
+`GHCR_TOKEN` is a GitHub personal access token scoped to `read:packages` and
+nothing else. Docker stores it base64-encoded and not encrypted in
+`~/.docker/config.json`, which is the reason for the narrow scope: that file
+being read should cost you the ability to pull an image and nothing more.
+
+Then bring it up:
+
+```sh
+docker compose pull
+docker compose --profile serve up -d --no-build --wait
+```
+
+That pulls both images, waits for Postgres to report healthy, runs the role
+bootstrap and both migrators once, and only then starts the application.
+`--wait` blocks until the application's own healthcheck passes, so the command
+returning zero means the stack is genuinely serving. The `serve` profile is what
+keeps this out of the way in development: `npm run db:up` still brings up the
+database alone.
+
+`--no-build` is not decoration. Without it Compose is free to decide that a
+missing image should be built, and a server quietly building its own image is
+the thing this arrangement exists to prevent.
 
 Six variables have no default and `docker compose` refuses to start without
 them, naming the missing one and what it is for. That is deliberate: every one
@@ -89,22 +114,53 @@ Both the application and Postgres publish on loopback only. Nothing is reachable
 from outside the machine until a reverse proxy is put in front, which is section
 2.3.
 
-Updating is the same command:
+Updating is the same three commands:
 
 ```sh
-git pull && docker compose --profile serve up -d --build
+git pull
+docker compose pull
+docker compose --profile serve up -d --no-build --wait
 ```
 
-The image is Next's standalone output: about 230 MB, with no npm and no
+`git pull` is for `compose.yaml` and `deploy/`, not for the application, which
+arrives as an image. Both are needed: a compose change without a new image, or a
+new image without the compose change that configures it, each half-deploy the
+release.
+
+The runtime image is Next's standalone output: about 230 MB, with no npm and no
 TypeScript toolchain in it. Schema changes need `drizzle-kit` and `tsx`, which
 are development dependencies, so they run from a separate one-shot `migrate`
-service rather than being carried into the image that faces the internet.
+image rather than being carried into the one that faces the internet. That one
+carries the whole toolchain and is about 1 GB, which is worth knowing when the
+disk is small: it runs once per deploy and then does nothing, so
+`docker image prune` between upgrades is safe.
 
-`--build` compiles on the server, and `next build` is the only step here that
-wants real memory. On a VPS with 1 GB it can be killed by the kernel partway
-through, which surfaces as a build that stops with no error worth reading. Give
-the machine 2 GB, or a gigabyte of swap, or build the image elsewhere and push
-it to a registry.
+`IMAGE_TAG` decides which build runs. It defaults to `main`, which moves, and
+every commit also publishes an immutable `sha-<commit>` pair. Rolling back is
+therefore one variable and no revert:
+
+```sh
+IMAGE_TAG=sha-1a2b3c4 docker compose --profile serve up -d --no-build --wait
+```
+
+Put it in `.env` rather than the command line if you mean to stay there, or the
+next deploy silently moves you back to `main`.
+
+#### Building on the server instead
+
+A fork with no CI of its own can still use `--build`, which compiles from the
+clone and ignores the registry entirely:
+
+```sh
+docker compose --profile serve up -d --build --wait
+```
+
+Two things make this the second choice. `next build` is the only step here that
+wants real memory, and on a VPS with 1 GB it gets killed by the kernel partway
+through, which surfaces as a build that stops with no error worth reading: give
+the machine 2 GB, or a gigabyte of swap. And the image has to match the server's
+architecture, so a build on an arm64 laptop does not run on an amd64 VPS. CI
+builds `linux/amd64` explicitly for that reason.
 
 ### 2.2 From source
 
@@ -356,6 +412,12 @@ strategy, since it holds no auth tables.
 
 ### Upgrades
 
+On containers, the three commands at the end of section 2.1. The `migrate`
+service runs both migrators before the application starts, so there is no
+separate schema step.
+
+From source:
+
 ```sh
 git pull
 npm ci
@@ -378,7 +440,13 @@ Sign-in is Google only, gated by `ALLOWED_EMAILS`. There is no self-service
 sign-up route at all, and no password form anywhere in the interface. With
 `AUTH_PASSWORD_LOGIN` set, `/api/auth/sign-in/email` and
 `/api/auth/sign-up/email` answer on the API for `npm run verify:oauth` to drive,
-still behind the allowlist. Unset in production, they do not exist.
+still behind the allowlist.
+
+Without it they answer too, and refuse: `400` with `EMAIL_PASSWORD_DISABLED`, or
+`EMAIL_PASSWORD_SIGN_UP_DISABLED` on the sign-up half. They do not return `404`,
+so the code is what tells you the door is shut rather than the status. The
+container never has the flag at all, whatever `.env` says: `compose.yaml` does
+not pass it, and CI asserts that refusal on the running stack.
 
 Two endpoints are deliberately open and worth knowing about.
 

@@ -60,3 +60,162 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  # The container path, end to end, because none of it can fail on a laptop
+  # running `npm run dev` and all of it fails on a server. Three defects shipped
+  # at once for exactly that reason: the image had never been built, the
+  # migrator was missing the environment the auth module reads at import, and
+  # the application was never handed the Google credentials or the allowlist.
+  #
+  # tests/deploy.test.ts pins down what the files say. This job is what proves
+  # the stack actually comes up and answers.
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # Compose reads .env, so the values go in a file rather than the env
+      # block. None of them is a real credential: nothing here reaches Google,
+      # and the instance is destroyed at the end of the job.
+      - name: Configuration
+        run: |
+          cat > .env <<'ENV'
+          POSTGRES_PASSWORD=ci-postgres
+          APP_DB_PASSWORD=ci-app
+          BETTER_AUTH_SECRET=Y2ktc2VjcmV0LW5vdC11c2VkLWluLXByb2R1Y3Rpb24=
+          BETTER_AUTH_URL=http://localhost:3000
+          MCP_RESOURCE=http://localhost:3000/api/mcp
+          GOOGLE_CLIENT_ID=ci-client-id
+          GOOGLE_CLIENT_SECRET=ci-client-secret
+          ALLOWED_EMAILS=ci@example.test
+          ENV
+
+      # --wait blocks until the database reports healthy, the migrator exits
+      # zero and the application's own healthcheck passes, so a failure here is
+      # a failure of the deployment and not of the curl below.
+      - name: Build and start the stack
+        run: docker compose --profile serve up -d --build --wait
+
+      # /api/health runs `select 1` on the runtime pool, so this passing means
+      # the least-privileged role the migrator created is the one the
+      # application connects with.
+      - name: It is up, and it can reach Postgres
+        run: |
+          test "$(curl -fsS http://localhost:3000/api/health)" = '{"status":"ok"}'
+
+      # The two rewrites in next.config.ts are the whole paste-one-URL
+      # connection story. A client that cannot find the authorization server
+      # cannot connect at all, and nothing else in CI exercises them.
+      - name: An MCP client can discover the authorization server
+        run: |
+          curl -fsS http://localhost:3000/.well-known/oauth-authorization-server/api/auth \
+            | grep -q '"authorization_endpoint"'
+          curl -fsS http://localhost:3000/.well-known/oauth-protected-resource/api/mcp \
+            | grep -q '"resource":"http://localhost:3000/api/mcp"'
+
+      # The RFC 9728 challenge is what points a cold client at that metadata.
+      - name: An unauthenticated MCP call is refused, with the way in
+        run: |
+          curl -si -X POST http://localhost:3000/api/mcp \
+            -H 'content-type: application/json' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+            | tee /tmp/mcp.txt | grep -q '^HTTP/1.1 401'
+          grep -qi 'www-authenticate: Bearer resource_metadata=' /tmp/mcp.txt
+
+      # AUTH_PASSWORD_LOGIN is not passed to the container, whatever .env says.
+      # The endpoints answer and refuse rather than not existing, so the code is
+      # what is asserted.
+      - name: The password door is closed in the container
+        run: |
+          curl -sS -X POST http://localhost:3000/api/auth/sign-in/email \
+            -H 'content-type: application/json' \
+            -d '{"email":"ci@example.test","password":"long-enough-to-pass-validation"}' \
+            | grep -q 'EMAIL_PASSWORD_DISABLED'
+
+      - name: Logs, if any of that failed
+        if: failure()
+        run: docker compose --profile serve logs --no-color --tail 200
+
+      - name: Down
+        if: always()
+        run: docker compose --profile serve down -v
+
+  # What the server actually runs. The build happens here rather than on the VPS
+  # for two reasons: `next build` wants more CPU and memory than the smallest
+  # instance has, and the image must be amd64 while the machine this is developed
+  # on is arm64.
+  #
+  # Only on a push to main, and only behind both jobs above, so nothing reaches
+  # the registry that has not built, come up, and answered.
+  publish:
+    needs: [verify, deploy]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      # GITHUB_TOKEN can push to this repository's own packages, so publishing
+      # needs no personal token. Pulling on the server does, because the package
+      # is private: see docs/08-self-hosting.md.
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # GHCR rejects an uppercase path, and both github.repository and
+      # github.repository_owner carry the account's real capitalisation.
+      - name: Image name
+        id: image
+        run: |
+          echo "repo=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "sha=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Two targets of the one Dockerfile, so two tags of the one package rather
+      # than two packages: a single registry repository is a single login and a
+      # single visibility setting to get wrong.
+      #
+      # Each gets a moving `main-*` tag, which is what compose.yaml defaults to,
+      # and an immutable `sha-<commit>-*` one, which is what a rollback names.
+      - name: Runtime image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ steps.image.outputs.repo }}:main-runtime
+            ${{ steps.image.outputs.repo }}:${{ steps.image.outputs.sha }}-runtime
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Migrator image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: migrator
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ steps.image.outputs.repo }}:main-migrator
+            ${{ steps.image.outputs.repo }}:${{ steps.image.outputs.sha }}-migrator
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: What to deploy
+        run: |
+          echo "Pushed ${{ steps.image.outputs.sha }}. On the server:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```sh' >> "$GITHUB_STEP_SUMMARY"
+          echo 'cd ~/cooking-app && git pull' >> "$GITHUB_STEP_SUMMARY"
+          echo 'docker compose pull' >> "$GITHUB_STEP_SUMMARY"
+          echo 'docker compose --profile serve up -d --no-build --wait' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
