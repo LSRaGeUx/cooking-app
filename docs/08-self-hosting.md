@@ -59,9 +59,10 @@ cannot connect.
 
 A fourth thing is checked at start-up: there has to be a way in. Set
 `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, or `AUTH_PASSWORD_LOGIN=true`,
-or the application refuses to boot rather than serving a login screen with no
-button on it. Section 3 has the Google side of it, and the allowlist that
-decides who the button actually lets in.
+or the application refuses to boot. Only the Google pair puts a button on the
+login screen; the password flag opens the auth API and nothing else, so an
+instance meant for people to use needs the Google side. Section 3 has it, and
+the allowlist that decides who the button actually lets in.
 
 The database URLs are built by `compose.yaml` and point at the `db` service, so
 the values in `.env` for those two are used only when running from source.
@@ -127,7 +128,7 @@ here reaches a browser.
 | `GOOGLE_CLIENT_ID` | for Google sign-in | The OAuth client from the Google Cloud console. Both Google variables are needed together, or neither takes effect |
 | `GOOGLE_CLIENT_SECRET` | for Google sign-in | The matching secret |
 | `ALLOWED_EMAILS` | in production | Comma-separated addresses allowed to hold an account, matched exactly after trimming and lowercasing. Empty is open in development and closed in production |
-| `AUTH_PASSWORD_LOGIN` | no | `true` opens the email and password door. Development only: it is what `npm run verify:oauth` signs in with, and it exposes `/signup`. Unset in production |
+| `AUTH_PASSWORD_LOGIN` | no | `true` opens the email and password endpoints on the auth API. Development only: it is what `npm run verify:oauth` signs in with. Nothing in the UI offers it and there is no sign-up screen. Unset in production |
 | `TEST_DATABASE_URL` | no | Development only. Where the test database lives, if not beside the development one. Defaults to `DATABASE_URL` with `_test` appended, and the name must end in `_test`: the suite truncates every table in it |
 | `TEST_APP_DATABASE_URL` | no | Development only. The runtime role's URL for that same database. It must name the same database as `TEST_DATABASE_URL` and carry the same password as `APP_DATABASE_URL`, since `cooking_app` is one cluster-wide role |
 | `VERIFY_DATABASE_URL` | no | Development only. Where the database `npm run dev:test` serves lives. Defaults to `DATABASE_URL` with `_verify` appended, and the name must end in `_verify`. Separate from the test database on purpose: that server holds sessions the suite's truncate would delete |
@@ -274,8 +275,10 @@ the Drizzle schema.
 ## 5. What is exposed, and what it can do
 
 Sign-in is Google only, gated by `ALLOWED_EMAILS`. There is no self-service
-sign-up route in a production configuration: `/signup` exists only while
-`AUTH_PASSWORD_LOGIN` is set, and redirects to `/login` otherwise.
+sign-up route at all, and no password form anywhere in the interface. With
+`AUTH_PASSWORD_LOGIN` set, `/api/auth/sign-in/email` and
+`/api/auth/sign-up/email` answer on the API for `npm run verify:oauth` to drive,
+still behind the allowlist. Unset in production, they do not exist.
 
 One endpoint is deliberately open and worth knowing about: OAuth dynamic client
 registration accepts unauthenticated registrations, because an MCP client

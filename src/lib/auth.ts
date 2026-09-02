@@ -25,6 +25,10 @@ const googleCredentials =
  * unless asked for, because a second door into the same accounts is a second
  * door to defend, and because `npm run verify:oauth` has no way to drive a
  * Google consent screen and needs credentials to sign in with.
+ *
+ * It exists on the HTTP API only. Nothing in the UI offers it, and there is no
+ * sign-up screen: the flag opens `/api/auth/sign-in/email` and
+ * `/api/auth/sign-up/email` for that script and for nobody else.
  */
 const passwordLoginEnabled = process.env.AUTH_PASSWORD_LOGIN === "true";
 
@@ -38,7 +42,6 @@ if (!googleCredentials && !passwordLoginEnabled) {
 /** What the login screen should offer. Derived here so there is one answer. */
 export const signInMethods = {
   google: googleCredentials !== undefined,
-  passwordLogin: passwordLoginEnabled,
 } as const;
 
 /**

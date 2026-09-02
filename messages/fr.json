@@ -43,36 +43,16 @@
   "login": {
     "title": "Connexion",
     "intro": "Connectez-vous pour retrouver votre semaine.",
-    "email": "Adresse e-mail",
-    "password": "Mot de passe",
-    "submit": "Se connecter",
-    "submitting": "Connexion…",
-    "noAccount": "Pas encore de compte ?",
-    "signUpLink": "Créer un compte",
-    "failed": "Connexion impossible. Vérifiez votre adresse e-mail et votre mot de passe.",
     "oauthNotice": "Après connexion, vous serez invité à autoriser l'application qui a demandé l'accès.",
     "google": "Continuer avec Google",
     "googlePending": "Redirection…",
     "googleFailed": "Impossible d'ouvrir la connexion Google. Réessayez.",
     "accessDenied": "Cette adresse n'a pas accès à cette instance. Demandez à y être ajouté.",
     "accessNotConfigured": "Aucune liste d'accès n'est configurée sur cette instance, donc personne ne peut se connecter. Renseignez ALLOWED_EMAILS.",
+    "noSignInMethod": "Aucune méthode de connexion n'est configurée sur cette instance. Renseignez GOOGLE_CLIENT_ID et GOOGLE_CLIENT_SECRET.",
     "signOutToSwitch": "Se déconnecter et essayer une autre adresse",
     "signOutPending": "Déconnexion…",
-    "signInFailed": "La connexion a échoué. Réessayez.",
-    "passwordNotice": "Connexion par mot de passe, activée pour le développement local."
-  },
-  "signup": {
-    "title": "Créer un compte",
-    "intro": "Un compte suffit : la planification est personnelle.",
-    "name": "Nom",
-    "email": "Adresse e-mail",
-    "password": "Mot de passe",
-    "passwordHint": "Au moins 8 caractères.",
-    "submit": "Créer le compte",
-    "submitting": "Création…",
-    "hasAccount": "Vous avez déjà un compte ?",
-    "loginLink": "Se connecter",
-    "failed": "Création impossible. Cette adresse est peut-être déjà utilisée."
+    "signInFailed": "La connexion a échoué. Réessayez."
   },
   "consent": {
     "title": "Autoriser l'accès",

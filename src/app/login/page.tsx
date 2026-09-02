@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import { AuthShell } from "@/components/auth/auth-shell";
-import { CredentialsForm } from "@/components/auth/credentials-form";
 import { GoogleButton } from "@/components/auth/google-button";
 import { SignOutLink } from "@/components/auth/sign-out-link";
 import { NOT_ALLOWED, NOT_CONFIGURED, checkAccess } from "@/lib/access";
@@ -54,16 +53,23 @@ export default async function LoginPage({
         {stranded ? <SignOutLink /> : null}
       </div>
 
-      {signInMethods.google ? <GoogleButton /> : null}
+      {/*
+        Google is the only door a person uses. Password sign-in still exists on
+        the HTTP API when AUTH_PASSWORD_LOGIN is set, because verify:oauth needs
+        credentials to sign in with, but it is never offered here: a form on this
+        screen is an invitation, and the flag is a development affordance.
 
-      {signInMethods.passwordLogin ? (
-        <div className="flex flex-col gap-4">
-          {signInMethods.google ? (
-            <p className="hint">{t("passwordNotice")}</p>
-          ) : null}
-          <CredentialsForm initialMode="login" />
-        </div>
-      ) : null}
+        With no Google credentials configured there is genuinely nothing to
+        click, and saying so beats a card with a heading and empty space under
+        it. Start-up already refuses the case where no method at all is set.
+      */}
+      {signInMethods.google ? (
+        <GoogleButton />
+      ) : (
+        <p role="alert" className="banner banner-danger">
+          {t("noSignInMethod")}
+        </p>
+      )}
     </AuthShell>
   );
 }
