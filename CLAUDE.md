@@ -20,6 +20,8 @@ change as the code, and say so.
 | `docs/05-roadmap.md` | Phases. Check which one is current before proposing work |
 | `docs/06-open-questions.md` | Assumptions and unknowns. Add to it, do not silently assume |
 | `docs/07-phase-0-findings.md` | What phase 0 proved about OAuth, MCP, RLS, and Postgres 18. Read before touching any of them |
+| `docs/08-self-hosting.md` | Running an instance: install, configuration, backups, upgrades, troubleshooting |
+| `docs/09-hardening-a-host.md` | The machine under the reference instance: SSH, firewall, self-applying updates, disk caps, offsite backups. Read before touching the VPS |
 
 ## Constraints that must never be broken
 

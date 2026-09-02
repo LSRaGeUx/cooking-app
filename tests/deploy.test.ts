@@ -208,6 +208,19 @@ describe("the TLS overlay", () => {
     expect(overlay).toContain("./deploy/Caddyfile:/etc/caddy/Caddyfile:ro");
   });
 
+  it("says which interface it publishes on, rather than trusting the daemon", () => {
+    // A host that sets `"ip": "127.0.0.1"` in daemon.json, which
+    // docs/09-hardening-a-host.md recommends because Docker publishes around
+    // ufw, makes loopback the default for a port published without an address.
+    // Caddy would bind loopback, answer nobody, fail every ACME challenge, and
+    // log nothing that points at the cause.
+    for (const port of ["80:80", "443:443", "443:443/udp"]) {
+      expect(overlay, `the overlay publishes ${port} without an address`).toContain(
+        `"0.0.0.0:${port}"`,
+      );
+    }
+  });
+
   it("forwards to the app with the path untouched", () => {
     // Two rewrites in next.config.ts are what let an MCP client discover the
     // authorization server. A handle block on /.well-known/ here would swallow

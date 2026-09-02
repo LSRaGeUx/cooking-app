@@ -436,8 +436,9 @@ docker compose exec -T db pg_restore -U cooking -d cooking --clean --if-exists \
 
 Take a dump before every upgrade. And copy `BACKUP_DIR` off the machine on some
 schedule, because a dump sitting on the disk that held the database is not a
-backup of that disk: `rsync`, `restic`, or whatever the host offers as a
-snapshot.
+backup of that disk. `deploy/pull-backups.sh` does that from a workstation with
+rsync over SSH, and section 7 of `09-hardening-a-host.md` schedules it. `restic`,
+or whatever the host offers as a snapshot, are fine alternatives.
 
 Users can also export their own data from the Account screen: one JSON file with
 the profile, facts, recipes, weeks, grocery lists, feedback and the agent log,
