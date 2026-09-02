@@ -187,10 +187,17 @@ An architectural constraint that decays silently unless it is mechanical:
   it does not grant access: every Google account on earth can reach the callback,
   so the allowlist is the control and the provider is only the proof. It is
   enforced in `user.validateUserInfo`, which Better Auth calls on account
-  creation, on account linking and on every OAuth sign-in, so it covers every
-  method rather than one route. An empty list is open in development and closed
-  in production, because an instance facing the internet with no list configured
-  has no door on it.
+  creation, on account linking and on OAuth sign-in. An empty list is open in
+  development and closed in production, because an instance facing the internet
+  with no list configured has no door on it.
+- That gate covers the way in and nothing else. It does not run when an existing
+  account signs in with a password, and it cannot reach a session cookie or an
+  access token already issued, so removing an address does not on its own end an
+  access already granted. The allowlist is therefore re-read on the way through
+  too: in `requireUser()`, on the consent screen, and on every MCP call, where a
+  refusal is `ACCESS_REVOKED`. Without the last one an agent connected before the
+  removal keeps working for the full hour its token is valid, and a surviving
+  cookie authorizes a new client and mints another hour on demand.
 - Email and password sign-in is off unless `AUTH_PASSWORD_LOGIN` is set. It
   exists for local development and for `verify:oauth`, which cannot drive a
   Google consent screen. A second door into the same accounts is a second door to

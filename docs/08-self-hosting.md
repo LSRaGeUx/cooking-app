@@ -95,7 +95,7 @@ Edit `.env` (section 3 below explains every line), then:
 
 ```sh
 npm ci
-npm run db:setup     # container up, role bootstrap, domain migrations, auth migrations
+npm run db:setup     # container up, role bootstrap, all three databases, migrators
 npm run build
 npm run start
 ```
@@ -128,6 +128,11 @@ here reaches a browser.
 | `GOOGLE_CLIENT_SECRET` | for Google sign-in | The matching secret |
 | `ALLOWED_EMAILS` | in production | Comma-separated addresses allowed to hold an account, matched exactly after trimming and lowercasing. Empty is open in development and closed in production |
 | `AUTH_PASSWORD_LOGIN` | no | `true` opens the email and password door. Development only: it is what `npm run verify:oauth` signs in with, and it exposes `/signup`. Unset in production |
+| `TEST_DATABASE_URL` | no | Development only. Where the test database lives, if not beside the development one. Defaults to `DATABASE_URL` with `_test` appended, and the name must end in `_test`: the suite truncates every table in it |
+| `TEST_APP_DATABASE_URL` | no | Development only. The runtime role's URL for that same database. It must name the same database as `TEST_DATABASE_URL` and carry the same password as `APP_DATABASE_URL`, since `cooking_app` is one cluster-wide role |
+| `VERIFY_DATABASE_URL` | no | Development only. Where the database `npm run dev:test` serves lives. Defaults to `DATABASE_URL` with `_verify` appended, and the name must end in `_verify`. Separate from the test database on purpose: that server holds sessions the suite's truncate would delete |
+| `VERIFY_APP_DATABASE_URL` | no | Development only. The runtime role's URL for that same database, under the same two rules as `TEST_APP_DATABASE_URL` |
+| `DEV_TEST_PORT` | no | Development only. Where `npm run dev:test` serves and `npm run verify:oauth` looks. Defaults to 3100, loopback only |
 
 Three variables exist only for `npm run verify:oauth` and are irrelevant in
 production: `VERIFY_BASE_URL`, `VERIFY_EMAIL`, `VERIFY_PASSWORD`.
@@ -218,7 +223,7 @@ reads the request host.
 ```sh
 npm run start        # production server
 npm run verify       # dependency allowlist, typecheck, tests. Needs only Postgres
-npm run verify:oauth # the whole agent connection path, against a running server
+npm run verify:oauth # the whole agent connection path, against `npm run dev:test`
 ```
 
 `npm run verify:oauth` is worth running once after any change to the domain, the
@@ -230,8 +235,11 @@ account in a usable state.
 
 ### Backups
 
-One database, no file storage, no object store. Recipe images are addresses, not
-uploads, so there is nothing on disk to back up beyond Postgres itself.
+One database worth backing up, no file storage, no object store. Recipe images
+are addresses, not uploads, so there is nothing on disk to back up beyond
+Postgres itself. A development machine also has `cooking_test` and
+`cooking_verify` beside it, both disposable by construction and wanting no
+backup.
 
 ```sh
 podman compose exec -T db pg_dump -U cooking -Fc cooking > cooking-$(date +%F).dump

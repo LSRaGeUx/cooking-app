@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { db, withUser } from "@/db/client";
 import { agentActivity } from "@/db/schema";
 import { runTool } from "@/mcp/tool-runner";
@@ -30,10 +30,12 @@ function caller(scopes: string[]): McpCallerContext {
  * unlike the domain tables, so this test has to create an actual account row
  * rather than the bare uuid the other service tests use.
  */
+const email = `${ctx.userId}@example.test`;
+
 async function createAuthUser(): Promise<void> {
   await db.execute(sql`
     insert into "user" (id, name, email, "emailVerified", "createdAt", "updatedAt")
-    values (${ctx.userId}, 'Test', ${`${ctx.userId}@example.test`}, false, now(), now())
+    values (${ctx.userId}, 'Test', ${email}, false, now(), now())
     on conflict do nothing
   `);
 }
@@ -117,6 +119,78 @@ describe("revocation", () => {
 
   it("allows the call again once consent exists", async () => {
     await grantConsent();
+
+    const result = await runTool(
+      caller(["profile:read"]),
+      { name: "test_tool", direction: "read", requiredScopes: ["profile:read"] },
+      async () => "ok",
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]!.text).toBe("ok");
+  });
+});
+
+describe("instance access", () => {
+  // Set per test and put back, because every other test in this file relies on
+  // the open list that tests/setup/instance-access.ts installs.
+  afterEach(() => {
+    process.env.ALLOWED_EMAILS = "";
+  });
+
+  it("refuses a token whose account is no longer on the allowlist", async () => {
+    await grantConsent();
+    process.env.ALLOWED_EMAILS = "someone.else@example.test";
+
+    const result = await runTool(
+      caller(["profile:read"]),
+      { name: "test_tool", direction: "read", requiredScopes: ["profile:read"] },
+      async () => "should not run",
+    );
+
+    expect(result.isError).toBe(true);
+    const payload = JSON.parse(result.content[0]!.text);
+    expect(payload.error).toBe("ACCESS_REVOKED");
+    // The distinction that keeps an agent from looping through the OAuth dance:
+    // this is not something reconnecting the client can fix.
+    expect(payload.details.retryable).toBe(false);
+    expect(payload.error).not.toBe("CLIENT_REVOKED");
+  });
+
+  it("refuses even while the consent row is perfectly valid", async () => {
+    await grantConsent();
+    process.env.ALLOWED_EMAILS = "someone.else@example.test";
+
+    const rows = await db.execute(
+      sql`select 1 from "oauthConsent" where "userId" = ${ctx.userId} and "clientId" = ${clientId} limit 1`,
+    );
+    expect(rows.rows.length).toBe(1);
+
+    const result = await runTool(
+      caller(["profile:read"]),
+      { name: "test_tool", direction: "read", requiredScopes: ["profile:read"] },
+      async () => "should not run",
+    );
+
+    expect(JSON.parse(result.content[0]!.text).error).toBe("ACCESS_REVOKED");
+  });
+
+  it("refuses a token whose account row is gone entirely", async () => {
+    await grantConsent();
+    const orphan = { ...caller(["profile:read"]), userId: randomUUID() };
+
+    const result = await runTool(
+      orphan,
+      { name: "test_tool", direction: "read", requiredScopes: ["profile:read"] },
+      async () => "should not run",
+    );
+
+    expect(JSON.parse(result.content[0]!.text).error).toBe("ACCESS_REVOKED");
+  });
+
+  it("allows the call again once the address is back on the list", async () => {
+    await grantConsent();
+    process.env.ALLOWED_EMAILS = `someone.else@example.test, ${email.toUpperCase()} `;
 
     const result = await runTool(
       caller(["profile:read"]),

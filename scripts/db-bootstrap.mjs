@@ -5,7 +5,7 @@
 // into the SQL, so it stays out of version control and cannot drift from what the
 // app actually connects with.
 import "dotenv/config";
-import { applyBootstrap } from "./lib/db.mjs";
+import { applyBootstrap, passwordOf } from "./lib/db.mjs";
 
 const ownerUrl = process.env.DATABASE_URL;
 const appUrl = process.env.APP_DATABASE_URL;
@@ -17,7 +17,7 @@ if (!ownerUrl || !appUrl) {
   process.exit(1);
 }
 
-const pw = new URL(appUrl).password;
+const pw = passwordOf(appUrl);
 if (!pw) {
   console.error("APP_DATABASE_URL carries no credential for the runtime role.");
   process.exit(1);

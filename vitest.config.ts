@@ -5,12 +5,22 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],
-    // Order matters. dotenv/config fills the environment, then the second file
-    // redirects the two database URLs at the test database, and both run before
-    // a test file imports src/db/client.ts and opens its pool.
-    setupFiles: ["dotenv/config", "./tests/setup/test-database.ts"],
-    // Empties that database once, so a run that failed half way through does not
-    // decide what the next one sees.
+    // Order matters. dotenv/config fills the environment, then the others
+    // correct it: the database URLs are redirected at the test database, and the
+    // allowlist is emptied so the developer's own does not decide what passes.
+    // All of it runs before a test file imports src/db/client.ts and opens its
+    // pool.
+    setupFiles: [
+      "dotenv/config",
+      "./tests/setup/test-database.ts",
+      "./tests/setup/instance-access.ts",
+    ],
+    // ...and Vitest documents this as running them in parallel by default, so
+    // the order above is pinned rather than left to what the installed version
+    // happens to do.
+    sequence: { setupFiles: "list" },
+    // Empties that database before the run and before every rerun, so a run that
+    // failed half way through does not decide what the next one sees.
     globalSetup: ["./tests/setup/global.ts"],
     // Integration tests share one Postgres, so no parallel file execution.
     fileParallelism: false,

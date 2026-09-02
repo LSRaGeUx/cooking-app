@@ -3,7 +3,8 @@ import { getTranslations } from "next-intl/server";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { CredentialsForm } from "@/components/auth/credentials-form";
 import { GoogleButton } from "@/components/auth/google-button";
-import { NOT_ALLOWED, NOT_CONFIGURED } from "@/lib/access";
+import { SignOutLink } from "@/components/auth/sign-out-link";
+import { NOT_ALLOWED, NOT_CONFIGURED, checkAccess } from "@/lib/access";
 import { signInMethods } from "@/lib/auth";
 import { getCurrentSession } from "@/lib/session";
 
@@ -26,8 +27,13 @@ export default async function LoginPage({
 
   // Someone already signed in who is not mid-authorization has no business
   // here. Mid-authorization, the provider drives the redirect itself.
+  //
+  // Unless their address was dropped from the allowlist: requireUser() sends
+  // them back here, so bouncing them to `/` on the strength of the cookie alone
+  // would be an endless round trip between the two screens.
   const session = await getCurrentSession();
-  if (session?.user && !isOAuthRequest) redirect("/");
+  const stranded = session?.user ? !checkAccess(session.user.email).allowed : false;
+  if (session?.user && !stranded && !isOAuthRequest) redirect("/");
 
   const t = await getTranslations("login");
   const refusal = refusalKey(params.error);
@@ -45,6 +51,7 @@ export default async function LoginPage({
             {t(refusal)}
           </p>
         ) : null}
+        {stranded ? <SignOutLink /> : null}
       </div>
 
       {signInMethods.google ? <GoogleButton /> : null}

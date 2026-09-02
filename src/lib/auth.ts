@@ -65,11 +65,18 @@ export const auth = betterAuth({
   socialProviders: googleCredentials ? { google: googleCredentials } : {},
   user: {
     /**
-     * The access gate. Better Auth calls this before creating a user, before
-     * linking an account, and on every OAuth sign-in, across every method, so
-     * one rule covers Google, the development password door, and anything added
-     * later. Returning `{ error }` turns into a redirect to `errorCallbackURL`
-     * carrying the code, which `/login` translates.
+     * The gate on the way in. Better Auth calls this before creating a user,
+     * before linking an account, and on OAuth sign-in, so it covers Google, the
+     * sign-up half of the development password door, and anything added later.
+     * Returning `{ error }` turns into a redirect to `errorCallbackURL` carrying
+     * the code, which `/login` translates.
+     *
+     * It is a creation gate, not a session one. It does not run when an existing
+     * account signs in with a password, and it cannot reach a cookie or a token
+     * already issued, so removing an address here does not by itself end an
+     * access already granted. `checkAccess` is therefore re-read on every
+     * authenticated request and on every MCP call; see the header of
+     * src/lib/access.ts for the four places and why each is needed.
      */
     validateUserInfo: ({ user }) => {
       const email = typeof user.email === "string" ? user.email : "";

@@ -2,8 +2,10 @@ import { headers } from "next/headers";
 import { getTranslations } from "next-intl/server";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { ConsentForm } from "@/components/auth/consent-form";
+import { checkAccess } from "@/lib/access";
 import { auth } from "@/lib/auth";
 import { MCP_SCOPES, type McpScope } from "@/lib/scopes";
+import { getCurrentSession } from "@/lib/session";
 
 /**
  * Target of the OAuth provider's `consentPage`. The scopes the client asked for
@@ -25,6 +27,28 @@ export default async function ConsentPage({
 
   const clientId = typeof params.client_id === "string" ? params.client_id : null;
   const requestedScopes = parseScopes(params.scope);
+
+  /**
+   * The provider only checks that a session exists before sending the browser
+   * here, and a session outlives a removal from the allowlist. Refusing to draw
+   * the form is the third place this is caught, after requireUser() and the MCP
+   * tool runner: a token minted past this screen anyway opens nothing, because
+   * every tool call re-checks, but a consent screen that offers to grant an
+   * access the instance has withdrawn is a lie to the person reading it.
+   */
+  const session = await getCurrentSession();
+  const allowed = session?.user ? checkAccess(session.user.email).allowed : false;
+  if (!allowed) {
+    return (
+      <AuthShell>
+        <h1 className="title">{t("title")}</h1>
+        <p role="alert" className="banner banner-danger">
+          {t("notAllowed")}
+        </p>
+      </AuthShell>
+    );
+  }
+
   const clientName = clientId ? await clientNameOf(clientId) : null;
 
   if (!clientId) {

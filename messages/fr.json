@@ -56,6 +56,8 @@
     "googleFailed": "Impossible d'ouvrir la connexion Google. Réessayez.",
     "accessDenied": "Cette adresse n'a pas accès à cette instance. Demandez à y être ajouté.",
     "accessNotConfigured": "Aucune liste d'accès n'est configurée sur cette instance, donc personne ne peut se connecter. Renseignez ALLOWED_EMAILS.",
+    "signOutToSwitch": "Se déconnecter et essayer une autre adresse",
+    "signOutPending": "Déconnexion…",
     "signInFailed": "La connexion a échoué. Réessayez.",
     "passwordNotice": "Connexion par mot de passe, activée pour le développement local."
   },
@@ -82,6 +84,7 @@
     "submitting": "Traitement…",
     "failed": "L'autorisation n'a pas pu être traitée. Relancez la connexion depuis votre client.",
     "missingRequest": "Aucune demande d'autorisation en cours. Relancez la connexion depuis votre client.",
+    "notAllowed": "Cette adresse n'a plus accès à cette instance, donc aucune autorisation ne peut être accordée. Demandez à y être ajouté, puis relancez la connexion depuis votre client.",
     "reversible": "Vous pourrez révoquer cet accès à tout moment depuis votre compte.",
     "scopeNames": {
       "openid": "Vous identifier",

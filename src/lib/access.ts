@@ -1,12 +1,28 @@
 /**
- * Who may hold an account on this instance.
+ * Who may hold an account on this instance, and who still holds one.
  *
  * Google sign-in proves an address, it does not grant access: anyone with a
  * Google account can reach the callback. The allowlist is the actual control.
- * It is enforced by `user.validateUserInfo` in `src/lib/auth.ts`, which Better
- * Auth calls on account creation, on account linking, and on every OAuth
- * sign-in. Dropping an address therefore blocks the next sign-in, though it
- * does not revoke a session cookie already issued.
+ *
+ * It is checked in four places, because one was not enough. Better Auth's
+ * `user.validateUserInfo` in `src/lib/auth.ts` covers the way in: account
+ * creation, account linking, and OAuth sign-in. That gate stops a stranger
+ * getting an account, and it is all it stops. It does not run on email and
+ * password sign-in of an account that already exists, and nothing about it
+ * reaches a session cookie or an access token already issued.
+ *
+ * So access is re-read on the way through as well:
+ *
+ * - `requireUser()` in `src/lib/session.ts`, so a removed address stops loading
+ *   pages on its next request rather than when its cookie expires.
+ * - The consent screen, so a surviving cookie is not offered the chance to
+ *   authorize a new agent client.
+ * - `guardedCall()` in `src/mcp/tool-runner.ts`, which is the one that matters:
+ *   an access token is a JWT valid for its full hour whatever we later think of
+ *   its holder, so without this an agent connected before the removal keeps
+ *   working, and a surviving cookie can mint another hour on demand. It refuses
+ *   with `ACCESS_REVOKED`, kept distinct from `CLIENT_REVOKED` so an agent does
+ *   not read it as "reconnect me" and loop.
  *
  * The list lives in the environment rather than in a table because there is no
  * admin screen to edit a table with, and a household list changes about twice a

@@ -67,6 +67,12 @@ Settled while building phase 4:
   `src/mcp/tool-runner.ts`. Scopes, revocation, rate limit, audit entry and error
   shaping are applied there and nowhere else, so a tool added later cannot
   quietly skip one.
+- **First-run seeding happens on the first tool call**, through the same
+  idempotent `ensureUserSetup()` the web entry point runs. An agent may well be
+  the first thing an account ever talks to, and an unseeded account has no meal
+  types and no slots: `get_week` would answer with an empty grid and
+  `propose_week` would refuse every entry with `SLOT_UNKNOWN` and an empty list
+  of valid keys, which is an error naming no way out and repairable by no tool.
 
 Fallback for local use: a thin stdio wrapper that holds a personal access token
 and proxies to the same HTTP endpoint. Not v1, but the tool layer must not assume
@@ -247,6 +253,7 @@ Blocking errors (nothing is written):
 | `RECIPE_NOT_FOUND` | Reference does not resolve |
 | `TIME_BUDGET_EXCEEDED` | Active time exceeds the slot budget plus tolerance. Names slot, budget, and actual |
 | `VERSION_CONFLICT` | `expected_base_version` is stale. Returns current version |
+| `ACCESS_REVOKED` | The account behind the token no longer has access to this instance. Not a client problem: reconnecting grants nothing, and `details.retryable` is `false` so an agent does not loop through the authorization dance |
 | `PREP_LINK_ORDER` | Source slot is after the dependent slot |
 | `MISSING_RATIONALE` | An entry has no rationale |
 | `FACT_CAP_REACHED` | Names the cap and lists the least recently referenced facts as retirement candidates |

@@ -24,6 +24,10 @@ const nextConfig: NextConfig = {
   // outbound AI client. See scripts/check-no-llm-deps.mjs.
   serverExternalPackages: ["pg"],
 
+  // `npm run dev:test` sets this, so a test server running beside `npm run dev`
+  // does not share one build directory with it.
+  distDir: process.env.NEXT_DIST_DIR ?? ".next",
+
   // Emits .next/standalone, a self-contained server with only the traced
   // dependencies. It is what lets the runtime image skip npm and the whole
   // toolchain, which is most of the image and all of its attack surface.
