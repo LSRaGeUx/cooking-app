@@ -198,10 +198,11 @@ An architectural constraint that decays silently unless it is mechanical:
   refusal is `ACCESS_REVOKED`. Without the last one an agent connected before the
   removal keeps working for the full hour its token is valid, and a surviving
   cookie authorizes a new client and mints another hour on demand.
-- Email and password sign-in is off unless `AUTH_PASSWORD_LOGIN` is set. It
-  exists for local development and for `verify:oauth`, which cannot drive a
-  Google consent screen. A second door into the same accounts is a second door to
-  defend.
+- Email and password sign-in is off unless `AUTH_PASSWORD_LOGIN` is set, and even
+  then it lives on the auth API only. No screen offers it, and there is no
+  sign-up route. It exists for local development and for `verify:oauth`, which
+  cannot drive a Google consent screen. A second door into the same accounts is a
+  second door to defend, so it is not advertised and it is closed in production.
 - Account linking is disabled. One provider has nothing to link, and disabling it
   removes the case where a second identity claiming an allowlisted address
   inherits the account that already holds it.

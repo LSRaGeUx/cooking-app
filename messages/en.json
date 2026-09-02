@@ -43,36 +43,16 @@
   "login": {
     "title": "Sign in",
     "intro": "Sign in to get back to your week.",
-    "email": "Email address",
-    "password": "Password",
-    "submit": "Sign in",
-    "submitting": "Signing in…",
-    "noAccount": "No account yet?",
-    "signUpLink": "Create an account",
-    "failed": "Could not sign you in. Check your email address and your password.",
     "oauthNotice": "Once signed in, you will be asked to authorise the application that requested access.",
     "google": "Continue with Google",
     "googlePending": "Redirecting…",
     "googleFailed": "Could not open Google sign-in. Try again.",
     "accessDenied": "This address has no access to this instance. Ask to be added.",
     "accessNotConfigured": "No access list is configured on this instance, so nobody can sign in. Set ALLOWED_EMAILS.",
+    "noSignInMethod": "No sign-in method is configured on this instance. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.",
     "signOutToSwitch": "Sign out and try another address",
     "signOutPending": "Signing out…",
-    "signInFailed": "Sign-in failed. Try again.",
-    "passwordNotice": "Password sign-in, enabled for local development."
-  },
-  "signup": {
-    "title": "Create an account",
-    "intro": "One account is enough: planning is personal.",
-    "name": "Name",
-    "email": "Email address",
-    "password": "Password",
-    "passwordHint": "At least 8 characters.",
-    "submit": "Create the account",
-    "submitting": "Creating…",
-    "hasAccount": "Already have an account?",
-    "loginLink": "Sign in",
-    "failed": "Could not create the account. That address may already be in use."
+    "signInFailed": "Sign-in failed. Try again."
   },
   "consent": {
     "title": "Authorise access",
