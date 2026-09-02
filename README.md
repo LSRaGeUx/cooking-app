@@ -73,7 +73,7 @@ so the server only pulls:
 ```sh
 cp .env.example .env        # then fill in the six values it refuses to start without
 echo "$GHCR_TOKEN" | docker login ghcr.io -u <you> --password-stdin
-docker compose -f compose.yaml -f deploy/compose.proxy.yaml pull
+docker compose -f compose.yaml -f deploy/compose.proxy.yaml --profile serve pull
 docker compose -f compose.yaml -f deploy/compose.proxy.yaml \
   --profile serve up -d --no-build --wait
 ```
