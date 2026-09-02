@@ -216,6 +216,6 @@ jobs:
           echo "Pushed ${{ steps.image.outputs.sha }}. On the server:" >> "$GITHUB_STEP_SUMMARY"
           echo '```sh' >> "$GITHUB_STEP_SUMMARY"
           echo 'cd ~/cooking-app && git pull' >> "$GITHUB_STEP_SUMMARY"
-          echo 'docker compose pull' >> "$GITHUB_STEP_SUMMARY"
+          echo 'docker compose --profile serve pull' >> "$GITHUB_STEP_SUMMARY"
           echo 'docker compose --profile serve up -d --no-build --wait' >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"

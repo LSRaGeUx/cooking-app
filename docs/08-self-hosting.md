@@ -60,9 +60,14 @@ being read should cost you the ability to pull an image and nothing more.
 Then bring it up:
 
 ```sh
-docker compose pull
+docker compose --profile serve pull
 docker compose --profile serve up -d --no-build --wait
 ```
+
+`--profile serve` on the pull as well as the up. Without it Compose considers
+only the services in no profile, which is the database alone, and says nothing
+about the two it skipped. The `up` that follows then fails on a missing image,
+which reads like a registry problem.
 
 That pulls both images, waits for Postgres to report healthy, runs the role
 bootstrap and both migrators once, and only then starts the application.
@@ -118,7 +123,7 @@ Updating is the same three commands:
 
 ```sh
 git pull
-docker compose pull
+docker compose --profile serve pull
 docker compose --profile serve up -d --no-build --wait
 ```
 

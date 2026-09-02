@@ -112,9 +112,11 @@ TLS, and is a separate file rather than a third profile because Compose
 interpolates every service whichever profile is active.
 
 **The server never builds.** CI publishes two images per commit to GHCR, one per
-shipping target of the Dockerfile, and a deploy is `git pull`, `docker compose
-pull`, `up -d --no-build --wait`. The `build:` blocks stay for CI and for local
-work. `IMAGE_TAG` selects the build and defaults to `main`; every commit also
+shipping target of the Dockerfile, and a deploy is `git pull`, then
+`docker compose --profile serve pull`, then `up -d --no-build --wait`. The
+profile is needed on the pull as well: without it Compose considers only the
+services in no profile, pulls the database alone, and says nothing about the two
+it skipped. The `build:` blocks stay for CI and for local work. `IMAGE_TAG` selects the build and defaults to `main`; every commit also
 gets an immutable `sha-<commit>` pair, which is what a rollback names.
 
 Three things to know before touching any of it:

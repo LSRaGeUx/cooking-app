@@ -285,6 +285,27 @@ describe("the images a server pulls", () => {
     expect(workflow).toContain("needs: [verify, deploy]");
     expect(workflow).toContain("github.ref == 'refs/heads/main'");
   });
+
+  it("never documents a pull without the profile that holds the images", () => {
+    // Found on the first real deploy. Both application services are in the
+    // `serve` profile, so a bare `docker compose pull` considers only the
+    // database, pulls it, and reports success without mentioning the two it
+    // skipped. The `up` that follows fails on a missing image, which reads like
+    // a registry or credentials problem and sends you looking in the wrong place.
+    const docs = ["README.md", "CLAUDE.md", join("docs", "08-self-hosting.md")];
+    for (const file of [...docs, join(".github", "workflows", "ci.yml")]) {
+      // Prose wraps, so the command can straddle two lines and a line-by-line
+      // scan misses it. That is how the one in CLAUDE.md survived the first fix.
+      const text = readFileSync(join(root, file), "utf8").replace(/\s+/g, " ");
+      const bare = [...text.matchAll(/docker compose\b([^`\n]*?)\bpull\b/g)].filter(
+        (match) => !match[1]!.includes("--profile serve"),
+      );
+      expect(
+        bare.map((match) => match[0]),
+        `${file} documents a pull that would silently skip the app`,
+      ).toEqual([]);
+    }
+  });
 });
 
 describe("every variable the application reads", () => {
