@@ -35,7 +35,14 @@ export default async function AppLayout({
   const theme = isTheme(stored) ? stored : defaultTheme;
 
   return (
-    <div className="min-h-screen">
+    /*
+     * One viewport tall and clipped, with the two bars as flex children of it
+     * and the scrolling confined to the box between them. AppNav renders both
+     * bars as a fragment, so they are direct children here; the bottom one
+     * carries order-last to land under the content it is written above.
+     * .shell in globals.css has the reasoning.
+     */
+    <div className="shell">
       <AppNav
         weekHref={`/semaine/${formatIsoWeek(week)}`}
         groceryHref={`/courses/${formatCycleStart(cycle.startsOn)}`}
@@ -46,8 +53,9 @@ export default async function AppLayout({
           year: String(week.year),
         })}
       />
-      {/* Clears the fixed bar, and the phone tab strip at the bottom. */}
-      <main id="content" className="pb-16 pt-13 lg:pb-0">
+      {/* The only thing that scrolls. No offsets to clear the bars: they are
+          above and below this box, not over it. */}
+      <main id="content" className="shell-scroll">
         {children}
       </main>
     </div>

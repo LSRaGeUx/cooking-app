@@ -15,7 +15,12 @@ export async function AuthShell({ children }: { children: React.ReactNode }) {
   const week = currentIsoWeek();
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-[1fr_30rem]">
+    /*
+     * 100dvh, not 100vh: on iOS the latter is the height the page would have
+     * with the browser toolbars retracted, which gives a signed-out screen with
+     * nothing on it a scrollbar the height of the toolbar.
+     */
+    <div className="grid min-h-[100dvh] lg:grid-cols-[1fr_30rem]">
       <aside className="relative hidden flex-col justify-between overflow-hidden border-r border-rule bg-sunk p-14 lg:flex">
         <div className="ledger pointer-events-none absolute inset-0 opacity-60" />
 
@@ -33,7 +38,9 @@ export async function AuthShell({ children }: { children: React.ReactNode }) {
         </span>
       </aside>
 
-      <main className="flex items-center justify-center px-6 py-16">
+      {/* The page declares viewport-fit=cover, so the notch is the form's
+          problem in landscape as much as the shell's. */}
+      <main className="flex items-center justify-center px-6 py-16 [padding-left:calc(1.5rem+env(safe-area-inset-left))] [padding-right:calc(1.5rem+env(safe-area-inset-right))]">
         <div className="flex w-full max-w-sm flex-col gap-8">{children}</div>
       </main>
     </div>

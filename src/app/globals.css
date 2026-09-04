@@ -39,6 +39,10 @@
   --rule-soft: #cfccc2;
   --rule-w: 2px;
 
+  /* The height of the top bar, named once because the shell, the panel under
+     the settings block and the recipe plate all measure against it. */
+  --bar-h: 3.25rem;
+
   /* The cook. */
   --tomato: #e63a0b;
   --on-tomato: #ffffff;
@@ -696,6 +700,94 @@
     position: fixed;
     inset: 0;
     background: color-mix(in srgb, var(--ink) 65%, transparent);
+  }
+
+  /* =============================================================== shell */
+
+  /*
+   * The shell is the viewport, and only the middle of it scrolls.
+   *
+   * The bars used to be position: fixed over a scrolling document, which is
+   * exactly the arrangement iOS Safari handles worst. Safari grows and shrinks
+   * its own toolbars as the document scrolls, and while it does, it leaves
+   * fixed elements pinned to the edges the viewport used to have: the top bar
+   * drifts down the screen with page content running above it, the bottom bar
+   * drifts up with page content running below it, and both of them wobble for
+   * the length of a flick. Nothing inside the page can correct it, because the
+   * page is not told the viewport moved until the gesture ends.
+   *
+   * A document that never scrolls never starts that. So the shell is exactly
+   * one viewport tall and clipped, the two bars are ordinary flex children
+   * welded to its top and bottom edges, and the scrolling happens in the box
+   * between them. Safari then has no reason to touch its toolbars, and the
+   * bars cannot be anywhere but on the edges.
+   *
+   * position: fixed, and not merely a viewport-tall box with overflow hidden,
+   * because "the document does not scroll" has to be true and not nearly true.
+   * In flow, the tall content inside .shell-scroll still counts towards the
+   * document's own scrollable height even though the box it sits in clips it,
+   * so the whole shell could be flicked off the top of the screen leaving bare
+   * ground behind, which is a worse version of the fault being fixed. Taking
+   * the shell out of flow leaves the body zero pixels tall, and a body with
+   * nothing in it has nothing to scroll.
+   *
+   * top/left/right rather than inset: 0, and a height in dvh, because the box
+   * a fixed element is measured against on iOS is the taller viewport that
+   * exists with the toolbars retracted. Anchoring the top and taking the height
+   * from dvh keeps the bottom bar above the toolbar instead of behind it.
+   *
+   * The price is that Safari keeps its toolbars out for good, so the readable
+   * height is fixed at its smallest. That is the right trade: a bar you cannot
+   * trust to stay still is worse than a bar that costs fifty pixels.
+   *
+   * The insets are the second half of it. The page declares viewport-fit=cover
+   * (see src/app/layout.tsx), so the shell paints under the notch and the home
+   * indicator and each bar pads its own content back out of them. Ink reaches
+   * the edge of the screen, text does not sit under the clock.
+   */
+  .shell {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .shell-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    /* Nothing above this to hand a flick to, and handing one to Safari is what
+       moves the toolbars again. */
+    overscroll-behavior: contain;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  .shell-bar {
+    flex: none;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  .shell-bar-top {
+    height: calc(var(--bar-h) + env(safe-area-inset-top));
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .shell-bar-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Hangs off the bottom edge of the top bar, whatever the notch made of it. */
+  .shell-panel {
+    top: calc(var(--bar-h) + env(safe-area-inset-top));
+    max-height: calc(100dvh - var(--bar-h) - env(safe-area-inset-top));
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   /* ============================================================== layout */

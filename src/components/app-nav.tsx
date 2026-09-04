@@ -19,6 +19,14 @@ import type { Theme } from "@/lib/theme";
  *
  * On a phone the same four blocks move to the bottom, because the grocery list
  * is used one-handed in a shop.
+ *
+ * Both bars are flex children of .shell, not fixed overlays. That is what stops
+ * them drifting away from the screen edges while iOS Safari animates its own
+ * toolbars; globals.css carries the full reasoning. The consequence to remember
+ * when editing this file is that a fragment has no DOM node of its own, so the
+ * header and the bottom bar are direct children of the shell and are ordered by
+ * flex, while the settings panel and the skip link are out of flow and are not
+ * flex children at all.
  */
 
 interface NavLink {
@@ -26,8 +34,6 @@ interface NavLink {
   readonly label: string;
   readonly match: string;
 }
-
-const BAR = "h-13";
 
 export function AppNav({
   weekHref,
@@ -101,9 +107,7 @@ export function AppNav({
       </a>
 
       {/* -------------------------------------------------------- top bar -- */}
-      <header
-        className={`fixed inset-x-0 top-0 z-40 flex ${BAR} border-b-2 border-rule bg-panel`}
-      >
+      <header className="shell-bar shell-bar-top relative z-40 flex border-b-2 border-rule bg-panel">
         <Link
           href={weekHref}
           className="label-text flex shrink-0 items-center border-r-2 border-rule bg-tomato px-4 text-on-tomato"
@@ -158,7 +162,7 @@ export function AppNav({
             onClick={() => setIndexOpen(false)}
             className="fixed inset-0 z-30 cursor-default"
           />
-          <div className="fixed right-0 top-13 z-40 w-full max-w-xs border-b-2 border-l-2 border-rule bg-panel">
+          <div className="shell-panel fixed right-0 z-40 w-full max-w-xs border-b-2 border-l-2 border-rule bg-panel">
             <ul className="stack border-t-0">
               {settings.map((link, index) => (
                 <li key={link.match}>
@@ -195,10 +199,10 @@ export function AppNav({
       ) : null}
 
       {/* --------------------------------------------------- phone bottom -- */}
+      {/* order-last, because it is written above the content it sits below. */}
       <nav
         aria-label={app("name")}
-        className="wall fixed inset-x-0 bottom-0 z-40 grid-cols-4 border-l-0 border-t-2 bg-panel lg:hidden"
-        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+        className="wall shell-bar shell-bar-bottom order-last grid-cols-4 border-l-0 border-t-2 bg-panel lg:hidden"
       >
         {primary.map((link) => (
           <Link

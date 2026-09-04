@@ -194,7 +194,7 @@ export function ProposalReviewPanel({
       </ul>
 
       {/* The decision bar stays reachable however long the diff runs. */}
-      <div className="sticky bottom-20 z-10 flex flex-col gap-2 rounded-[3px] border border-rule-strong bg-surface p-4 shadow-[var(--shadow-slip)] lg:bottom-4">
+      <div className="sticky bottom-4 z-10 flex flex-col gap-2 rounded-[3px] border border-rule-strong bg-surface p-4 shadow-[var(--shadow-slip)]">
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
