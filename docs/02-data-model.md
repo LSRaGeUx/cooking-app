@@ -281,7 +281,7 @@ filter anyway. They get their own GIN index and are matched with `&&`.
 | raw_name | text | as written by the author |
 | ingredient_id | uuid | nullable FK, best-effort link |
 | note | text | nullable |
-| optional | boolean | default false, excluded from grocery list by default |
+| optional | boolean | default false, shopped from the grocery list's own optional section |
 
 `ingredient_id` nullable is intentional: an unlinked ingredient still displays
 and still cooks, it only loses merging. Blocking recipe save on perfect linking
@@ -443,6 +443,7 @@ row here points at a version that is no longer `active`. A single
 | origin | text | `derived`, `manual` |
 | source_entry_ids | uuid[] | which meals need this. Lets the user drop a line and know what breaks |
 | covered_by_pantry | boolean | |
+| optional | boolean | every recipe that asked for this line called it optional |
 | checked | boolean | |
 | unmergeable_group | text | nullable, groups lines for the same ingredient in incompatible units |
 
@@ -450,9 +451,11 @@ Notes from the implementation:
 
 - `covered_by_pantry` is written by phase 7 and is false until then. The column
   exists now so the pantry is a service change rather than a migration.
-- A regeneration recognises a stored line by ingredient, name and unit together.
-  The unit is part of it because one ingredient can legitimately hold several
-  lines that could not be summed.
+- A regeneration recognises a stored line by ingredient, name, unit and
+  optionality together. The unit is part of it because one ingredient can
+  legitimately hold several lines that could not be summed; optionality because
+  the required and the optional half of one ingredient are two lines in two
+  sections, and summing them would inflate what the cook has to buy.
 - Only lines with an `ingredient_id` ever merge. Two unlinked names that look
   alike are not evidence that they are the same thing, so each keeps its line.
 

@@ -60,6 +60,8 @@ export interface GroceryLineView {
   readonly coveredByPantry: boolean;
   /** Something to eat before it goes. Marked, never removed. */
   readonly useSoon: boolean;
+  /** Optional in every recipe that asked for it: shopped from its own section. */
+  readonly optional: boolean;
   readonly unmergeableGroup: string | null;
   readonly sourceEntryIds: string[];
 }
@@ -487,7 +489,12 @@ async function mergeIntoList(
   const seen = new Set<string>();
 
   for (const line of aggregated) {
-    const key = matchKey(line.ingredientId, line.displayName, line.unit);
+    const key = matchKey(
+      line.ingredientId,
+      line.displayName,
+      line.unit,
+      line.optional,
+    );
     seen.add(key);
     const existing = byKey.get(key);
 
@@ -580,6 +587,7 @@ function derivedValues(
     sourceEntryIds: line.sourceEntryIds,
     coveredByPantry: isCovered(line, coverage),
     unmergeableGroup: line.unmergeableGroup,
+    optional: line.optional,
   };
 }
 
@@ -610,18 +618,22 @@ function isUseSoon(
 /**
  * How a stored line is recognised as "the same line" on the next generation.
  * The unit is part of it because an ingredient can legitimately hold several
- * lines that could not be summed.
+ * lines that could not be summed, and optionality because the required and the
+ * optional half of one ingredient are two lines in two sections.
  */
 function matchKey(
   ingredientId: string | null,
   displayName: string,
   unit: string | null,
+  optional: boolean,
 ): string {
-  return `${ingredientId ?? ""}|${normalizeTerm(displayName)}|${unit ?? ""}`;
+  return `${ingredientId ?? ""}|${normalizeTerm(displayName)}|${unit ?? ""}|${
+    optional ? "optional" : "required"
+  }`;
 }
 
 function matchKeyOfRow(row: typeof groceryLine.$inferSelect): string {
-  return matchKey(row.ingredientId, row.displayName, row.unit);
+  return matchKey(row.ingredientId, row.displayName, row.unit, row.optional);
 }
 
 async function findActiveVersion(
@@ -774,6 +786,7 @@ function toLineView(
     checked: row.checked,
     coveredByPantry: row.coveredByPantry,
     useSoon: isUseSoon(row, coverage),
+    optional: row.optional,
     unmergeableGroup: row.unmergeableGroup,
     sourceEntryIds: row.sourceEntryIds,
   };

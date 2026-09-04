@@ -126,6 +126,10 @@ export const groceryLine = pgTable(
     // Written by the pantry subtraction in phase 7. Until then it stays false,
     // and the column exists so that phase is a service change, not a migration.
     coveredByPantry: boolean("covered_by_pantry").notNull().default(false),
+    // Every recipe that asked for this line called the ingredient optional.
+    // The line is shopped from its own section rather than hidden, which is
+    // why the flag is stored rather than recomputed from the recipes.
+    optional: boolean("optional").notNull().default(false),
     checked: boolean("checked").notNull().default(false),
     unmergeableGroup: text("unmergeable_group"),
   },

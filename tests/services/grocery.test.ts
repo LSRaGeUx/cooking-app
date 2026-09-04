@@ -97,7 +97,7 @@ describe("generating a list", () => {
 
     const { list, diff } = await generateGroceryList(ctx, cycleOf(week));
 
-    expect(diff.added).toBe(2);
+    expect(diff.added).toBe(3);
     expect(list.state).toBe("active");
     expect(list.stale).toBe(false);
     expect(lineNamed(list, "Farine")).toMatchObject({
@@ -107,8 +107,10 @@ describe("generating a list", () => {
       checked: false,
     });
     expect(lineNamed(list, "Oignon")).toMatchObject({ quantity: 2, unit: null });
-    // The optional pepper is not on the list.
-    expect(lineNamed(list, "Poivre")).toBeUndefined();
+    // The optional pepper is on the list, flagged: the screen shops it from a
+    // section of its own rather than hiding it or mixing it into an aisle.
+    expect(lineNamed(list, "Poivre")).toMatchObject({ optional: true });
+    expect(lineNamed(list, "Farine")).toMatchObject({ optional: false });
   });
 
   it("names the meals a line came from, so a line can explain itself", async () => {
@@ -154,8 +156,8 @@ describe("regenerating after the plan changes", () => {
     });
     expect(diff.added).toBe(1);
 
-    // Onions did not move.
-    expect(diff.unchanged).toBe(1);
+    // Onions and the optional pepper did not move.
+    expect(diff.unchanged).toBe(2);
 
     // And the manual line is untouched by any of it.
     expect(lineNamed(list, "Café")).toMatchObject({

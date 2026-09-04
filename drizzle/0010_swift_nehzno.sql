@@ -1,0 +1,1 @@
+ALTER TABLE "grocery_line" ADD COLUMN "optional" boolean DEFAULT false NOT NULL;

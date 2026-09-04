@@ -64,12 +64,20 @@ export function GroceryList({
   // Staples are set aside rather than dropped. The one week you are out of
   // flour is the week a silently missing line ruins dinner, so they stay
   // visible in a collapsed section you can check.
-  const toBuy = useMemo(
-    () => lines.filter((line) => !line.coveredByPantry),
-    [lines],
-  );
   const covered = useMemo(
     () => lines.filter((line) => line.coveredByPantry),
+    [lines],
+  );
+  // What the trip is actually for. Optional ingredients are shopped from a
+  // section of their own: they are a decision made in front of the shelf, so
+  // they sit outside the aisles and outside the count that says how much is
+  // left, which would otherwise never reach the end.
+  const toBuy = useMemo(
+    () => lines.filter((line) => !line.coveredByPantry && !line.optional),
+    [lines],
+  );
+  const optional = useMemo(
+    () => lines.filter((line) => !line.coveredByPantry && line.optional),
     [lines],
   );
   const groups = useMemo(() => groupByAisle(toBuy), [toBuy]);
@@ -333,6 +341,45 @@ export function GroceryList({
               </section>
             );
           })}
+
+          {/*
+            Last, after every aisle, because it is the part of the list you read
+            only once the shopping is done.
+          */}
+          {optional.length > 0 ? (
+            <section className="flex flex-col">
+              <button
+                type="button"
+                onClick={() =>
+                  setCollapsed((current) => toggleIn(current, OPTIONAL_KEY))
+                }
+                aria-expanded={!collapsed.has(OPTIONAL_KEY)}
+                className="flex w-full items-baseline justify-between gap-3 border-b-2 border-rule bg-panel px-5 py-2 text-left lg:px-8"
+              >
+                <span className="label-text">{t("optionalSection")}</span>
+                <span className="label-text text-faint">
+                  {optional.filter((line) => line.checked).length}/
+                  {optional.length}
+                </span>
+              </button>
+
+              {collapsed.has(OPTIONAL_KEY) ? null : (
+                <ul className="flex flex-col">
+                  {optional.map((line) => (
+                    <LineRow
+                      key={line.id}
+                      line={line}
+                      sources={list.sources}
+                      highlighted={changedIds.has(line.id)}
+                      disabled={pending}
+                      onToggle={() => void toggle(line)}
+                      onRemove={() => void removeLine(line.id)}
+                    />
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : null}
         </div>
       )}
 
@@ -455,46 +502,56 @@ function LineRow({
         className="w-3 shrink-0 border-r-2 border-rule bg-seal"
       />
       {/* A large hit area: this is tapped with a thumb while holding a basket. */}
-      <label className="flex flex-1 cursor-pointer items-start gap-4 py-4 pl-4 lg:pl-8">
-        <input type="checkbox" checked={line.checked} onChange={onToggle} />
-        <span className="flex flex-col gap-0.5">
-          <span
-            className={`name text-[1.05rem] ${
-              line.checked ? "text-faint line-through" : ""
-            }`}
-          >
-            {[
-              line.quantity !== null ? formatQuantity(line.quantity) : null,
-              pluralizeUnit(line.unit, line.quantity),
-              line.displayName,
-            ]
-              .filter((part) => part !== null && part !== "")
-              .join(" ")}
-          </span>
-          {line.useSoon ? (
-            <span className="chip chip-warn self-start">{t("useSoonMark")}</span>
-          ) : null}
-          {meals.length > 0 ? (
-            <span className="flex items-center gap-1.5">
-              {dishes.map((dish) => (
-                <span
-                  key={dish.entryId}
-                  aria-hidden="true"
-                  className={`${sealClass(dish.recipeId ?? dish.entryId)} seal-mark`}
-                />
-              ))}
-              <span className="micro">
-                {t("usedIn", { meals: meals.join(", ") })}
-              </span>
-            </span>
-          ) : null}
-          {line.origin === "manual" ? (
-            <span className="micro">{t("manual")}</span>
-          ) : null}
-          {highlighted ? (
-            <span className="micro text-amber-ink">{t("changed")}</span>
-          ) : null}
+      <label className="flex flex-1 cursor-pointer items-center gap-3 py-4 pl-4 pr-4 lg:pl-8">
+        <input
+          type="checkbox"
+          checked={line.checked}
+          onChange={onToggle}
+          className="shrink-0"
+        />
+        <span
+          className={`name flex-1 text-[1.05rem] ${
+            line.checked ? "text-faint line-through" : ""
+          }`}
+        >
+          {[
+            line.quantity !== null ? formatQuantity(line.quantity) : null,
+            pluralizeUnit(line.unit, line.quantity),
+            line.displayName,
+          ]
+            .filter((part) => part !== null && part !== "")
+            .join(" ")}
         </span>
+        {line.useSoon ? (
+          <span className="chip chip-warn shrink-0">{t("useSoonMark")}</span>
+        ) : null}
+        {/*
+          Which meals a line is for, said in colour rather than in words. In a
+          shop the line you are reading is the name of a thing to pick up, and
+          a sentence naming two dishes under every one of thirty lines buries
+          it. The names stay reachable: on the title for a pointer, and in full
+          for a screen reader, which cannot see a square.
+        */}
+        {dishes.length > 0 ? (
+          <span
+            aria-hidden="true"
+            title={meals.join(", ")}
+            className="flex shrink-0 items-center gap-1"
+          >
+            {dishes.map((dish) => (
+              <span
+                key={dish.entryId}
+                className={`${sealClass(dish.recipeId ?? dish.entryId)} seal-mark`}
+              />
+            ))}
+          </span>
+        ) : null}
+        {meals.length > 0 ? (
+          <span className="sr-only">
+            {t("usedIn", { meals: meals.join(", ") })}
+          </span>
+        ) : null}
+        {highlighted ? <span className="sr-only">{t("changed")}</span> : null}
       </label>
 
       <button
@@ -509,6 +566,9 @@ function LineRow({
     </li>
   );
 }
+
+/** The optional section's collapse key. No aisle can be spelled like this. */
+const OPTIONAL_KEY = "\u0000optional";
 
 type Block =
   | { kind: "single"; line: GroceryLineView }

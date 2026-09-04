@@ -294,6 +294,17 @@ of control that earns its place only once the automatic answer annoys someone.
 - Pantry subtraction: items marked as staples are excluded by default and shown
   in a collapsed "you should already have" section. Use-soon items are called
   out with a "use this" marker.
+- Optional ingredients are listed, in a collapsible section of their own after
+  the aisles, and are counted in neither the aisle totals nor the progress
+  figure. They are a decision made in front of the shelf, not part of what the
+  trip is for, so a list that hides them loses information and a list that mixes
+  them into the aisles can never be finished.
+- An ingredient that is required by one meal and optional by another produces
+  two lines, one in each section. The quantities are never added: what you must
+  buy stays what you must buy.
+- A line says which meals it is for in colour, with the same seal each dish
+  wears in the week, rather than in words. The meal names stay available on the
+  line's title and to a screen reader.
 - Grouped by aisle, collapsible, with a checkbox per line. State persists.
 - Manual lines can be added (non-recipe items: coffee, dish soap).
 - Regenerating after a plan change performs a merge, not a wipe: checked state

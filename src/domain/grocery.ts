@@ -26,6 +26,9 @@ import {
  *    `unmergeableGroup` carries.
  * 3. **Quantities scale by servings**, because a recipe's quantities are
  *    written for its own serving count and the plan entry may want another.
+ * 4. **Optional stays optional.** An optional ingredient gets its own bucket
+ *    and carries the flag out, so the list can set it aside in a section of its
+ *    own rather than hide it or pad a required quantity with it.
  */
 
 export interface GrocerySourceLine {
@@ -49,20 +52,16 @@ export interface AggregatedGroceryLine {
   readonly unit: string | null;
   readonly sourceEntryIds: string[];
   readonly unmergeableGroup: string | null;
-}
-
-export interface AggregateOptions {
-  /**
-   * Optional ingredients are left out by default: a shopping list that lists
-   * everything anyone might add is a list nobody trusts.
-   */
-  readonly includeOptional?: boolean;
+  /** Every recipe that asked for this line called the ingredient optional. */
+  readonly optional: boolean;
 }
 
 interface Bucket {
   ingredientId: string | null;
   displayName: string;
   aisle: string | null;
+  /** Never shared with a required bucket, so the two totals stay apart. */
+  optional: boolean;
   dimension: "mass" | "volume" | "count";
   /** The literal unit for countables, which never convert. */
   countUnit: string | null;
@@ -76,27 +75,26 @@ interface Bucket {
 
 export function aggregateGroceryLines(
   lines: readonly GrocerySourceLine[],
-  options: AggregateOptions = {},
 ): AggregatedGroceryLine[] {
   const buckets = new Map<string, Bucket>();
   let unlinkedCounter = 0;
 
   for (const line of lines) {
-    if (line.optional && options.includeOptional !== true) continue;
-
     // An unlinked line gets a key nothing else can collide with, which is how
     // "does not merge" is expressed rather than special-cased later.
     const mergeKey =
       line.ingredientId ?? `unlinked:${unlinkedCounter++}:${line.displayName}`;
     const dimension = unitDimension(line.unit);
     const countUnit = dimension === "count" ? (line.unit ?? UNITLESS) : null;
-    const bucketKey = `${mergeKey}|${dimension}|${countUnit ?? ""}`;
+    const optionality = line.optional ? "optional" : "required";
+    const bucketKey = `${mergeKey}|${dimension}|${countUnit ?? ""}|${optionality}`;
 
     const existing = buckets.get(bucketKey);
     const bucket: Bucket = existing ?? {
       ingredientId: line.ingredientId,
       displayName: line.displayName,
       aisle: line.aisle,
+      optional: line.optional,
       dimension,
       countUnit,
       baseQuantity: null,
@@ -134,10 +132,11 @@ export function aggregateGroceryLines(
 function mergeVolumeIntoMass(buckets: Bucket[]): Bucket[] {
   const byIngredient = new Map<string, Bucket[]>();
   for (const bucket of buckets) {
-    if (bucket.ingredientId === null) continue;
-    const group = byIngredient.get(bucket.ingredientId) ?? [];
+    const key = groupKey(bucket);
+    if (key === null) continue;
+    const group = byIngredient.get(key) ?? [];
     group.push(bucket);
-    byIngredient.set(bucket.ingredientId, group);
+    byIngredient.set(key, group);
   }
 
   const absorbed = new Set<Bucket>();
@@ -165,17 +164,17 @@ function toLines(buckets: readonly Bucket[]): AggregatedGroceryLine[] {
   // are tied together for display instead of being silently scattered.
   const bucketsPerIngredient = new Map<string, number>();
   for (const bucket of buckets) {
-    if (bucket.ingredientId === null) continue;
-    bucketsPerIngredient.set(
-      bucket.ingredientId,
-      (bucketsPerIngredient.get(bucket.ingredientId) ?? 0) + 1,
-    );
+    const key = groupKey(bucket);
+    if (key === null) continue;
+    bucketsPerIngredient.set(key, (bucketsPerIngredient.get(key) ?? 0) + 1);
   }
 
   const lines = buckets.map((bucket) => {
+    // The token is the ingredient itself, not the counting key: the required
+    // and the optional half of one ingredient are never displayed together.
+    const key = groupKey(bucket);
     const unmergeableGroup =
-      bucket.ingredientId !== null &&
-      (bucketsPerIngredient.get(bucket.ingredientId) ?? 0) > 1
+      key !== null && (bucketsPerIngredient.get(key) ?? 0) > 1
         ? bucket.ingredientId
         : null;
 
@@ -191,6 +190,7 @@ function toLines(buckets: readonly Bucket[]): AggregatedGroceryLine[] {
         unit: bucket.countUnit === UNITLESS ? null : bucket.countUnit,
         sourceEntryIds: [...bucket.sourceEntryIds],
         unmergeableGroup,
+        optional: bucket.optional,
       };
     }
 
@@ -203,6 +203,7 @@ function toLines(buckets: readonly Bucket[]): AggregatedGroceryLine[] {
         unit: null,
         sourceEntryIds: [...bucket.sourceEntryIds],
         unmergeableGroup,
+        optional: bucket.optional,
       };
     }
 
@@ -215,10 +216,22 @@ function toLines(buckets: readonly Bucket[]): AggregatedGroceryLine[] {
       unit: rendered.unit,
       sourceEntryIds: [...bucket.sourceEntryIds],
       unmergeableGroup,
+      optional: bucket.optional,
     };
   });
 
   return lines.sort(compareLines);
+}
+
+/**
+ * What counts as "the same ingredient" when buckets are compared: the linked
+ * ingredient and its optionality together. Without the second half, an optional
+ * bucket would be poured into the required one it can never be summed with.
+ * Null for an unlinked line, which merges with nothing.
+ */
+function groupKey(bucket: Bucket): string | null {
+  if (bucket.ingredientId === null) return null;
+  return `${bucket.ingredientId}|${bucket.optional ? "optional" : "required"}`;
 }
 
 /**

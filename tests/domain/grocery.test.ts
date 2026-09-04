@@ -180,20 +180,38 @@ describe("what must never be merged", () => {
 });
 
 describe("optional ingredients and unspecified quantities", () => {
-  it("leaves optional ingredients off the list by default", () => {
+  it("carries optional ingredients out with the flag, rather than dropping them", () => {
     const lines = aggregateGroceryLines([
       line({ ingredientId: "i-7", displayName: "Poivre", optional: true }),
       line({ ingredientId: "i-8", displayName: "Sel" }),
     ]);
-    expect(lines.map((row) => row.displayName)).toEqual(["Sel"]);
+    expect(lines.map((row) => [row.displayName, row.optional])).toEqual([
+      ["Poivre", true],
+      ["Sel", false],
+    ]);
   });
 
-  it("includes them when asked", () => {
-    const lines = aggregateGroceryLines(
-      [line({ ingredientId: "i-7", displayName: "Poivre", optional: true })],
-      { includeOptional: true },
-    );
-    expect(lines).toHaveLength(1);
+  it("never adds an optional quantity into the required one", () => {
+    const lines = aggregateGroceryLines([
+      line({ ingredientId: "i-7", displayName: "Crème", quantity: 200, unit: "g" }),
+      line({
+        ingredientId: "i-7",
+        displayName: "Crème",
+        quantity: 50,
+        unit: "g",
+        optional: true,
+        entryId: "entry-2",
+      }),
+    ]);
+
+    // Two lines, in two sections of the screen, and neither is grouped with
+    // the other as an unmergeable pair: they are simply not the same shopping.
+    expect(lines).toHaveLength(2);
+    expect(lines.map((row) => [row.quantity, row.optional])).toEqual([
+      [200, false],
+      [50, true],
+    ]);
+    expect(lines.every((row) => row.unmergeableGroup === null)).toBe(true);
   });
 
   it("keeps an ingredient with no quantity as a bare name", () => {
