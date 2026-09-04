@@ -778,8 +778,27 @@
     padding-top: env(safe-area-inset-top);
   }
 
-  .shell-bar-bottom {
-    padding-bottom: env(safe-area-inset-bottom);
+  /*
+   * The bottom inset goes on the cells, never on the bar.
+   *
+   * Padding the bar was the obvious thing and it was wrong, and it could only
+   * show once the application ran standalone, where the bottom inset is finally
+   * something other than zero. The grid ends where the bar's padding begins, so
+   * every fill and every rule ended with it and the bar's own background was
+   * left as a bare strip underneath: the active block floated above the bottom
+   * of the screen rather than meeting it, which is the opposite of a lattice
+   * that runs edge to edge.
+   *
+   * On the cells, the fills and the rules reach the bottom of the glass and the
+   * labels still clear the home indicator, which is all the inset was ever for.
+   * The vertical padding lives here rather than as a utility on the link, so
+   * one place owns it and a `py-*` cannot quietly win the cascade back.
+   */
+  .shell-bar-bottom > * {
+    --bar-pad-y: 0.875rem;
+
+    padding-top: var(--bar-pad-y);
+    padding-bottom: calc(var(--bar-pad-y) + env(safe-area-inset-bottom));
   }
 
   /* Hangs off the bottom edge of the top bar, whatever the notch made of it. */
