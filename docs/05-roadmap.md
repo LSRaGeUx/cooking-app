@@ -548,12 +548,65 @@ enough to skip that buys nothing.
 
 ---
 
+## Mobile on iOS Safari
+
+**Shipped.** Not a phase of its own either: the reference instance is read from
+one phone, and the shell it had been built with does not survive that browser.
+
+Both bars were `position: fixed` over a scrolling document. Safari grows and
+shrinks its own toolbars as the document scrolls, and while it does, it leaves
+fixed elements pinned to the edges the viewport used to have. The top bar drifts
+down the screen with page content running above it, the bottom bar drifts up
+with page content running below it, and both wobble for the length of a flick.
+Nothing inside the page can correct it, because the page is not told the
+viewport moved until the gesture ends.
+
+So the document does not scroll any more. `.shell` in `globals.css` is exactly
+one viewport tall, the two bars are ordinary flex children welded to its top and
+bottom edges, and the scrolling happens in the box between them. Safari then has
+no reason to touch its toolbars.
+
+- **The shell is `position: fixed`, not merely a tall box with overflow
+  hidden.** In flow, the content inside the scrolling box still counts towards
+  the document's own scrollable height even though the box clips it, so the
+  whole shell could be flicked off the top of the screen leaving bare ground
+  behind, which is a worse version of the fault being fixed. That was measured
+  in a browser rather than reasoned about. Out of flow, the body is zero pixels
+  tall, and a body with nothing in it has nothing to scroll.
+- **`viewport-fit=cover` was missing, so every safe-area inset resolved to
+  zero.** The phone tab strip had carried `padding-bottom:
+  env(safe-area-inset-bottom)` since it was written and it had never done
+  anything. Each bar now pads its own content out of the notch and the home
+  indicator, and the shell paints underneath both, so ink reaches the edge of
+  the screen and text does not sit under the clock.
+- **Three offsets existed only to clear the fixed bars and are now wrong by
+  definition.** The grocery progress bar, the proposal decision bar and the
+  recipe plate all measured against a bar that no longer overlaps them. A future
+  sticky element inside a screen measures from zero, not from the bar height.
+- **The cost is that Safari keeps its toolbars out for good.** A document that
+  never scrolls never triggers the collapse that was buying that height back. It
+  is the right trade for bars that can be trusted to stay still, and it stops
+  mattering on the install path below, which has no browser chrome at all.
+
+---
+
 ## Deferred, in the order they would be reconsidered
 
 1. **Household with multiple eaters.** The largest v2 feature and the most
    requested one, if this ever meets other users. The schema is already shaped
    for it: see `02-data-model.md` section 10.
-2. Local stdio MCP wrapper.
-3. Cost estimates per recipe and per week, once ingredients carry prices.
-4. Seasonality awareness driven by a static ingredient calendar, no LLM needed.
-5. Nutrition, only on real demand, and only with a licensing answer.
+2. **Installing to the home screen.** `display: standalone` and
+   `appleWebApp.capable` are already set, and a standalone launch has no browser
+   chrome at all, so it returns more height than Safari's toolbar collapse ever
+   did and the safe-area padding above starts doing real work. Two things block
+   it today. `public/manifest.webmanifest` declares `background_color` and
+   `theme_color` as `#0a0a0a` while the ground is `#f2f1ec`, so a light
+   application launches on a black splash. And the only icon is `icon.svg`,
+   which iOS accepts neither as `apple-touch-icon` nor from the manifest, so the
+   home screen tile would be a thumbnail of the page rather than the mark. Needs
+   a PNG at 180 and at 512, and the two colours corrected. The install also gets
+   its own storage container, so it costs one extra sign-in.
+3. Local stdio MCP wrapper.
+4. Cost estimates per recipe and per week, once ingredients carry prices.
+5. Seasonality awareness driven by a static ingredient calendar, no LLM needed.
+6. Nutrition, only on real demand, and only with a licensing answer.

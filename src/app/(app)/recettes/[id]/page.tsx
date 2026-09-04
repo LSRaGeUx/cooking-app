@@ -53,7 +53,7 @@ export default async function RecipePage({
       className={`${sealClass(recipe.id)} lg:grid lg:grid-cols-[minmax(0,34%)_minmax(0,1fr)]`}
     >
       {/* The plate. */}
-      <div className="relative aspect-4/3 border-b-2 border-rule lg:sticky lg:top-13 lg:aspect-auto lg:h-[calc(100vh-3.25rem)] lg:border-b-0 lg:border-r-2">
+      <div className="relative aspect-4/3 border-b-2 border-rule lg:sticky lg:top-0 lg:aspect-auto lg:h-[calc(100dvh_-_var(--bar-h))] lg:border-b-0 lg:border-r-2">
         <RecipeImage
           src={recipe.imageUrl}
           alt=""

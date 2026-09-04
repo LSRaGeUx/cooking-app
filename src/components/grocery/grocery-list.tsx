@@ -232,7 +232,7 @@ export function GroceryList({
         much of the list is left. A bar across the whole width, not a widget:
         it is the only thing on this screen that moves, so it gets the width.
       */}
-      <div className="sticky top-13 z-20 bg-ground">
+      <div className="sticky top-0 z-20 bg-ground">
         <div className="measure-wide border-x-2 border-b-2 border-rule bg-panel">
           <div className="flex items-end gap-4 px-5 py-3 lg:px-8">
           <span aria-hidden="true" className="numeral text-4xl">

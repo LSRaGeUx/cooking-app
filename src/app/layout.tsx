@@ -49,6 +49,13 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export const viewport: Viewport = {
+  /*
+   * The shell paints edge to edge and each bar pads itself back out of the
+   * notch and the home indicator. Without this every env(safe-area-inset-*)
+   * resolves to zero, so the padding that keeps the bottom bar clear of the
+   * home indicator silently does nothing. See .shell in globals.css.
+   */
+  viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#f2f1ec" },
     { media: "(prefers-color-scheme: dark)", color: "#f2f1ec" },
