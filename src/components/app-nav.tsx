@@ -209,7 +209,7 @@ export function AppNav({
             key={link.match}
             href={link.href}
             aria-current={isActive(link) ? "page" : undefined}
-            className={`label-text fillable flex items-center justify-center border-b-0 px-1 py-3.5 text-center ${
+            className={`label-text fillable flex items-center justify-center border-b-0 px-1 text-center ${
               isActive(link) ? "bg-ink text-on-ink" : ""
             }`}
           >

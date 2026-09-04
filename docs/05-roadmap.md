@@ -590,23 +590,65 @@ no reason to touch its toolbars.
 
 ---
 
+## Home screen install
+
+**Shipped.** The escape from the trade the section above accepted: launched from
+the home screen there is no browser furniture at all, so the toolbars Safari now
+keeps out permanently stop costing anything, and the safe-area padding written
+for them finally has real insets to work with.
+
+The application already declared `display: standalone` and
+`appleWebApp.capable`, so what was missing was everything around it.
+
+- **The only icon was an SVG, which iOS accepts for neither job.** Not as
+  `apple-touch-icon`, not out of the manifest. Left alone it screenshots the
+  page and uses that as the tile. The mark is now rasterised to
+  `apple-touch-icon.png` at 180, and 192 and 512 for the manifest, with the
+  `rx="14"` dropped and the tile run to the edges: both platforms mask the icon
+  with their own shape, so an icon that rounds its own corners is cut twice and
+  shows dark wedges where the transparent corners were composited. Opaque, for
+  the same reason.
+- **The manifest carried a palette the application does not have.**
+  `background_color` and `theme_color` were both `#0a0a0a`, so a light
+  application launched on a black splash. The splash is the page, so
+  `background_color` is the ground.
+- **`theme_color` is the panel, not the ground, and had to stop being static.**
+  It colours the strip the operating system keeps for itself: the status bar of
+  a standalone launch, sitting directly on top of the bar, and the browser
+  furniture in Safari, sitting directly under the phone tab strip. Both
+  neighbours are panel. The old value was the ground, which put an unruled seam
+  across the top of the screen. It was also declared as one colour for both
+  `prefers-color-scheme` branches, which is wrong here for the reason in
+  `src/lib/theme.ts`: the theme is a cookie, so the media query says nothing
+  about it and a dark-theme user got a light strip over a dark bar. `viewport`
+  is now `generateViewport`, resolving the cookie the way the layout resolves
+  the ground.
+- **The safe-area inset goes on the cells of a bar, never on the bar.** Padding
+  the bar ends the grid where the padding starts, so every fill and every rule
+  ends with it and the bar's own background is left as a bare strip underneath.
+  The phone tab strip shipped that way and it could only show once the
+  application ran standalone, where the bottom inset is finally not zero: the
+  active block floated above the bottom of the screen instead of meeting it.
+
+One thing is recorded rather than fixed. On an already-installed clip the status
+bar strip still reads a different colour from the bar, so the `theme_color`
+correction did not visibly land. The likely cause is that iOS snapshots manifest
+properties when the web clip is created, which would mean it needs removing from
+the home screen and adding again rather than relaunching; the other candidate is
+that the strip follows `background_color`, which is still the ground on purpose.
+Neither was chased. `statusBarStyle` stays `default`, because the alternative
+that would let the bar run under the status bar is `black-translucent`, and that
+forces white status text over what is a white bar on three quarters of its
+width.
+
+---
+
 ## Deferred, in the order they would be reconsidered
 
 1. **Household with multiple eaters.** The largest v2 feature and the most
    requested one, if this ever meets other users. The schema is already shaped
    for it: see `02-data-model.md` section 10.
-2. **Installing to the home screen.** `display: standalone` and
-   `appleWebApp.capable` are already set, and a standalone launch has no browser
-   chrome at all, so it returns more height than Safari's toolbar collapse ever
-   did and the safe-area padding above starts doing real work. Two things block
-   it today. `public/manifest.webmanifest` declares `background_color` and
-   `theme_color` as `#0a0a0a` while the ground is `#f2f1ec`, so a light
-   application launches on a black splash. And the only icon is `icon.svg`,
-   which iOS accepts neither as `apple-touch-icon` nor from the manifest, so the
-   home screen tile would be a thumbnail of the page rather than the mark. Needs
-   a PNG at 180 and at 512, and the two colours corrected. The install also gets
-   its own storage container, so it costs one extra sign-in.
-3. Local stdio MCP wrapper.
-4. Cost estimates per recipe and per week, once ingredients carry prices.
-5. Seasonality awareness driven by a static ingredient calendar, no LLM needed.
-6. Nutrition, only on real demand, and only with a licensing answer.
+2. Local stdio MCP wrapper.
+3. Cost estimates per recipe and per week, once ingredients carry prices.
+4. Seasonality awareness driven by a static ingredient calendar, no LLM needed.
+5. Nutrition, only on real demand, and only with a licensing answer.
