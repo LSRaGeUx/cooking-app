@@ -20,6 +20,7 @@ agent the user already pays for. Marginal cost per user tends to zero.
 | [06-open-questions.md](06-open-questions.md) | Assumptions, questions, unknowns to resolve by experiment |
 | [07-phase-0-findings.md](07-phase-0-findings.md) | What the phase 0 spike proved, and the six things the spec got wrong |
 | [08-self-hosting.md](08-self-hosting.md) | Running your own instance: requirements, configuration, backups, upgrades, troubleshooting |
+| [09-hardening-a-host.md](09-hardening-a-host.md) | The machine under the instance: SSH, fail2ban, firewall, updates that apply themselves, disk caps, backups that leave the box |
 
 ## The five decisions that shape everything
 

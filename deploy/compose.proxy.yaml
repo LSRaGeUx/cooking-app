@@ -34,9 +34,18 @@ services:
       # The two that have to be public, and nothing else. 443/udp is HTTP/3.
       # Port 80 is not decoration: the ACME HTTP challenge answers on it, and
       # Caddy redirects everything else from it to https.
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+      #
+      # The address is spelled out because it cannot be left to the daemon. A
+      # host that has set `"ip": "127.0.0.1"` in /etc/docker/daemon.json, which
+      # section 4 of docs/09-hardening-a-host.md recommends and the reference
+      # host does, makes loopback the default for any port published without
+      # one. Caddy would then bind loopback, answer nobody, fail every ACME
+      # challenge, and log nothing that points at the cause. These three are the
+      # only ports in this project that are meant to be reachable from off the
+      # machine, so they are the only ones that say so.
+      - "0.0.0.0:80:80"
+      - "0.0.0.0:443:443"
+      - "0.0.0.0:443:443/udp"
     volumes:
       # Paths are relative to compose.yaml, which is the first -f and therefore
       # the project directory, not to this file.
