@@ -3,12 +3,13 @@ import {
   boolean,
   check,
   date,
+  foreignKey,
   index,
   numeric,
   pgTable,
   primaryKey,
   text,
-  timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -17,7 +18,13 @@ import {
   GROCERY_LIST_STATES,
   sqlInList,
 } from "@/domain/vocabulary";
-import { createdAt, ownerId, ownerPolicy, primaryId } from "./_shared";
+import {
+  createdAt,
+  ownerId,
+  ownerPolicy,
+  primaryId,
+  updatedAt,
+} from "./_shared";
 import { planVersion } from "./plans";
 import { ingredient } from "./recipes";
 
@@ -38,9 +45,9 @@ export const groceryList = pgTable(
     id: primaryId(),
     userId: ownerId(),
     // The cycle covered. `ends_on` is derived, stored so a query can filter on
-    // it without recomputing the cycle length in SQL.
-    // The cycle covered. `ends_on` is derived, stored so a query can filter on
-    // it without recomputing the cycle length in SQL.
+    // it without recomputing the cycle length in SQL. It is the last day
+    // covered, inclusive; src/domain/shopping.ts compares against it by
+    // calendar day for exactly that reason.
     //
     // Carried as `yyyy-mm-dd` strings rather than as Date: a `date` column has
     // no time and no zone, and node-pg would hand back a local midnight, so in
@@ -49,10 +56,19 @@ export const groceryList = pgTable(
     startsOn: date("starts_on", { mode: "string" }).notNull(),
     endsOn: date("ends_on", { mode: "string" }).notNull(),
     state: text("state").notNull().default("active"),
-    generatedAt: createdAt(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    // The property and the column now agree. It was `generatedAt` over a column
+    // called `created_at`, so a service, a migration and a psql session each
+    // had a different name for one value.
+    //
+    // "Generated" is the better name for the concept, since a list is produced
+    // from a plan and regenerating it rewrites the lines of this same row, and
+    // renaming the column would have been the nicer schema. It was the property
+    // that moved, for the reason spelled out on `pantry_item.createdAt`:
+    // drizzle-kit only resolves a column rename by asking interactively, and
+    // hand-editing the snapshot it diffs against is how the next migration
+    // silently generates wrong.
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
   },
   (t) => [
     // One live list per cycle. Regenerating rewrites the lines of this row
@@ -61,6 +77,9 @@ export const groceryList = pgTable(
       .on(t.userId, t.startsOn)
       .where(sql`state <> 'archived'`),
     index("grocery_list_user_idx").on(t.userId),
+    // Reference target for grocery_line and grocery_list_version. See the note
+    // on `recipe_ingredient` in ./recipes.ts.
+    unique("grocery_list_id_user_key").on(t.id, t.userId),
     check(
       "grocery_list_state_known",
       sql`${t.state} in ${sql.raw(sqlInList(GROCERY_LIST_STATES))}`,
@@ -81,16 +100,29 @@ export const groceryListVersion = pgTable(
   "grocery_list_version",
   {
     userId: ownerId(),
-    groceryListId: uuid("grocery_list_id")
-      .notNull()
-      .references(() => groceryList.id, { onDelete: "cascade" }),
-    planVersionId: uuid("plan_version_id")
-      .notNull()
-      .references(() => planVersion.id, { onDelete: "cascade" }),
+    groceryListId: uuid("grocery_list_id").notNull(),
+    planVersionId: uuid("plan_version_id").notNull(),
   },
   (t) => [
     primaryKey({ columns: [t.groceryListId, t.planVersionId] }),
-    index("grocery_list_version_list_idx").on(t.groceryListId),
+    // On `plan_version_id`, not `grocery_list_id`. The primary key above leads
+    // with `grocery_list_id`, so an index on that column alone duplicated it
+    // and served nothing: Postgres reads a leading key prefix from the primary
+    // key's own index. `plan_version_id` is the column with no index at all,
+    // and it is the one the queries use: "which lists were built from this
+    // version", which is how staleness is answered, and the `on delete cascade`
+    // that has to find these rows when a version is superseded.
+    index("grocery_list_version_plan_version_idx").on(t.planVersionId),
+    foreignKey({
+      columns: [t.groceryListId, t.userId],
+      foreignColumns: [groceryList.id, groceryList.userId],
+      name: "grocery_list_version_list_user_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.planVersionId, t.userId],
+      foreignColumns: [planVersion.id, planVersion.userId],
+      name: "grocery_list_version_plan_version_user_fk",
+    }).onDelete("cascade"),
     ownerPolicy("grocery_list_version_owner", t.userId),
   ],
 ).enableRLS();
@@ -112,9 +144,9 @@ export const groceryLine = pgTable(
   {
     id: primaryId(),
     userId: ownerId(),
-    groceryListId: uuid("grocery_list_id")
-      .notNull()
-      .references(() => groceryList.id, { onDelete: "cascade" }),
+    groceryListId: uuid("grocery_list_id").notNull(),
+    // Nullable, and single-column on purpose: see the note on
+    // `recipe_ingredient.ingredient_id` in ./recipes.ts.
     ingredientId: uuid("ingredient_id").references(() => ingredient.id, {
       onDelete: "set null",
     }),
@@ -144,6 +176,16 @@ export const groceryLine = pgTable(
   },
   (t) => [
     index("grocery_line_list_idx").on(t.groceryListId, t.aisle, t.displayName),
+    // The pantry subtraction matches lines against pantry items by ingredient,
+    // and the `on delete set null` above scans this column whenever a
+    // vocabulary entry is removed. Postgres does not index a foreign key column
+    // for you.
+    index("grocery_line_ingredient_idx").on(t.ingredientId),
+    foreignKey({
+      columns: [t.groceryListId, t.userId],
+      foreignColumns: [groceryList.id, groceryList.userId],
+      name: "grocery_line_list_user_fk",
+    }).onDelete("cascade"),
     check(
       "grocery_line_origin_known",
       sql`${t.origin} in ${sql.raw(sqlInList(GROCERY_LINE_ORIGINS))}`,

@@ -47,12 +47,17 @@ export const fact = pgTable(
     // text, so no foreign key.
     sourceClientId: text("source_client_id"),
     status: text("status").notNull().default("unconfirmed"),
-    supersedesId: uuid("supersedes_id").references(
-      (): AnyPgColumn => fact.id,
-      { onDelete: "set null" },
-    ),
-    // Entry ids, feedback ids, or free text backing the claim.
-    evidence: jsonb("evidence"),
+    supersedesId: uuid("supersedes_id").references((): AnyPgColumn => fact.id, {
+      onDelete: "set null",
+    }),
+    // Entry ids, feedback ids, or free text backing the claim. Not null with an
+    // empty-array default: "cited no evidence" and "column never written" were
+    // the same thing and only one was expressible, and a reader that has to
+    // handle null as well as [] handles it wrong somewhere.
+    evidence: jsonb("evidence")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     createdAt: createdAt(),
     // Bumped when the fact is included in a profile snapshot, which is what
     // makes the pruning heuristic work.
@@ -66,6 +71,11 @@ export const fact = pgTable(
   (t) => [
     index("fact_user_status_idx").on(t.userId, t.status),
     index("fact_user_referenced_idx").on(t.userId, t.lastReferencedAt),
+    // The self-reference that makes a contradiction traceable. Walking a chain
+    // of supersessions reads this column, and the `on delete set null` scans it
+    // whenever a fact row is deleted, and Postgres does not index a foreign key
+    // column for you.
+    index("fact_supersedes_idx").on(t.supersedesId),
     check(
       "fact_category_known",
       sql`${t.category} in ${sql.raw(sqlInList(FACT_CATEGORIES))}`,

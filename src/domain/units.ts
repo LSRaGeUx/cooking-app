@@ -20,18 +20,30 @@ interface UnitDefinition {
   readonly toBase: number;
 }
 
+/**
+ * Every key is a `CANONICAL_UNITS` constant, never the literal it happens to
+ * expand to. Seven of these used to be spelled out as `mg`, `g`, `kg` and so
+ * on beside two that were not, so renaming a canonical unit would have
+ * desynchronised the two halves of one table and silently stopped those units
+ * converting.
+ */
 const DEFINITIONS: Readonly<Record<string, UnitDefinition>> = {
-  mg: { dimension: "mass", toBase: 0.001 },
-  g: { dimension: "mass", toBase: 1 },
-  kg: { dimension: "mass", toBase: 1000 },
-  ml: { dimension: "volume", toBase: 1 },
-  cl: { dimension: "volume", toBase: 10 },
-  dl: { dimension: "volume", toBase: 100 },
-  l: { dimension: "volume", toBase: 1000 },
+  [CANONICAL_UNITS.MG]: { dimension: "mass", toBase: 0.001 },
+  [CANONICAL_UNITS.G]: { dimension: "mass", toBase: 1 },
+  [CANONICAL_UNITS.KG]: { dimension: "mass", toBase: 1000 },
+  [CANONICAL_UNITS.ML]: { dimension: "volume", toBase: 1 },
+  [CANONICAL_UNITS.CL]: { dimension: "volume", toBase: 10 },
+  [CANONICAL_UNITS.DL]: { dimension: "volume", toBase: 100 },
+  [CANONICAL_UNITS.L]: { dimension: "volume", toBase: 1000 },
   // Defined by convention in French cooking, and unambiguous enough to sum.
   [CANONICAL_UNITS.TABLESPOON]: { dimension: "volume", toBase: 15 },
   [CANONICAL_UNITS.TEASPOON]: { dimension: "volume", toBase: 5 },
 };
+
+/** Every unit this application chose the spelling of, and so can inflect. */
+const CANONICAL_UNIT_SET: ReadonlySet<string> = new Set<string>(
+  Object.values(CANONICAL_UNITS),
+);
 
 /**
  * Units that convert for arithmetic but should still be read back as
@@ -90,15 +102,19 @@ export function normalizeBaseQuantity(
   dimension: "mass" | "volume",
 ): { quantity: number; unit: string } {
   if (dimension === "mass") {
-    if (baseQuantity >= 1000) return { quantity: round(baseQuantity / 1000), unit: "kg" };
-    if (baseQuantity < 1 && baseQuantity > 0) {
-      return { quantity: round(baseQuantity * 1000), unit: "mg" };
+    if (baseQuantity >= 1000) {
+      return { quantity: round(baseQuantity / 1000), unit: CANONICAL_UNITS.KG };
     }
-    return { quantity: round(baseQuantity), unit: "g" };
+    if (baseQuantity < 1 && baseQuantity > 0) {
+      return { quantity: round(baseQuantity * 1000), unit: CANONICAL_UNITS.MG };
+    }
+    return { quantity: round(baseQuantity), unit: CANONICAL_UNITS.G };
   }
 
-  if (baseQuantity >= 1000) return { quantity: round(baseQuantity / 1000), unit: "l" };
-  return { quantity: round(baseQuantity), unit: "ml" };
+  if (baseQuantity >= 1000) {
+    return { quantity: round(baseQuantity / 1000), unit: CANONICAL_UNITS.L };
+  }
+  return { quantity: round(baseQuantity), unit: CANONICAL_UNITS.ML };
 }
 
 /**
@@ -122,6 +138,16 @@ const IRREGULAR_PLURALS: Readonly<Record<string, string>> = {
   [CANONICAL_UNITS.PIECE]: "morceaux",
 };
 
+/**
+ * Only a unit this application chose the spelling of gets an `s` appended.
+ *
+ * A recipe may carry any unit string it likes: the parser keeps an unrecognized
+ * one as written, and `recipeIngredientInputSchema.unit` accepts it. Inflecting
+ * one of those was guessing about a word we did not choose, and it guessed
+ * wrong in the obvious case, rendering a raw "cups" as "cupss". An unknown unit
+ * is now returned untouched, which is the only honest option: we do not know
+ * its language, let alone its plural.
+ */
 export function pluralizeUnit(
   unit: string | null,
   quantity: number | null,
@@ -129,7 +155,10 @@ export function pluralizeUnit(
   if (unit === null) return null;
   if (quantity === null || quantity < 2) return unit;
   if (unit in DEFINITIONS) return unit;
-  return IRREGULAR_PLURALS[unit] ?? `${unit}s`;
+  const irregular = IRREGULAR_PLURALS[unit];
+  if (irregular !== undefined) return irregular;
+  if (!CANONICAL_UNIT_SET.has(unit)) return unit;
+  return `${unit}s`;
 }
 
 /**

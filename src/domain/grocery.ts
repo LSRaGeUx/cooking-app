@@ -158,14 +158,25 @@ export function aggregateGroceryLines(
   lines: readonly GrocerySourceLine[],
 ): AggregatedGroceryLine[] {
   const buckets = new Map<string, Bucket>();
-  let unlinkedCounter = 0;
 
   for (const line of lines) {
     const product = productOf(line);
-    // An unlinked line gets a key nothing else can collide with, which is how
-    // "does not merge" is expressed rather than special-cased later.
+    // An unlinked line merges with the same written name and with nothing else.
+    //
+    // It used to get a fresh counter per occurrence, so it merged with nothing
+    // at all, including itself: one recipe planned twice produced two identical
+    // "200 g farine" lines, and a cook reading the list had no way to tell that
+    // from two genuinely separate things to buy. Rule 2 refuses to merge two
+    // *different* spellings, on the grounds that looking alike is not evidence
+    // of being the same product. It says nothing about the same string twice.
+    //
+    // The key is `normalizeTerm`, not `productKey`: case, accents and
+    // punctuation are typography rather than spelling, while the plural fold
+    // `productKey` also does would merge "farine" with "farines", which is two
+    // spellings and therefore exactly what rule 2 rules out for an unlinked
+    // line. The unit is part of `bucketKey` below, so two units never pool.
     const mergeKey =
-      product.key ?? `unlinked:${unlinkedCounter++}:${product.displayName}`;
+      product.key ?? `unlinked:${normalizeTerm(product.displayName)}`;
     const dimension = unitDimension(line.unit);
     const countUnit = dimension === "count" ? (line.unit ?? UNITLESS) : null;
     const optionality = line.optional ? "optional" : "required";
@@ -197,7 +208,8 @@ export function aggregateGroceryLines(
         bucket.countQuantity = (bucket.countQuantity ?? 0) + line.quantity;
       } else {
         const base = toBaseQuantity(line.quantity, line.unit);
-        if (base !== null) bucket.baseQuantity = (bucket.baseQuantity ?? 0) + base;
+        if (base !== null)
+          bucket.baseQuantity = (bucket.baseQuantity ?? 0) + base;
       }
     }
 
@@ -235,7 +247,8 @@ function mergeVolumeIntoMass(buckets: Bucket[]): Bucket[] {
     if (converted === null) continue;
 
     mass.baseQuantity = (mass.baseQuantity ?? 0) + converted;
-    for (const entryId of volume.sourceEntryIds) mass.sourceEntryIds.add(entryId);
+    for (const entryId of volume.sourceEntryIds)
+      mass.sourceEntryIds.add(entryId);
     for (const unit of volume.units) mass.units.add(unit);
     absorbed.add(volume);
   }
@@ -334,13 +347,11 @@ function renderMeasured(bucket: Bucket): {
   const baseQuantity = bucket.baseQuantity ?? 0;
   const dimension = bucket.dimension === "mass" ? "mass" : "volume";
 
-  if (bucket.units.size === 1) {
-    const [only] = [...bucket.units];
-    if (prefersSourceUnit(only ?? null)) {
-      const inSourceUnit = fromBaseQuantity(baseQuantity, only!);
-      if (inSourceUnit !== null) {
-        return { quantity: round(inSourceUnit), unit: only! };
-      }
+  const [only] = [...bucket.units];
+  if (bucket.units.size === 1 && only != null && prefersSourceUnit(only)) {
+    const inSourceUnit = fromBaseQuantity(baseQuantity, only);
+    if (inSourceUnit !== null) {
+      return { quantity: round(inSourceUnit), unit: only };
     }
   }
 
@@ -364,6 +375,13 @@ export function compareLines(
  * Scales one recipe quantity from the servings it was written for to the
  * servings the plan entry asks for. A recipe with no serving count is left
  * alone rather than divided by zero.
+ *
+ * Deliberately unrounded. It used to round to two decimals here, per line,
+ * before the lines were summed, so the error accumulated: a third of a 200 g
+ * bag scaled from 3 servings to 1 became 66,67 g, and seven of those across a
+ * week were 0,02 g short of the 466,69 g actually needed. Rounding belongs
+ * where the total is rendered, in `toLines`, which rounds exactly once through
+ * `roundCountable` or `normalizeBaseQuantity`.
  */
 export function scaleQuantity(
   quantity: number | null,
@@ -372,5 +390,5 @@ export function scaleQuantity(
 ): number | null {
   if (quantity === null) return null;
   if (recipeServings <= 0) return quantity;
-  return round((quantity * entryServings) / recipeServings);
+  return (quantity * entryServings) / recipeServings;
 }

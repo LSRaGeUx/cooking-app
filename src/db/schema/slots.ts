@@ -1,5 +1,14 @@
 import { sql } from "drizzle-orm";
-import { check, pgTable, smallint, text, unique, uuid } from "drizzle-orm/pg-core";
+import {
+  check,
+  foreignKey,
+  index,
+  pgTable,
+  smallint,
+  text,
+  unique,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { SLOT_STATES, sqlInList } from "@/domain/vocabulary";
 import { createdAt, ownerId, ownerPolicy, primaryId } from "./_shared";
 
@@ -16,6 +25,9 @@ export const mealType = pgTable(
   },
   (t) => [
     unique("meal_type_user_key_key").on(t.userId, t.key),
+    // Reference target for slot_config and plan_entry. See the note on
+    // `recipe_ingredient` in ./recipes.ts.
+    unique("meal_type_id_user_key").on(t.id, t.userId),
     ownerPolicy("meal_type_owner", t.userId),
   ],
 ).enableRLS();
@@ -35,9 +47,7 @@ export const slotConfig = pgTable(
     userId: ownerId(),
     // ISO: 1 = Monday through 7 = Sunday.
     dayOfWeek: smallint("day_of_week").notNull(),
-    mealTypeId: uuid("meal_type_id")
-      .notNull()
-      .references(() => mealType.id, { onDelete: "cascade" }),
+    mealTypeId: uuid("meal_type_id").notNull(),
     state: text("state").notNull().default("planned"),
     // Active cooking minutes the user is willing to spend at this slot.
     timeBudgetMin: smallint("time_budget_min"),
@@ -50,6 +60,16 @@ export const slotConfig = pgTable(
       t.dayOfWeek,
       t.mealTypeId,
     ),
+    // The unique constraint above leads with `user_id`, so it cannot serve a
+    // lookup by meal type alone, and that is what deleting a meal type has to
+    // do to cascade. Postgres does not index a foreign key column for you.
+    index("slot_config_meal_type_idx").on(t.mealTypeId),
+    // Composite, for the reason spelled out on `recipe_ingredient`.
+    foreignKey({
+      columns: [t.mealTypeId, t.userId],
+      foreignColumns: [mealType.id, mealType.userId],
+      name: "slot_config_meal_type_user_fk",
+    }).onDelete("cascade"),
     check("slot_config_day_range", sql`${t.dayOfWeek} between 1 and 7`),
     check(
       "slot_config_state_known",

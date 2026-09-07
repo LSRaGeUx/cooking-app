@@ -1,4 +1,11 @@
-import type { DomainErrorDetails } from "./errors";
+import {
+  BLOCKING_CODES,
+  WARNING_CODES,
+  type BlockingCode,
+  type DomainErrorDetails,
+  type WarningCode,
+} from "./errors";
+import { formatSlot } from "./slots";
 
 /**
  * Rebuilding a refusal from its code and details, so a screen can word it in
@@ -14,6 +21,15 @@ import type { DomainErrorDetails } from "./errors";
 
 export type MessageParams = Record<string, string | number>;
 
+const KNOWN_CODES: ReadonlySet<string> = new Set<string>([
+  ...BLOCKING_CODES,
+  ...WARNING_CODES,
+]);
+
+function isKnownCode(code: string): code is BlockingCode | WarningCode {
+  return KNOWN_CODES.has(code);
+}
+
 /**
  * The parameters each template needs, read out of `details`.
  *
@@ -21,17 +37,30 @@ export type MessageParams = Record<string, string | number>;
  * the caller back to the server sentence rather than rendering a message with
  * `undefined` in it. That happens when a code is thrown from a site that
  * carries different details, and it must degrade rather than lie.
+ *
+ * `code` arrives as a string because it crosses a serialization boundary: a
+ * thrown DomainError reaches the screen as JSON, and a hand-written validation
+ * message reaches it with a code no template covers. It is narrowed to the
+ * taxonomy before the switch, so the switch subject is `BlockingCode |
+ * WarningCode` and a misspelled `case` is a compile error rather than a branch
+ * that is never taken. An unrecognized code takes the same path as a code with
+ * no template: the server sentence, unchanged.
  */
 export function errorMessageParams(
   code: string,
   details: DomainErrorDetails,
   dayName: (day: number) => string,
 ): MessageParams | null {
+  if (!isKnownCode(code)) return null;
+
+  // The same phrase `describeSlot` builds for the agent, with the reader's own
+  // day names substituted. Falls back to the pre-assembled French label when
+  // the details carry only that, which some older throw sites do.
   const slot = (): string | null => {
     const day = num(details.dayOfWeek);
     const label = str(details.mealTypeLabel);
     if (day === null || label === null) return str(details.slot);
-    return `${dayName(day)} ${label.toLowerCase()}`;
+    return formatSlot(day, label, dayName);
   };
 
   switch (code) {
@@ -93,10 +122,25 @@ export function errorMessageParams(
       const budget = num(details.budgetMin);
       const active = num(details.activeTimeMin);
       const over = num(details.overByMin);
-      if (label === null || budget === null || active === null || over === null) {
+      if (
+        label === null ||
+        budget === null ||
+        active === null ||
+        over === null
+      ) {
         return null;
       }
       return { slot: label, budget, active, over };
+    }
+
+    // The slot is all there is to say. The state it was moved to (`skipped` or
+    // `hidden`) travels in `details` for an agent, but the sentence a person
+    // reads is the same either way: the meal is still there and the grid is not
+    // showing it.
+    case "SLOT_NO_LONGER_PLANNED": {
+      const label = slot();
+      if (label === null) return null;
+      return { slot: label };
     }
 
     case "VERSION_CONFLICT": {
@@ -198,6 +242,11 @@ export function errorMessageParams(
     // RECIPE_NOT_FOUND, NOT_FOUND, FORBIDDEN and VALIDATION are thrown from
     // many places with unrelated details, so there is nothing general to say
     // that would beat the sentence the service already wrote.
+    //
+    // DIET_MISMATCH and BUDGET_EXCEEDED are declared in the taxonomy and never
+    // emitted by anything yet. They deliberately have no template: writing one
+    // would mean guessing what details a future throw site will carry, and a
+    // template guessed wrong reads as a lie. See the note on them in errors.ts.
     default:
       return null;
   }

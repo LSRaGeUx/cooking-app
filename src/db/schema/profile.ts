@@ -89,7 +89,10 @@ export const allergen = pgTable(
     userId: ownerId(),
     name: text("name").notNull(),
     severity: text("severity").notNull(),
-    matches: text("matches").array().notNull().default(sql`'{}'::text[]`),
+    matches: text("matches")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     createdAt: createdAt(),
   },
   (t) => [
@@ -112,7 +115,10 @@ export const exclusion = pgTable(
     id: primaryId(),
     userId: ownerId(),
     name: text("name").notNull(),
-    matches: text("matches").array().notNull().default(sql`'{}'::text[]`),
+    matches: text("matches")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     createdAt: createdAt(),
   },
   (t) => [
