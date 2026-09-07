@@ -8,7 +8,9 @@ export default defineConfig({
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? "postgres://cooking:cooking@localhost:5432/cooking",
+    url:
+      process.env.DATABASE_URL ??
+      "postgres://cooking:cooking@localhost:5432/cooking",
   },
   verbose: true,
   strict: true,

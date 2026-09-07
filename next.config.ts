@@ -19,10 +19,67 @@ const withNextIntl = createNextIntlPlugin();
  * without them an MCP client cannot discover the authorization server and the
  * paste-one-URL connection story fails. Verified against the live endpoints.
  */
+/**
+ * Report-only for now, and deliberately so. The comment on `headers()` below
+ * used to record the absence of any policy as a known gap; this is the half of
+ * it that can ship without changing how every page renders.
+ *
+ * Report-only means the browser evaluates the policy, blocks nothing, and logs
+ * each violation to the console (and to a reporting endpoint, if one is ever
+ * configured with `Reporting-Endpoints` and a `report-to` directive). So it
+ * costs nothing to be wrong, and it answers the question that has to be
+ * answered before enforcing: which sources does this application actually use.
+ *
+ * What has to change to enforce it, in order:
+ *
+ * 1. `script-src` and `style-src` lose `'unsafe-inline'` and gain
+ *    `'nonce-<value>' 'strict-dynamic'`. Next inlines its own bootstrap script,
+ *    so nothing works without one of the two.
+ * 2. The nonce is per request, which means a `proxy.ts` at the project root
+ *    that generates one, sets it on the request as `x-nonce` and in the CSP
+ *    header, per the guide in
+ *    node_modules/next/dist/docs/01-app/02-guides/content-security-policy.md.
+ *    Next then attaches it to the framework scripts by itself.
+ * 3. Every page becomes dynamically rendered, because a nonce cannot exist at
+ *    build time. That is the real cost, and it is why this is not one commit.
+ * 4. The header key drops `-Report-Only`.
+ *
+ * `'unsafe-inline'` is in here rather than left out on purpose. Without it,
+ * every single page load reports the Next bootstrap script, and a hundred
+ * expected violations hide the one that matters.
+ *
+ * `img-src` allows any https host because recipe images are addresses on other
+ * people's servers, which is the whole import feature. `upgrade-insecure-requests`
+ * is absent because it is one of the directives a report-only policy ignores.
+ */
+const cspReportOnly = [
+  "default-src 'self'",
+  `script-src 'self' 'unsafe-inline'${
+    process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""
+  }`,
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  // The service worker in public/sw.js, and the installed application's manifest.
+  "worker-src 'self'",
+  "manifest-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  // The same statement as X-Frame-Options: DENY below, for browsers that read
+  // this one instead.
+  "frame-ancestors 'none'",
+].join("; ");
+
 const nextConfig: NextConfig = {
   // Constraint 1 from CLAUDE.md: no server-side LLM. Nothing here may add an
   // outbound AI client. See scripts/check-no-llm-deps.mjs.
   serverExternalPackages: ["pg"],
+
+  // Off. It announces the framework and its major version on every response,
+  // which is free reconnaissance and buys nothing.
+  poweredByHeader: false,
 
   // `npm run dev:test` sets this, so a test server running beside `npm run dev`
   // does not share one build directory with it.
@@ -58,10 +115,9 @@ const nextConfig: NextConfig = {
    * meaningful on a request that already arrived over TLS, and TLS is terminated
    * upstream, so `deploy/Caddyfile` sends it.
    *
-   * There is no Content-Security-Policy yet. Next inlines its own bootstrap
-   * script, so a useful policy needs per-request nonces threaded through the
-   * root layout, and a policy loose enough to skip that (`unsafe-inline`) buys
-   * nothing. Recorded as a known gap rather than shipped broken.
+   * The Content-Security-Policy is report-only, which is as far as it goes
+   * without per-request nonces and therefore without making every page
+   * dynamic. What it takes to enforce it is written out above `cspReportOnly`.
    */
   async headers() {
     return [
@@ -69,6 +125,7 @@ const nextConfig: NextConfig = {
         source: "/:path*",
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Content-Security-Policy-Report-Only", value: cspReportOnly },
           // Recipe images are addresses on other people's hosts, rendered in the
           // reader's browser. This sends them the origin and never the path, so
           // an image host learns that this instance exists and not which recipe
@@ -80,10 +137,14 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "DENY" },
           // allow-popups rather than same-origin, so a sign-in opened in a popup
           // can still talk to the window that opened it.
-          { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
+          {
+            key: "Cross-Origin-Opener-Policy",
+            value: "same-origin-allow-popups",
+          },
           {
             key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+            value:
+              "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
           },
         ],
       },

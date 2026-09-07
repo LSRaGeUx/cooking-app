@@ -1,0 +1,8 @@
+.next
+.next-test
+node_modules
+drizzle/meta
+package-lock.json
+public/agent-pack
+*.min.js
+coverage
