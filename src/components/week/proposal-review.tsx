@@ -9,9 +9,15 @@ import {
   acceptProposalEntriesAction,
   rejectProposalAction,
 } from "@/app/actions/proposal-actions";
-import { Feedback, type FeedbackState } from "@/components/feedback";
+import type { ActionResult } from "@/app/actions/result";
+import { Feedback } from "@/components/feedback";
 import type { IsoWeek } from "@/domain/week";
-import type { ProposalReview } from "@/services/plan-service";
+import { useActionRunner } from "@/lib/use-action-runner";
+import type {
+  PlanEntryView,
+  ProposalReview,
+  ProposalRow,
+} from "@/services/plan-service";
 
 /**
  * The screen where a proposal becomes a plan, or does not.
@@ -26,6 +32,23 @@ import type { ProposalReview } from "@/services/plan-service";
  * The rationale sits behind a woad edge on every row: it is the agent talking,
  * and it should never be mistaken for something the cook already decided.
  */
+
+/** A row that actually proposes something, so it has an entry to accept. */
+type AcceptableRow = ProposalRow & { proposed: PlanEntryView };
+
+function isAcceptable(row: ProposalRow): row is AcceptableRow {
+  return row.proposed !== null;
+}
+
+/**
+ * The four diff outcomes a row can have. Taken from the view rather than
+ * written out, so a fifth status added to the service is a compile error here
+ * instead of a row with `class="undefined"` and an empty chip, which is what
+ * the three `Record<string, string>` maps below used to produce: under
+ * `noUncheckedIndexedAccess` a string-keyed lookup is `string | undefined`.
+ */
+type RowStatus = ProposalRow["status"];
+
 export function ProposalReviewPanel({
   week,
   review,
@@ -39,39 +62,31 @@ export function ProposalReviewPanel({
   const days = useTranslations("week.days");
   const common = useTranslations("common");
   const router = useRouter();
+  const runner = useActionRunner();
 
-  const acceptable = review.rows.filter((row) => row.proposed !== null);
+  /*
+   * Filtered with a type guard rather than asserted. `row.proposed!.id`
+   * appeared twice, and a non-null assertion on a field the view declares as
+   * nullable is exactly the assertion that survives the schema change it
+   * should have failed on.
+   */
+  const acceptable = review.rows.filter(isAcceptable);
   const [selected, setSelected] = useState<ReadonlySet<string>>(
-    () => new Set(acceptable.map((row) => row.proposed!.id)),
+    () => new Set(acceptable.map((row) => row.proposed.id)),
   );
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
-  const [pending, setPending] = useState(false);
-  const [feedback, setFeedback] = useState<FeedbackState>({});
 
-  async function run(
-    action: () => Promise<{
-      ok: boolean;
-      code?: string;
-      message?: string;
-      details?: Record<string, unknown>;
-    }>,
-  ): Promise<void> {
-    setPending(true);
-    const result = await action();
-    setPending(false);
-    if (!result.ok) {
-      setFeedback({
-        error: {
-          code: result.code ?? "INTERNAL",
-          message: result.message ?? "",
-          details: result.details,
-        },
-      });
-      return;
-    }
-    router.push(weekHref);
-    router.refresh();
+  /** Accepting or rejecting sends the reader back to the week either way. */
+  function decide<T>(action: () => Promise<ActionResult<T>>): void {
+    void runner.run(action, {
+      // The week screen is what gets re-read, and pushing to it does that.
+      refresh: false,
+      onSuccess: () => {
+        router.push(weekHref);
+        router.refresh();
+      },
+    });
   }
 
   function toggle(entryId: string): void {
@@ -83,7 +98,7 @@ export function ProposalReviewPanel({
     });
   }
 
-  const statusLabel: Record<string, string> = {
+  const statusLabel: Record<RowStatus, string> = {
     added: t("statusAdded"),
     changed: t("statusChanged"),
     removed: t("statusRemoved"),
@@ -91,14 +106,14 @@ export function ProposalReviewPanel({
   };
 
   /* The edge of each row says what would happen to that slot, before reading. */
-  const statusClass: Record<string, string> = {
+  const statusClass: Record<RowStatus, string> = {
     added: "border-l-olive",
     changed: "border-l-amber-ink",
     removed: "border-l-danger",
     unchanged: "border-l-rule-strong opacity-80",
   };
 
-  const statusChip: Record<string, string> = {
+  const statusChip: Record<RowStatus, string> = {
     added: "chip-ok",
     changed: "chip-warn",
     removed: "chip-danger",
@@ -107,7 +122,7 @@ export function ProposalReviewPanel({
 
   return (
     <div className="flex flex-col gap-6">
-      <Feedback {...feedback} />
+      <Feedback error={runner.feedback} warnings={runner.warnings} />
 
       {review.version.summary ? (
         <section className="rounded-[3px] border border-agent-line border-l-[3px] border-l-agent bg-agent-soft p-4">
@@ -118,11 +133,12 @@ export function ProposalReviewPanel({
 
       <ul className="flex flex-col gap-3">
         {review.rows.map((row) => {
+          const status = row.status;
           const entryId = row.proposed?.id ?? null;
           return (
             <li
               key={`${row.dayOfWeek}:${row.mealTypeId}`}
-              className={`slip flex flex-col gap-3 border-l-[3px] p-4 ${statusClass[row.status]}`}
+              className={`slip flex flex-col gap-3 border-l-[3px] p-4 ${statusClass[status]}`}
             >
               <div className="flex flex-wrap items-center gap-2.5">
                 {entryId ? (
@@ -135,10 +151,11 @@ export function ProposalReviewPanel({
                   />
                 ) : null}
                 <span className="eyebrow text-ink">
-                  {days(String(row.dayOfWeek))} {row.mealTypeLabel.toLowerCase()}
+                  {days(String(row.dayOfWeek))}{" "}
+                  {row.mealTypeLabel.toLowerCase()}
                 </span>
-                <span className={`chip ${statusChip[row.status]}`}>
-                  {statusLabel[row.status]}
+                <span className={`chip ${statusChip[status]}`}>
+                  {statusLabel[status]}
                 </span>
               </div>
 
@@ -168,23 +185,31 @@ export function ProposalReviewPanel({
 
               {row.proposed ? (
                 <div className="flex flex-col gap-2 border-l-2 border-agent-line pl-3">
-                  <span className="eyebrow text-agent-ink">{t("rationale")}</span>
+                  <span className="eyebrow text-agent-ink">
+                    {t("rationale")}
+                  </span>
                   <p className="prose text-base">
                     {row.proposed.rationale ?? t("noRationale")}
                   </p>
                   {row.citedFacts.length > 0 ? (
-                    <ul className="flex flex-wrap gap-1.5">
-                      {row.citedFacts.map((cited) => (
-                        <li key={cited.id}>
-                          <Link href="/faits" className="chip chip-agent">
-                            {cited.statement}
-                            {cited.status === "unconfirmed"
-                              ? ` (${t("factUnconfirmed")})`
-                              : ""}
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
+                    <>
+                      <span className="micro">{t("citedFacts")}</span>
+                      <ul className="flex flex-wrap gap-1.5">
+                        {row.citedFacts.map((cited) => (
+                          <li key={cited.id}>
+                            <Link href="/faits" className="chip chip-agent">
+                              {cited.statement}
+                              {cited.status === "unconfirmed"
+                                ? ` (${t("factUnconfirmed")})`
+                                : ""}
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+                      <Link href="/faits" className="link self-start text-xs">
+                        {t("editFacts")}
+                      </Link>
+                    </>
                   ) : null}
                 </div>
               ) : null}
@@ -198,20 +223,22 @@ export function ProposalReviewPanel({
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            disabled={pending}
-            onClick={() => void run(() => acceptProposalAction(week))}
+            disabled={runner.pending}
+            onClick={() => decide(() => acceptProposalAction(week))}
             className="btn btn-primary"
           >
-            {pending ? t("working") : t("acceptAll")}
+            {runner.pending ? t("working") : t("acceptAll")}
           </button>
 
           <button
             type="button"
             disabled={
-              pending || selected.size === 0 || selected.size === acceptable.length
+              runner.pending ||
+              selected.size === 0 ||
+              selected.size === acceptable.length
             }
             onClick={() =>
-              void run(() => acceptProposalEntriesAction(week, [...selected]))
+              decide(() => acceptProposalEntriesAction(week, [...selected]))
             }
             className="btn btn-quiet"
           >
@@ -224,17 +251,19 @@ export function ProposalReviewPanel({
               setSelected(
                 selected.size === acceptable.length
                   ? new Set()
-                  : new Set(acceptable.map((row) => row.proposed!.id)),
+                  : new Set(acceptable.map((row) => row.proposed.id)),
               )
             }
             className="btn btn-ghost btn-sm"
           >
-            {selected.size === acceptable.length ? t("selectNone") : t("selectAll")}
+            {selected.size === acceptable.length
+              ? t("selectNone")
+              : t("selectAll")}
           </button>
 
           <button
             type="button"
-            disabled={pending}
+            disabled={runner.pending}
             onClick={() => setRejecting(!rejecting)}
             className="btn btn-danger btn-sm ml-auto"
           >
@@ -259,9 +288,9 @@ export function ProposalReviewPanel({
           </label>
           <button
             type="button"
-            disabled={pending}
+            disabled={runner.pending}
             onClick={() =>
-              void run(() => rejectProposalAction(week, reason.trim() || null))
+              decide(() => rejectProposalAction(week, reason.trim() || null))
             }
             className="btn btn-danger self-start"
           >

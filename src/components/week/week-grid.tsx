@@ -1,20 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   DndContext,
   KeyboardSensor,
   PointerSensor,
   closestCenter,
-  useDraggable,
-  useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import type { ActionResult } from "@/app/actions/result";
 import {
   assignRecipeAction,
   clearEntryAction,
@@ -22,19 +18,24 @@ import {
   moveEntryAction,
   updateEntryAction,
 } from "@/app/actions/plan-actions";
+import { linkPrepAction, unlinkPrepAction } from "@/app/actions/prep-actions";
+import type { ActionResult } from "@/app/actions/result";
 import { EmptyState } from "@/components/empty-state";
-import { gridKeyboardCoordinates } from "./keyboard-coordinates";
-import { Feedback, type FeedbackState } from "@/components/feedback";
-import type { DomainWarning } from "@/domain/errors";
+import { Feedback } from "@/components/feedback";
+import { Modal } from "@/components/modal";
+import { canServeFrom } from "@/domain/prep";
 import type { SlotDefinition } from "@/domain/slots";
-import { ISO_DAYS, type IsoWeek } from "@/domain/week";
-import { sealClass } from "@/lib/recipe-seal";
+import { ISO_DAYS, isIsoDay, type IsoWeek } from "@/domain/week";
+import { parseSlotKey, slotKey } from "@/lib/slot-key";
+import { useActionRunner } from "@/lib/use-action-runner";
 import { useMediaQuery } from "@/lib/use-media-query";
 import type { PlanEntryView, WriteResult } from "@/services/plan-service";
 import type { PrepLinkView } from "@/services/prep-service";
-import { linkPrepAction, unlinkPrepAction } from "@/app/actions/prep-actions";
+import { gridKeyboardCoordinates } from "./keyboard-coordinates";
 import { EntryPanel } from "./entry-panel";
+import { MealRow } from "./meal-row";
 import { RecipePicker, type PickableRecipe } from "./recipe-picker";
+import { SlotBody } from "./slot-body";
 
 /**
  * The one screen that matters, drawn as a wall.
@@ -55,6 +56,9 @@ import { RecipePicker, type PickableRecipe } from "./recipe-picker";
  * as the source of truth: it renders what the service returned, so a refused
  * write leaves the screen showing what is actually stored rather than an
  * optimistic lie the database rejected.
+ *
+ * The five components this file used to also contain now live beside it:
+ * meal-row, slot-body, entry-block and the shared modal.
  */
 export function WeekGrid({
   week,
@@ -88,82 +92,51 @@ export function WeekGrid({
   const t = useTranslations("week");
   const days = useTranslations("week.days");
   const common = useTranslations("common");
-  const router = useRouter();
 
   // Two structures, never both mounted: they share droppable ids, and two
   // droppables with the same id is a silent drag-and-drop bug.
   const wide = useMediaQuery("(min-width: 1024px)");
 
-  const [entries, setEntries] = useState<readonly PlanEntryView[]>(serverEntries);
-  const [feedback, setFeedback] = useState<FeedbackState>({});
-  const [pending, setPending] = useState(false);
+  const runner = useActionRunner();
   const [pickerSlot, setPickerSlot] = useState<string | null>(null);
   const [openEntryId, setOpenEntryId] = useState<string | null>(null);
 
-  // The server is the authority: when a revalidation brings new entries in,
-  // local state follows rather than the other way round.
-  useEffect(() => {
-    setEntries(serverEntries);
-  }, [serverEntries]);
+  /*
+   * The entries a write just returned, held only until the server sends its
+   * own. A plan write returns the new version's entries, and showing them
+   * immediately is what makes a drop feel instant.
+   *
+   * Keyed by the props array it was derived from rather than synchronised in an
+   * effect. The previous version copied `serverEntries` into state at mount and
+   * then wrote it back in `useEffect`, which React's hooks lint now reports as
+   * an error and which showed the old plan for one frame after every refresh.
+   * Comparing identities during render means a new `serverEntries` discards the
+   * overlay in the same render that introduces it, with no intermediate paint
+   * and no effect.
+   */
+  const [overlay, setOverlay] = useState<{
+    readonly of: readonly PlanEntryView[];
+    readonly entries: readonly PlanEntryView[];
+  } | null>(null);
+  const entries =
+    overlay !== null && overlay.of === serverEntries
+      ? overlay.entries
+      : serverEntries;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: gridKeyboardCoordinates }),
   );
 
-  async function run(
-    action: () => Promise<ActionResult<WriteResult>>,
-  ): Promise<void> {
-    setPending(true);
-    const result = await action();
-    setPending(false);
-
-    if (!result.ok) {
-      setFeedback({
-        error: {
-          code: result.code,
-          message: result.message,
-          details: result.details,
-        },
-      });
-      return;
-    }
-
-    setEntries(result.data.entries);
-    setFeedback({ warnings: result.data.warnings as DomainWarning[] });
-    setPickerSlot(null);
-    setOpenEntryId(null);
-    router.refresh();
-  }
-
-  /**
-   * For writes that do not return a new plan version, such as a prep link. The
-   * server stays the authority: the screen re-reads rather than guessing.
-   */
-  async function runPlain(
-    action: () => Promise<{
-      ok: boolean;
-      code?: string;
-      message?: string;
-      details?: Record<string, unknown>;
-    }>,
-  ): Promise<void> {
-    setPending(true);
-    const result = await action();
-    setPending(false);
-    if (!result.ok) {
-      setFeedback({
-        error: {
-          code: result.code ?? "INTERNAL",
-          message: result.message ?? "",
-          details: result.details,
-        },
-      });
-      return;
-    }
-    setFeedback({});
-    setOpenEntryId(null);
-    router.refresh();
+  /** A plan write. Closes whatever panel asked for it, on success only. */
+  function runWrite(action: () => Promise<ActionResult<WriteResult>>): void {
+    void runner.run(action, {
+      onSuccess: (data) => {
+        setOverlay({ of: serverEntries, entries: data.entries });
+        setPickerSlot(null);
+        setOpenEntryId(null);
+      },
+    });
   }
 
   function onDragEnd(event: DragEndEvent): void {
@@ -177,17 +150,25 @@ export function WeekGrid({
 
     const parsed = parseSlotKey(target);
     if (!parsed) return;
-    void run(() => moveEntryAction(week, entryId, parsed));
+    runWrite(() => moveEntryAction(week, entryId, parsed));
   }
 
+  /*
+   * A link with no source is a dependent meal whose cooking session was cleared
+   * out from under it, which the banner reports. Filtered with a type guard
+   * rather than asserted: `sourceEntryId` is nullable on the view, and the
+   * non-null assertion this used to carry is the kind that survives a schema
+   * change it should have failed on.
+   */
+  const sourced = prepLinks.filter(
+    (link): link is PrepLinkView & { sourceEntryId: string } =>
+      link.sourceEntryId !== null,
+  );
   const sourceOf = new Map(
-    prepLinks
-      .filter((link) => link.sourceEntryId !== null)
-      .map((link) => [link.dependentEntryId, link.sourceEntryId!]),
+    sourced.map((link) => [link.dependentEntryId, link.sourceEntryId]),
   );
   const servesCount = new Map<string, number>();
-  for (const link of prepLinks) {
-    if (!link.sourceEntryId) continue;
+  for (const link of sourced) {
     servesCount.set(
       link.sourceEntryId,
       (servesCount.get(link.sourceEntryId) ?? 0) + 1,
@@ -218,7 +199,6 @@ export function WeekGrid({
     mealRows.push({ id: slot.mealTypeId, label: slot.mealTypeLabel });
   }
 
-  const onAssign = (key: string) => () => setPickerSlot(key);
   const openEntry = entries.find((entry) => entry.id === openEntryId) ?? null;
   const pickerParsed = pickerSlot ? parseSlotKey(pickerSlot) : null;
   const pickerSlotDefinition = pickerParsed
@@ -231,9 +211,9 @@ export function WeekGrid({
 
   return (
     <div className="flex flex-col">
-      {feedback.error || (feedback.warnings?.length ?? 0) > 0 ? (
+      {runner.feedback || runner.warnings.length > 0 ? (
         <div className="band px-5 py-3 lg:px-8">
-          <Feedback {...feedback} />
+          <Feedback error={runner.feedback} warnings={runner.warnings} />
         </div>
       ) : null}
 
@@ -271,7 +251,7 @@ export function WeekGrid({
                 <div
                   key={`head-${day}`}
                   className={`flex flex-col gap-0.5 px-3 py-2.5 ${
-                    isToday ? "block-tomato" : "block"
+                    isToday ? "bg-tomato text-on-tomato" : "block"
                   }`}
                 >
                   <span className="flex items-baseline justify-between gap-2">
@@ -280,6 +260,9 @@ export function WeekGrid({
                       {dayNumbers[String(day)]}
                     </span>
                   </span>
+                  {isToday ? (
+                    <span className="sr-only">{t("todayMark")}</span>
+                  ) : null}
                   {/*
                     The shopping day, marked where you plan rather than only on
                     the shopping screen: everything from here on is bought on
@@ -305,9 +288,9 @@ export function WeekGrid({
                 servesCount={servesCount}
                 sourceOf={sourceOf}
                 unsourced={unsourced}
-                pending={pending}
-                onAssign={(key) => setPickerSlot(key)}
-                onOpen={(id) => setOpenEntryId(id)}
+                pending={runner.pending}
+                onAssign={setPickerSlot}
+                onOpen={setOpenEntryId}
               />
             ))}
           </div>
@@ -329,8 +312,12 @@ export function WeekGrid({
                   ),
                 }))
                 .filter(
-                  (row): row is { meal: typeof mealRows[number]; slot: SlotDefinition } =>
-                    row.slot !== undefined,
+                  (
+                    row,
+                  ): row is {
+                    meal: { id: string; label: string };
+                    slot: SlotDefinition;
+                  } => row.slot !== undefined,
                 );
               if (daySlots.length === 0) return null;
               const isToday = todayDayOfWeek === day;
@@ -339,12 +326,15 @@ export function WeekGrid({
                 <section key={day}>
                   <header
                     className={`flex items-baseline justify-between gap-3 border-b-2 border-rule px-5 py-2 ${
-                      isToday ? "block-tomato" : "block-ink"
+                      isToday ? "bg-tomato text-on-tomato" : "block-ink"
                     }`}
                   >
                     <span className="label-text">
                       {days(String(day))}
-                      {shoppingDayOfWeek === day ? ` · ${t("shoppingMark")}` : ""}
+                      {isToday ? ` · ${t("todayMark")}` : ""}
+                      {shoppingDayOfWeek === day
+                        ? ` · ${t("shoppingMark")}`
+                        : ""}
                     </span>
                     <span className="label-text opacity-70">
                       {dayLabels[String(day)]}
@@ -369,9 +359,11 @@ export function WeekGrid({
                             servesCount={servesCount}
                             sourceOf={sourceOf}
                             unsourced={unsourced}
-                            pending={pending}
-                            onAssign={onAssign(slotKey(day, meal.id))}
-                            onOpen={(id) => setOpenEntryId(id)}
+                            pending={runner.pending}
+                            onAssign={() =>
+                              setPickerSlot(slotKey(day, meal.id))
+                            }
+                            onOpen={setOpenEntryId}
                           />
                         </div>
                       </div>
@@ -401,8 +393,10 @@ export function WeekGrid({
                 <span className="name">{entry.recipeTitleSnapshot}</span>
                 <button
                   type="button"
-                  disabled={pending}
-                  onClick={() => void run(() => clearEntryAction(week, entry.id))}
+                  disabled={runner.pending}
+                  onClick={() =>
+                    runWrite(() => clearEntryAction(week, entry.id))
+                  }
                   className="btn btn-sm ml-auto"
                 >
                   {common("delete")}
@@ -415,14 +409,17 @@ export function WeekGrid({
 
       {/* --------------------------------------------------------- overlays */}
       {pickerSlot && pickerSlotDefinition ? (
-        <Overlay onClose={() => setPickerSlot(null)}>
+        <Modal
+          label={`${days(String(pickerSlotDefinition.dayOfWeek))} ${pickerSlotDefinition.mealTypeLabel}`}
+          onClose={() => setPickerSlot(null)}
+        >
           <RecipePicker
             heading={`${days(String(pickerSlotDefinition.dayOfWeek))} ${pickerSlotDefinition.mealTypeLabel}`}
             initialRecipes={recipes}
-            disabled={pending}
+            disabled={runner.pending}
             onClose={() => setPickerSlot(null)}
             onPick={(recipeId) =>
-              void run(() =>
+              runWrite(() =>
                 assignRecipeAction(week, {
                   dayOfWeek: pickerSlotDefinition.dayOfWeek,
                   mealTypeId: pickerSlotDefinition.mealTypeId,
@@ -431,31 +428,39 @@ export function WeekGrid({
               )
             }
           />
-        </Overlay>
+        </Modal>
       ) : null}
 
       {openEntry ? (
-        <Overlay onClose={() => setOpenEntryId(null)}>
+        <Modal label={t("editEntry")} onClose={() => setOpenEntryId(null)}>
           <EntryPanel
             entry={openEntry}
             slots={slots}
-            disabled={pending}
+            disabled={runner.pending}
             onClose={() => setOpenEntryId(null)}
             onSave={(changes) =>
-              void run(() => updateEntryAction(week, openEntry.id, changes))
+              runWrite(() => updateEntryAction(week, openEntry.id, changes))
             }
             onDuplicate={(target) =>
-              void run(() => duplicateEntryAction(week, openEntry.id, target))
+              runWrite(() => duplicateEntryAction(week, openEntry.id, target))
             }
-            onClear={() => void run(() => clearEntryAction(week, openEntry.id))}
+            onClear={() => runWrite(() => clearEntryAction(week, openEntry.id))}
             prepSourceId={sourceOf.get(openEntry.id) ?? null}
-            // Only meals cooked the same day or earlier can feed this one: you
-            // cannot eat on Tuesday what you cook on Thursday.
+            /*
+             * Only meals cooked the same day or earlier can feed this one: you
+             * cannot eat on Tuesday what you cook on Thursday. The rule is
+             * `canServeFrom` in the domain, which is what the service enforces
+             * when the link is written. It used to be a `<=` comparison
+             * inlined here, so the list the user could pick from and the list
+             * the server accepted were two statements of one rule.
+             */
             prepCandidates={entries
               .filter(
                 (row) =>
                   row.id !== openEntry.id &&
-                  row.dayOfWeek <= openEntry.dayOfWeek,
+                  isIsoDay(row.dayOfWeek) &&
+                  isIsoDay(openEntry.dayOfWeek) &&
+                  canServeFrom(row.dayOfWeek, openEntry.dayOfWeek),
               )
               .map((row) => ({
                 entryId: row.id,
@@ -463,349 +468,16 @@ export function WeekGrid({
                 label: `${days(String(row.dayOfWeek))} · ${row.recipeTitleSnapshot}`,
               }))}
             onLinkPrep={(sourceEntryId) =>
-              void runPlain(() =>
+              void runner.run(() =>
                 linkPrepAction(week, sourceEntryId, openEntry.id),
               )
             }
             onUnlinkPrep={() =>
-              void runPlain(() => unlinkPrepAction(week, openEntry.id))
+              void runner.run(() => unlinkPrepAction(week, openEntry.id))
             }
           />
-        </Overlay>
+        </Modal>
       ) : null}
     </div>
   );
-}
-
-/** A modal block. Bottom sheet on a phone, centred slab on a desk. */
-function Overlay({
-  children,
-  onClose,
-}: {
-  children: React.ReactNode;
-  onClose: () => void;
-}) {
-  const common = useTranslations("common");
-
-  useEffect(() => {
-    function onKey(event: KeyboardEvent): void {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-      <button
-        type="button"
-        aria-label={common("close")}
-        onClick={onClose}
-        className="backdrop"
-      />
-      <div className="relative w-full max-w-lg border-2 border-rule bg-panel">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function MealRow({
-  meal,
-  slots,
-  entries,
-  activeTimeByRecipeId,
-  servesCount,
-  sourceOf,
-  unsourced,
-  pending,
-  onAssign,
-  onOpen,
-}: {
-  meal: { id: string; label: string };
-  slots: readonly SlotDefinition[];
-  entries: readonly PlanEntryView[];
-  activeTimeByRecipeId: Readonly<Record<string, number | null>>;
-  servesCount: Map<string, number>;
-  sourceOf: Map<string, string>;
-  unsourced: Set<string>;
-  pending: boolean;
-  onAssign: (slotId: string) => void;
-  onOpen: (entryId: string) => void;
-}) {
-  return (
-    <>
-      <div className="block sticky left-0 z-10 flex flex-col justify-center gap-1 px-3 py-4">
-        <span className="label-text">{meal.label}</span>
-      </div>
-
-      {ISO_DAYS.map((day) => {
-        const slot = slots.find(
-          (candidate) =>
-            candidate.dayOfWeek === day && candidate.mealTypeId === meal.id,
-        );
-        const key = slotKey(day, meal.id);
-
-        if (!slot) {
-          // A meal type that was never set up on this day. Drawn as nothing at
-          // all rather than as an empty invitation.
-          return <div key={key} className="bg-sunk" />;
-        }
-
-        return (
-          <SlotBody
-            key={key}
-            slot={slot}
-            entries={entries.filter(
-              (entry) =>
-                entry.dayOfWeek === day && entry.mealTypeId === meal.id,
-            )}
-            activeTimeByRecipeId={activeTimeByRecipeId}
-            servesCount={servesCount}
-            sourceOf={sourceOf}
-            unsourced={unsourced}
-            pending={pending}
-            onAssign={() => onAssign(key)}
-            onOpen={onOpen}
-          />
-        );
-      })}
-    </>
-  );
-}
-
-/**
- * One slot, wherever it is drawn. Both layouts render this, so a cell in the
- * wall and a row on a phone are the same object with the same drop target and
- * the same affordances.
- */
-function SlotBody({
-  slot,
-  entries,
-  activeTimeByRecipeId,
-  servesCount,
-  sourceOf,
-  unsourced,
-  pending,
-  onAssign,
-  onOpen,
-}: {
-  slot: SlotDefinition;
-  entries: readonly PlanEntryView[];
-  activeTimeByRecipeId: Readonly<Record<string, number | null>>;
-  servesCount: Map<string, number>;
-  sourceOf: Map<string, string>;
-  unsourced: Set<string>;
-  pending: boolean;
-  onAssign: () => void;
-  onOpen: (entryId: string) => void;
-}) {
-  const t = useTranslations("week");
-  const common = useTranslations("common");
-
-  const slotEntries = [...entries].sort((a, b) => a.position - b.position);
-
-  if (slot.state === "skipped") {
-    return (
-      <div className="void flex min-h-16 items-center justify-center bg-panel p-3">
-        <span className="label-text text-faint">{t("skippedSlot")}</span>
-      </div>
-    );
-  }
-
-  return (
-    <SlotCell slotId={slotKey(slot.dayOfWeek, slot.mealTypeId)} slot={slot}>
-      {slotEntries.length === 0 ? (
-        <button
-          type="button"
-          disabled={pending}
-          onClick={onAssign}
-          className="fillable group flex h-full min-h-20 w-full flex-col items-center justify-center gap-1 bg-panel px-2 py-4"
-        >
-          <span aria-hidden="true" className="text-xl leading-none opacity-40">
-            +
-          </span>
-          {/* Named, not just a glyph: an unlabelled square is a guess. */}
-          <span className="label-text text-faint group-hover:text-current">
-            {t("assign")}
-          </span>
-          {slot.timeBudgetMin !== null ? (
-            <span className="label-text text-faint group-hover:text-current">
-              {common("minutes", { count: slot.timeBudgetMin })}
-            </span>
-          ) : null}
-        </button>
-      ) : (
-        <div className="ruled flex h-full min-h-20 flex-col">
-          {slotEntries.map((entry) => (
-            <EntryBlock
-              key={entry.id}
-              entry={entry}
-              activeTimeMin={
-                entry.recipeId
-                  ? (activeTimeByRecipeId[entry.recipeId] ?? null)
-                  : null
-              }
-              budgetMin={slot.timeBudgetMin}
-              servesOthers={servesCount.get(entry.id) ?? 0}
-              reheated={sourceOf.has(entry.id)}
-              unsourced={unsourced.has(entry.id)}
-              onOpen={() => onOpen(entry.id)}
-            />
-          ))}
-        </div>
-      )}
-    </SlotCell>
-  );
-}
-
-function SlotCell({
-  slotId,
-  slot,
-  children,
-}: {
-  slotId: string;
-  slot: SlotDefinition;
-  children: React.ReactNode;
-}) {
-  const { setNodeRef, isOver } = useDroppable({ id: slotId });
-  const days = useTranslations("week.days");
-
-  return (
-    <div
-      ref={setNodeRef}
-      // Spoken by a screen reader during a keyboard drag, so it has to name the
-      // day rather than number it.
-      aria-label={`${slot.mealTypeLabel}, ${days(String(slot.dayOfWeek))}`}
-      className={`relative ${isOver ? "bg-ink" : ""}`}
-    >
-      {children}
-    </div>
-  );
-}
-
-function EntryBlock({
-  entry,
-  activeTimeMin,
-  budgetMin,
-  servesOthers,
-  reheated,
-  unsourced,
-  onOpen,
-}: {
-  entry: PlanEntryView;
-  activeTimeMin: number | null;
-  budgetMin: number | null;
-  servesOthers: number;
-  reheated: boolean;
-  unsourced: boolean;
-  onOpen: () => void;
-}) {
-  const common = useTranslations("common");
-  const t = useTranslations("week");
-  const { attributes, listeners, setNodeRef, transform, isDragging } =
-    useDraggable({ id: entry.id });
-
-  // The colour belongs to the recipe, so the same dish is the same colour in
-  // the library, in the week and on the shopping list. An entry whose recipe is
-  // gone falls back to its own id rather than losing the mark entirely.
-  const seal = sealClass(entry.recipeId ?? entry.id);
-  const over =
-    budgetMin !== null && activeTimeMin !== null && activeTimeMin > budgetMin;
-  const fill =
-    budgetMin === null || activeTimeMin === null
-      ? 0
-      : Math.min(activeTimeMin / budgetMin, 1) * 100;
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={
-        transform
-          ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
-          : undefined
-      }
-      className={`${seal} seal-field relative flex flex-1 flex-col ${
-        isDragging ? "opacity-70" : ""
-      }`}
-    >
-      {/*
-        The handle carries the drag, not the whole block. Spreading the
-        listeners on the block would put a keyboard drag and the "open this
-        meal" button on the same element, and space would do one of two things
-        depending on where focus happened to be.
-      */}
-      <button
-        type="button"
-        aria-label={t("dragHandle", { title: entry.recipeTitleSnapshot })}
-        className="absolute right-0 top-0 cursor-grab touch-none px-2 py-1.5 text-xs leading-none opacity-50 hover:opacity-100"
-        {...attributes}
-        {...listeners}
-      >
-        ⠿
-      </button>
-
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex flex-1 flex-col gap-1 p-3 pr-7 text-left"
-      >
-        <span className="name text-[0.95rem]">{entry.recipeTitleSnapshot}</span>
-        <span className="text-xs opacity-70">
-          {common("servings", { count: entry.servings })}
-          {activeTimeMin !== null
-            ? ` · ${common("minutes", { count: activeTimeMin })}`
-            : ""}
-        </span>
-
-        <span className="mt-auto flex flex-wrap gap-1 pt-1.5">
-          {servesOthers > 0 ? (
-            <span className="chip border-current bg-transparent text-current">
-              {t("prepSource", { count: servesOthers })}
-            </span>
-          ) : null}
-          {reheated ? (
-            <span className="chip border-current bg-transparent text-current">
-              {t("prepLinkNone")}
-            </span>
-          ) : null}
-          {unsourced ? (
-            <span className="chip chip-warn">{t("prepUnsourced")}</span>
-          ) : null}
-        </span>
-      </button>
-
-      {/*
-        Hands-on time against the slot budget, as a bar along the foot of the
-        block. It runs red past the budget, which is the case worth seeing.
-      */}
-      {budgetMin !== null && activeTimeMin !== null ? (
-        <span
-          aria-hidden="true"
-          className="block h-1.5 w-full bg-black/15"
-          title={t("budget", { count: budgetMin })}
-        >
-          <span
-            className={`block h-full ${over ? "bg-red" : "bg-current"}`}
-            style={{ width: over ? "100%" : `${fill}%` }}
-          />
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
-function slotKey(dayOfWeek: number, mealTypeId: string): string {
-  return `${dayOfWeek}:${mealTypeId}`;
-}
-
-function parseSlotKey(
-  key: string,
-): { dayOfWeek: number; mealTypeId: string } | null {
-  const separator = key.indexOf(":");
-  if (separator === -1) return null;
-  const dayOfWeek = Number(key.slice(0, separator));
-  const mealTypeId = key.slice(separator + 1);
-  if (!Number.isInteger(dayOfWeek) || mealTypeId.length === 0) return null;
-  return { dayOfWeek, mealTypeId };
 }

@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import { pantryItemInputSchema } from "@/domain/schemas";
 import { requireUser } from "@/lib/session";
 import {
   addPantryItems,
@@ -20,20 +22,27 @@ function revalidatePantry(): void {
   revalidatePath("/profil/apercu");
 }
 
+const itemIdSchema = z.uuid();
+/** One typed row at a time from the screen; the cap is for an agent's batch. */
+const itemsSchema = z.array(pantryItemInputSchema).min(1).max(100);
+
 export async function addPantryItemsAction(
   items: readonly unknown[],
 ): Promise<ActionResult<PantryItemView[]>> {
   const { ctx } = await requireUser();
-  const result = await runAction(() => addPantryItems(ctx, items));
-  if (result.ok) revalidatePantry();
-  return result;
+  return runAction(async () => {
+    const saved = await addPantryItems(ctx, itemsSchema.parse(items));
+    revalidatePantry();
+    return saved;
+  });
 }
 
 export async function removePantryItemAction(
   itemId: string,
 ): Promise<ActionResult<void>> {
   const { ctx } = await requireUser();
-  const result = await runAction(() => removePantryItem(ctx, itemId));
-  if (result.ok) revalidatePantry();
-  return result;
+  return runAction(async () => {
+    await removePantryItem(ctx, itemIdSchema.parse(itemId));
+    revalidatePantry();
+  });
 }

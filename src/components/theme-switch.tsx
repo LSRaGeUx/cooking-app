@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { setThemeAction } from "@/app/actions/theme-actions";
@@ -12,7 +11,6 @@ import { themes, type Theme } from "@/lib/theme";
  */
 export function ThemeSwitch({ current }: { current: Theme }) {
   const t = useTranslations("nav");
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
 
   const label: Record<Theme, string> = {
@@ -29,10 +27,11 @@ export function ThemeSwitch({ current }: { current: Theme }) {
           disabled={pending || theme === current}
           aria-current={theme === current ? "true" : undefined}
           onClick={() =>
-            startTransition(async () => {
-              await setThemeAction(theme);
-              router.refresh();
-            })
+            // No `router.refresh()`: the action already calls
+            // `revalidatePath("/", "layout")`, which purges the client cache
+            // and re-renders the tree, so refreshing fetched the same page
+            // twice on every switch.
+            startTransition(() => setThemeAction(theme))
           }
           className={theme === current ? "" : "cursor-pointer"}
         >

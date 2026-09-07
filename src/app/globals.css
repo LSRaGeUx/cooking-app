@@ -158,7 +158,9 @@
     font-family: var(--font-sans);
     font-size: 0.9375rem;
     line-height: 1.5;
-    font-variation-settings: "wdth" 100, "opsz" 14;
+    font-variation-settings:
+      "wdth" 100,
+      "opsz" 14;
     accent-color: var(--tomato);
     -webkit-font-smoothing: antialiased;
   }
@@ -201,7 +203,9 @@
    * Controls are blocks like everything else: square, ink-ruled, and they take
    * the accent when they are the thing you are working in.
    */
-  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
+      [type="file"]
+    ),
   select,
   textarea {
     background-color: var(--panel);
@@ -234,10 +238,15 @@
   select {
     appearance: none;
     padding-right: 1.6rem;
-    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    background-image:
+      linear-gradient(45deg, transparent 50%, currentColor 50%),
       linear-gradient(135deg, currentColor 50%, transparent 50%);
-    background-position: right 0.7rem top 56%, right 0.4rem top 56%;
-    background-size: 0.32rem 0.32rem, 0.32rem 0.32rem;
+    background-position:
+      right 0.7rem top 56%,
+      right 0.4rem top 56%;
+    background-size:
+      0.32rem 0.32rem,
+      0.32rem 0.32rem;
     background-repeat: no-repeat;
   }
 
@@ -285,16 +294,46 @@
    * chosen, not generated: a gradient would soften exactly the thing this
    * language is made of.
    */
-  .seal-0 { --seal-bg: #e63a0b; --seal-fg: #ffffff; }
-  .seal-1 { --seal-bg: #f08c00; --seal-fg: #0d0d0d; }
-  .seal-2 { --seal-bg: #ffc300; --seal-fg: #0d0d0d; }
-  .seal-3 { --seal-bg: #cfe80b; --seal-fg: #0d0d0d; }
-  .seal-4 { --seal-bg: #00c08b; --seal-fg: #0d0d0d; }
-  .seal-5 { --seal-bg: #00a3b5; --seal-fg: #0d0d0d; }
-  .seal-6 { --seal-bg: #2f8fd0; --seal-fg: #0d0d0d; }
-  .seal-7 { --seal-bg: #9b7bff; --seal-fg: #0d0d0d; }
-  .seal-8 { --seal-bg: #ff5c8a; --seal-fg: #0d0d0d; }
-  .seal-9 { --seal-bg: #8b2f5f; --seal-fg: #ffffff; }
+  .seal-0 {
+    --seal-bg: #e63a0b;
+    --seal-fg: #ffffff;
+  }
+  .seal-1 {
+    --seal-bg: #f08c00;
+    --seal-fg: #0d0d0d;
+  }
+  .seal-2 {
+    --seal-bg: #ffc300;
+    --seal-fg: #0d0d0d;
+  }
+  .seal-3 {
+    --seal-bg: #cfe80b;
+    --seal-fg: #0d0d0d;
+  }
+  .seal-4 {
+    --seal-bg: #00c08b;
+    --seal-fg: #0d0d0d;
+  }
+  .seal-5 {
+    --seal-bg: #00a3b5;
+    --seal-fg: #0d0d0d;
+  }
+  .seal-6 {
+    --seal-bg: #2f8fd0;
+    --seal-fg: #0d0d0d;
+  }
+  .seal-7 {
+    --seal-bg: #9b7bff;
+    --seal-fg: #0d0d0d;
+  }
+  .seal-8 {
+    --seal-bg: #ff5c8a;
+    --seal-fg: #0d0d0d;
+  }
+  .seal-9 {
+    --seal-bg: #8b2f5f;
+    --seal-fg: #ffffff;
+  }
 
   .seal-field {
     background: var(--seal-bg, var(--tomato));
@@ -316,32 +355,44 @@
   .mega {
     font-weight: 700;
     font-size: clamp(3.25rem, 11vw, 9rem);
-    font-variation-settings: "wdth" 78, "opsz" 96;
+    font-variation-settings:
+      "wdth" 78,
+      "opsz" 96;
     line-height: 0.82;
     letter-spacing: -0.035em;
     text-transform: uppercase;
   }
 
-  .big {
+  /* .title is the same scale under the name the screens use for a page head. */
+  .big,
+  .title {
     font-weight: 700;
     font-size: clamp(1.75rem, 4vw, 3rem);
-    font-variation-settings: "wdth" 84, "opsz" 40;
+    font-variation-settings:
+      "wdth" 84,
+      "opsz" 40;
     line-height: 0.95;
     letter-spacing: -0.025em;
     text-transform: uppercase;
   }
 
-  /* A name inside a block: a recipe, a meal, a client. */
-  .name {
+  /* A name inside a block: a recipe, a meal, a client. .display is the same
+     face under the name the forms use. */
+  .name,
+  .display {
     font-weight: 700;
-    font-variation-settings: "wdth" 88, "opsz" 24;
+    font-variation-settings:
+      "wdth" 88,
+      "opsz" 24;
     line-height: 1.08;
     letter-spacing: -0.015em;
   }
 
   .numeral {
     font-weight: 700;
-    font-variation-settings: "wdth" 82, "opsz" 96;
+    font-variation-settings:
+      "wdth" 82,
+      "opsz" 96;
     line-height: 0.85;
     letter-spacing: -0.035em;
     font-variant-numeric: lining-nums tabular-nums;
@@ -352,13 +403,22 @@
     -webkit-text-stroke: 2px var(--rule);
   }
 
-  /* The label that sits on a rule, in a cell corner, above a field. */
-  .label-text {
+  /*
+   * The label that sits on a rule, in a cell corner, above a field. .eyebrow
+   * is the same label one step quieter, which is the only difference between
+   * the two and the only reason both names exist.
+   */
+  .label-text,
+  .eyebrow {
     font-size: 0.6875rem;
     font-weight: 700;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     line-height: 1.2;
+  }
+
+  .eyebrow {
+    color: var(--ink-2);
   }
 
   .micro {
@@ -454,20 +514,13 @@
     color: var(--on-tomato);
   }
 
-  .block-cobalt {
-    background: var(--cobalt);
-    color: var(--on-cobalt);
-  }
-
-  .block-mint {
-    background: var(--mint);
-    color: var(--ink);
-  }
-
-  .block-yellow {
-    background: var(--yellow);
-    color: var(--ink);
-  }
+  /*
+   * .block-cobalt, .block-mint and .block-yellow were here and nothing used
+   * any of them: the three bands that want those grounds set bg-cobalt or
+   * bg-yellow with the matching text colour, because they also need a border
+   * and a padding the block classes do not carry. The colour tokens stay, and
+   * so do the Tailwind utilities generated from them.
+   */
 
   /* Not in play: skipped slots, retired facts. */
   .void {
@@ -480,7 +533,9 @@
 
   /* Anything that fills with ink when the pointer lands on it. */
   .fillable {
-    transition: background-color 90ms linear, color 90ms linear;
+    transition:
+      background-color 90ms linear,
+      color 90ms linear;
   }
 
   .fillable:hover:not(:disabled) {
@@ -507,7 +562,9 @@
     line-height: 1.25;
     cursor: pointer;
     white-space: nowrap;
-    transition: background-color 90ms linear, color 90ms linear;
+    transition:
+      background-color 90ms linear,
+      color 90ms linear;
   }
 
   .btn:hover:not(:disabled) {
@@ -566,7 +623,9 @@
     text-transform: uppercase;
     background: transparent;
     border-right: var(--rule-w) solid var(--rule);
-    transition: background-color 90ms linear, color 90ms linear;
+    transition:
+      background-color 90ms linear,
+      color 90ms linear;
   }
 
   .segmented > *:last-child {
@@ -642,11 +701,8 @@
     border-color: var(--red);
   }
 
-  .chip-ember {
-    background: var(--tomato);
-    color: var(--on-tomato);
-    border-color: var(--tomato);
-  }
+  /* .chip-ember was here and nothing used it. .chip-seal below is the chip
+     that carries a colour, and it takes the recipe's own. */
 
   .chip-seal {
     background: var(--seal-bg, var(--tomato));
@@ -700,6 +756,55 @@
     position: fixed;
     inset: 0;
     background: color-mix(in srgb, var(--ink) 65%, transparent);
+  }
+
+  /*
+   * The modal, as a real <dialog> in the top layer.
+   *
+   * The dialog element is the full-screen box and the panel is its child, so a
+   * click that lands on the dialog itself is a click outside the panel. That is
+   * what closes it, and it is why the dialog has no padding of its own and no
+   * background: ::backdrop paints the ground, the element only positions.
+   *
+   * The user agent stylesheet centres a modal dialog with auto margins and
+   * gives it a border and a background. All three are cleared, because this
+   * design draws its own rule and this dialog is a bottom sheet on a phone.
+   */
+  .modal {
+    position: fixed;
+    inset: 0;
+    max-width: none;
+    max-height: none;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+  }
+
+  @media (min-width: 640px) {
+    .modal {
+      align-items: center;
+    }
+  }
+
+  .modal::backdrop {
+    background: color-mix(in srgb, #0d0d0d 65%, transparent);
+  }
+
+  .modal-panel {
+    position: relative;
+    width: 100%;
+    max-width: 32rem;
+    max-height: 100%;
+    overflow-y: auto;
+    background: var(--panel);
+    border: var(--rule-w) solid var(--rule);
   }
 
   /* =============================================================== shell */
@@ -834,11 +939,8 @@
    * which is the language, but a shopping line is not more usable for being
    * 1500 pixels from its own checkbox to its own delete button.
    */
-  .measure {
-    width: 100%;
-    max-width: 60rem;
-    margin-inline: auto;
-  }
+  /* .measure was here, at 60rem, and nothing used it: every screen that needs
+     a measure is a shopping list, and those all take .measure-wide. */
 
   .measure-wide {
     width: 100%;
@@ -850,17 +952,16 @@
 
   /*
    * The names the screens already use, mapped onto this language rather than
-   * renamed across forty files. Each one is a real style here, not a shim: a
-   * slip is a ruled block, an eyebrow is a section label, a tile fills with ink.
+   * renamed across forty files.
+   *
+   * Four of them were byte-for-byte copies of a rule declared in the type
+   * section above, which is a second place for one decision to be changed:
+   * .display repeated .name, .title repeated .big, .eyebrow repeated
+   * .label-text plus a colour, and .hero repeated .mega and was used nowhere.
+   * The three that are used are now spelled as a second selector on the rule
+   * they duplicate, up in the type section, so the scale is declared once.
+   * .hero is gone.
    */
-  .eyebrow {
-    font-size: 0.6875rem;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    line-height: 1.2;
-    color: var(--ink-2);
-  }
 
   .eyebrow-rule {
     display: flex;
@@ -875,50 +976,13 @@
     background: var(--rule);
   }
 
-  .display {
-    font-weight: 700;
-    font-variation-settings: "wdth" 88, "opsz" 24;
-    line-height: 1.08;
-    letter-spacing: -0.015em;
-  }
-
-  .title {
-    font-weight: 700;
-    font-size: clamp(1.75rem, 4vw, 3rem);
-    font-variation-settings: "wdth" 84, "opsz" 40;
-    line-height: 0.95;
-    letter-spacing: -0.025em;
-    text-transform: uppercase;
-  }
-
-  .hero {
-    font-weight: 700;
-    font-size: clamp(3.25rem, 11vw, 9rem);
-    font-variation-settings: "wdth" 78, "opsz" 96;
-    line-height: 0.82;
-    letter-spacing: -0.035em;
-    text-transform: uppercase;
-  }
-
+  /* A slip is a ruled block. .sheet was a third name for the same thing and
+     nothing used it, as with .tile and .inverted. */
   .slip,
-  .slip-float,
-  .sheet {
+  .slip-float {
     background: var(--panel);
     border: var(--rule-w) solid var(--rule);
     border-radius: 0;
-  }
-
-  .tile {
-    position: relative;
-    overflow: hidden;
-    background: var(--panel);
-    border: var(--rule-w) solid var(--rule);
-    transition: background-color 90ms linear, color 90ms linear;
-  }
-
-  .inverted {
-    background: var(--ink);
-    color: var(--on-ink);
   }
 
   .hatched,

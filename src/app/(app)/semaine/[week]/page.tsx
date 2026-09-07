@@ -13,8 +13,8 @@ import {
   shiftIsoWeek,
 } from "@/domain/week";
 import { cycleContaining, formatCycleStart } from "@/domain/shopping";
+import { loadProfile } from "@/lib/page-data";
 import { requireUser } from "@/lib/session";
-import { getProfile } from "@/services/profile-service";
 import { pendingFeedback } from "@/services/feedback-service";
 import { getWeekView, listVersions } from "@/services/plan-service";
 import { loadPrepLinks } from "@/services/prep-service";
@@ -34,21 +34,31 @@ export default async function WeekPage({
 }: {
   params: Promise<{ week: string }>;
 }) {
+  // No `decodeURIComponent`. Next hands over params already decoded, so this
+  // was a second decode: harmless on "2026-W37" and a thrown URIError on a
+  // stray percent, which is a 500 where the parse below would have given a 404.
   const { week: rawWeek } = await params;
-  const isoWeek = parseIsoWeek(decodeURIComponent(rawWeek));
+  const isoWeek = parseIsoWeek(rawWeek);
   if (!isoWeek) notFound();
 
   const { ctx } = await requireUser();
   const t = await getTranslations("week");
 
-  const view = await getWeekView(ctx, isoWeek);
-  const versions = await listVersions(ctx, isoWeek);
-  const awaiting = await pendingFeedback(ctx, isoWeek);
-  const prepLinks = await loadPrepLinks(
-    ctx,
-    view.entries.map((entry) => entry.id),
-  );
-  const library = await searchRecipes(ctx, { limit: 30 });
+  /*
+   * Seven independent reads, in parallel. They were awaited one after another,
+   * so the page waited for the sum of seven round trips to the database when it
+   * only needed the longest of them. `loadPrepLinks` is the one exception: it
+   * needs the entry ids the week view returns.
+   */
+  const [view, versions, awaiting, library, locale, profile] =
+    await Promise.all([
+      getWeekView(ctx, isoWeek),
+      listVersions(ctx, isoWeek),
+      pendingFeedback(ctx, isoWeek),
+      searchRecipes(ctx, { limit: 30 }),
+      getLocale(),
+      loadProfile(ctx),
+    ]);
 
   // Titles come from the entry snapshots, but the attended time has to come
   // from the recipe as it is now, because that is what the budget rule reads.
@@ -59,13 +69,33 @@ export default async function WeekPage({
         .filter((id): id is string => id !== null),
     ),
   ];
-  const summaries = await loadRecipeSummaries(ctx, referencedIds);
+
+  const [prepLinks, summaries] = await Promise.all([
+    loadPrepLinks(
+      ctx,
+      view.entries.map((entry) => entry.id),
+    ),
+    loadRecipeSummaries(ctx, referencedIds),
+  ]);
+
   const activeTimeByRecipeId = Object.fromEntries(
-    [...summaries.values()].map((summary) => [summary.id, summary.activeTimeMin]),
+    [...summaries.values()].map((summary) => [
+      summary.id,
+      summary.activeTimeMin,
+    ]),
   );
 
-  const locale = await getLocale();
+  /*
+   * The seven dates of the week, destructured rather than indexed. ESLint now
+   * refuses a non-null assertion, and `isoWeekDates` returns `Date[]` rather
+   * than a seven-tuple, so `dates[0]!` is no longer available. A guard is the
+   * honest replacement until that return type is a tuple: see the report.
+   */
   const dates = isoWeekDates(isoWeek);
+  const [monday] = dates;
+  const sunday = dates[6];
+  if (!monday || !sunday) notFound();
+
   const dayFormatter = new Intl.DateTimeFormat(locale, {
     day: "numeric",
     month: "short",
@@ -74,34 +104,46 @@ export default async function WeekPage({
   const dayLabels = Object.fromEntries(
     ISO_DAYS.map((day) => [
       String(day),
-      dayFormatter.format(dates[day - 1] ?? dates[0]!),
+      dayFormatter.format(dates[day - 1] ?? monday),
     ]),
   );
   const dayNumbers = Object.fromEntries(
     ISO_DAYS.map((day) => [
       String(day),
-      String((dates[day - 1] ?? dates[0]!).getUTCDate()),
+      String((dates[day - 1] ?? monday).getUTCDate()),
     ]),
   );
-  const span = `${dayFormatter.format(dates[0]!)} – ${dayFormatter.format(dates[6]!)} ${isoWeek.year}`;
+  // `formatRange`, so the separator and the order come from the locale rather
+  // than from a French word written into a page.
+  const span = `${dayFormatter.formatRange(monday, sunday)} ${isoWeek.year}`;
 
   const previous = shiftIsoWeek(isoWeek, -1);
   const next = shiftIsoWeek(isoWeek, 1);
-  const today = currentIsoWeek();
 
-  // The tomato day head only makes sense on the week that contains today.
+  /*
+   * Today, on the same clock as every other date on this page.
+   *
+   * `now.getDay()` was the server's local weekday while `dates` is a row of
+   * UTC midnights, so between midnight UTC and midnight locally the tomato
+   * column landed on the wrong day, and on the wrong week entirely for the
+   * hours either side of a Sunday. Both questions ("is today in this week" and
+   * "which column is it") are now answered by comparing the same UTC calendar
+   * day against the dates the columns are drawn from.
+   */
   const now = new Date();
-  const todayDayOfWeek = isSameIsoWeek(isoWeek, today)
-    ? now.getDay() === 0
-      ? 7
-      : now.getDay()
-    : null;
+  const today = currentIsoWeek(now);
+  const todayUtc = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+  );
+  const todayColumn = dates.findIndex((date) => date.getTime() === todayUtc);
+  const todayDayOfWeek = todayColumn === -1 ? null : todayColumn + 1;
 
   // The shop that covers this week, and the column it lands on. Seeing the line
   // while planning is the point: everything after it is on the next shop.
-  const profile = await getProfile(ctx);
   const shoppingCycle = cycleContaining(
-    isSameIsoWeek(isoWeek, today) ? now : dates[0]!,
+    isSameIsoWeek(isoWeek, today) ? now : monday,
     profile.shoppingDay,
   );
   const groceryHref = `/courses/${formatCycleStart(shoppingCycle.startsOn)}`;
@@ -159,10 +201,7 @@ export default async function WeekPage({
             <span aria-hidden="true">&nbsp;&rsaquo;</span>
           </Link>
         </div>
-        <Link
-          href={groceryHref}
-          className="btn btn-primary ml-auto"
-        >
+        <Link href={groceryHref} className="btn btn-primary ml-auto">
           {t("groceryLink")}
         </Link>
       </nav>
@@ -175,6 +214,7 @@ export default async function WeekPage({
           <span className="lede">
             {t("feedbackPrompt", { count: awaiting.length })}
           </span>
+          <span className="hint text-ink">{t("feedbackPromptHelp")}</span>
           <Link
             href={`/semaine/${formatIsoWeek(isoWeek)}/bilan`}
             className="btn ml-auto"

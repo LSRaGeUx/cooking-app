@@ -31,7 +31,9 @@ export default async function LoginPage({
   // them back here, so bouncing them to `/` on the strength of the cookie alone
   // would be an endless round trip between the two screens.
   const session = await getCurrentSession();
-  const stranded = session?.user ? !checkAccess(session.user.email).allowed : false;
+  const stranded = session?.user
+    ? !checkAccess(session.user.email).allowed
+    : false;
   if (session?.user && !stranded && !isOAuthRequest) redirect("/");
 
   const t = await getTranslations("login");

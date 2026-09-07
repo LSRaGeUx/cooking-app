@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { revertToVersionAction } from "@/app/actions/plan-actions";
-import { Feedback, type FeedbackState } from "@/components/feedback";
+import { Feedback } from "@/components/feedback";
+import type { PlanVersionState } from "@/domain/vocabulary";
 import type { IsoWeek } from "@/domain/week";
+import { useActionRunner } from "@/lib/use-action-runner";
 import type { PlanVersionView } from "@/services/plan-service";
 
 /**
@@ -22,45 +22,30 @@ export function VersionHistory({
   versions: readonly PlanVersionView[];
 }) {
   const t = useTranslations("week");
-  const [feedback, setFeedback] = useState<FeedbackState>({});
-  const [pending, setPending] = useState(false);
-  const router = useRouter();
+  const runner = useActionRunner();
 
   if (versions.length === 0) return null;
 
-  const stateLabel: Record<string, string> = {
+  const stateLabel: Record<PlanVersionState, string> = {
     active: t("stateActive"),
     superseded: t("stateSuperseded"),
     pending: t("statePending"),
     rejected: t("stateRejected"),
   };
 
-  async function revert(versionNumber: number): Promise<void> {
-    setPending(true);
-    const result = await revertToVersionAction(week, versionNumber);
-    setPending(false);
-    if (!result.ok) {
-      setFeedback({
-        error: {
-          code: result.code,
-          message: result.message,
-          details: result.details,
-        },
-      });
-      return;
-    }
-    setFeedback({});
-    router.refresh();
-  }
-
   return (
     <section className="page flex flex-col gap-3">
-      <div className="eyebrow eyebrow-rule">{t("versionHistory")}</div>
+      {/* A heading, not a div that looks like one: this section is reachable
+          from the document outline and needs to say what it is. */}
+      <h2 className="eyebrow eyebrow-rule">{t("versionHistory")}</h2>
       <p className="hint">{t("versionsHelp")}</p>
-      <Feedback {...feedback} />
+      <Feedback error={runner.feedback} warnings={runner.warnings} />
       <ol className="ruled flex flex-col">
         {versions.map((version) => (
-          <li key={version.id} className="flex flex-wrap items-center gap-3 py-2.5">
+          <li
+            key={version.id}
+            className="flex flex-wrap items-center gap-3 py-2.5"
+          >
             <span className="micro w-10 text-ink">
               <span className="sr-only">
                 {t("versionLabel", { number: version.versionNumber })}
@@ -70,7 +55,7 @@ export function VersionHistory({
             <span
               className={`chip ${version.state === "active" ? "chip-ok" : ""}`}
             >
-              {stateLabel[version.state] ?? version.state}
+              {labelFor(stateLabel, version.state)}
             </span>
             <span
               className={`chip ${
@@ -84,8 +69,12 @@ export function VersionHistory({
             {version.state !== "active" ? (
               <button
                 type="button"
-                disabled={pending}
-                onClick={() => void revert(version.versionNumber)}
+                disabled={runner.pending}
+                onClick={() =>
+                  void runner.run(() =>
+                    revertToVersionAction(week, version.versionNumber),
+                  )
+                }
                 className="link ml-auto text-xs disabled:opacity-50"
               >
                 {t("revert")}
@@ -96,4 +85,16 @@ export function VersionHistory({
       </ol>
     </section>
   );
+}
+
+/**
+ * `state` is typed `string` on the view, so a state the vocabulary does not
+ * cover would index the record to undefined and render nothing. It falls back
+ * to the raw value, which is at least legible.
+ */
+function labelFor(
+  labels: Record<PlanVersionState, string>,
+  state: string,
+): string {
+  return state in labels ? labels[state as PlanVersionState] : state;
 }

@@ -60,7 +60,11 @@ export async function generateMetadata(): Promise<Metadata> {
         { url: "/icon.svg", type: "image/svg+xml" },
         { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
       ],
-      apple: { url: "/apple-touch-icon.png", type: "image/png", sizes: "180x180" },
+      apple: {
+        url: "/apple-touch-icon.png",
+        type: "image/png",
+        sizes: "180x180",
+      },
     },
   };
 }

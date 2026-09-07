@@ -26,9 +26,7 @@ export async function AuthShell({ children }: { children: React.ReactNode }) {
 
         <span className="eyebrow relative">{app("name")}</span>
 
-        <p className="title relative max-w-[13ch]">
-          {app("tagline")}
-        </p>
+        <p className="title relative max-w-[13ch]">{app("tagline")}</p>
 
         <span
           aria-hidden="true"

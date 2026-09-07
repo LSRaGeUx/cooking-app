@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { useLocale, useTranslations } from "next-intl";
+import { useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { revokeClientAction } from "@/app/actions/agent-actions";
-import { Feedback, type FeedbackState } from "@/components/feedback";
-import type { ConnectedClient } from "@/services/agent-client-service";
+import { Feedback } from "@/components/feedback";
+import { useActionRunner } from "@/lib/use-action-runner";
 
 /**
  * The screen that decides whether the product works at all.
@@ -15,58 +14,70 @@ import type { ConnectedClient } from "@/services/agent-client-service";
  * connection test that says whether anything has actually called, and a revoke
  * button that takes effect immediately rather than at token expiry.
  */
+
+/**
+ * A connected client, with its three timestamps already formatted.
+ *
+ * They arrive as strings rather than as dates on purpose. This component is
+ * server-rendered and then hydrated, and it used to call
+ * `new Date(...).toLocaleString(locale)` on two of them: the server formatted
+ * in the server's timezone, the browser then formatted the same instant in the
+ * reader's, so React reported a hydration mismatch and, until it did, the page
+ * showed a time in whatever zone the container happened to run in.
+ * `lastCallAt` was already handled this way and is the pattern the other two
+ * now follow.
+ */
+export interface ConnectedClientView {
+  readonly consentId: string;
+  readonly clientId: string;
+  readonly name: string | null;
+  readonly scopes: readonly string[];
+  readonly callsLast7Days: number;
+  readonly connectedAt: string;
+  readonly lastSeenAt: string | null;
+}
+
 export function ConnectionPanel({
   endpoint,
   clients,
   lastCallAt,
 }: {
   endpoint: string;
-  clients: readonly ConnectedClient[];
+  clients: readonly ConnectedClientView[];
   lastCallAt: string | null;
 }) {
-  const locale = useLocale();
   const t = useTranslations("agent");
   const consent = useTranslations("consent");
-  const router = useRouter();
+  const runner = useActionRunner();
 
   const [copied, setCopied] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [feedback, setFeedback] = useState<FeedbackState>({});
+  // Cleared on unmount. The timeout used to be left running, so a navigation
+  // inside two seconds of a copy called setState on a gone component.
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (copiedTimer.current !== null) clearTimeout(copiedTimer.current);
+    },
+    [],
+  );
 
   async function copy(text: string): Promise<void> {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      if (copiedTimer.current !== null) clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => setCopied(false), 2000);
     } catch {
       // The address is on screen and selectable; a blocked clipboard is not
       // worth an error banner.
     }
   }
 
-  async function revoke(clientId: string): Promise<void> {
-    setPending(true);
-    const result = await revokeClientAction(clientId);
-    setPending(false);
-    if (!result.ok) {
-      setFeedback({
-        error: {
-          code: result.code,
-          message: result.message,
-          details: result.details,
-        },
-      });
-      return;
-    }
-    setFeedback({});
-    router.refresh();
-  }
-
   const claudeCodeCommand = `claude mcp add --transport http cooking ${endpoint}`;
 
   return (
     <div className="flex flex-col gap-8">
-      <Feedback {...feedback} />
+      <Feedback error={runner.feedback} warnings={runner.warnings} />
 
       {/*
         The one line the whole product depends on being pasted correctly, so it
@@ -144,26 +155,25 @@ export function ConnectionPanel({
                   </span>
                   <button
                     type="button"
-                    disabled={pending}
-                    onClick={() => void revoke(client.clientId)}
+                    disabled={runner.pending}
+                    onClick={() =>
+                      void runner.run(() => revokeClientAction(client.clientId))
+                    }
                     className="btn btn-danger btn-sm"
                   >
                     {t("revoke")}
                   </button>
                 </div>
                 <p className="micro">
-                  {t("connectedAt", {
-                    date: new Date(client.connectedAt).toLocaleString(locale),
-                  })}
+                  {t("connectedAt", { date: client.connectedAt })}
                   {" · "}
                   {client.lastSeenAt
-                    ? t("lastSeen", {
-                        date: new Date(client.lastSeenAt).toLocaleString(locale),
-                      })
+                    ? t("lastSeen", { date: client.lastSeenAt })
                     : t("neverSeen")}
                   {" · "}
                   {t("calls7Days", { count: client.callsLast7Days })}
                 </p>
+                <h3 className="sr-only">{t("scopes")}</h3>
                 <ul className="flex flex-wrap gap-1">
                   {client.scopes.map((scope) => (
                     <li key={scope} className="chip chip-agent">
@@ -186,7 +196,10 @@ export function ConnectionPanel({
         <p className="hint">{t("promptPackHelp")}</p>
         <ul className="flex flex-wrap gap-2">
           <li>
-            <a href="/agent-pack/house-rules.md" className="btn btn-quiet btn-sm">
+            <a
+              href="/agent-pack/house-rules.md"
+              className="btn btn-quiet btn-sm"
+            >
               {t("promptPackRules")}
             </a>
           </li>
@@ -196,7 +209,10 @@ export function ConnectionPanel({
             </a>
           </li>
           <li>
-            <a href="/agent-pack/weekly-review.md" className="btn btn-quiet btn-sm">
+            <a
+              href="/agent-pack/weekly-review.md"
+              className="btn btn-quiet btn-sm"
+            >
               {t("promptPackReview")}
             </a>
           </li>

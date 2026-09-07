@@ -75,7 +75,12 @@ interface Point {
   readonly y: number;
 }
 
-function centreOf(rect: { left: number; top: number; width: number; height: number }): Point {
+function centreOf(rect: {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}): Point {
   return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 }
 

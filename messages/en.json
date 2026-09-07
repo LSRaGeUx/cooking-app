@@ -17,11 +17,11 @@
     "skipToContent": "Skip to content",
     "groupPlan": "Cooking",
     "groupSettings": "Settings",
-    "more": "More",
     "theme": "Theme",
     "themeLight": "Light",
     "themeDark": "Dark",
-    "weekBadge": "W{week} · {year}"
+    "weekBadge": "W{week} · {year}",
+    "language": "Language"
   },
   "common": {
     "save": "Save",
@@ -94,12 +94,10 @@
     "next": "Next week",
     "today": "Current week",
     "groceryLink": "Grocery list",
-    "emptySlot": "Empty",
     "skippedSlot": "Skipped, leave empty",
     "assign": "Add a recipe",
     "clear": "Clear the slot",
     "duplicate": "Duplicate to…",
-    "move": "Move to…",
     "editEntry": "Servings and note",
     "noPlannedSlots": "No planned slots. Set up your grid to get started.",
     "configureSlots": "Set up slots",
@@ -112,7 +110,6 @@
     "versionHistory": "Version history",
     "versionsHelp": "Every change creates a new version. Nothing is overwritten, everything can be undone.",
     "revert": "Go back to this version",
-    "reverted": "Version restored as a new version.",
     "createdByUser": "You",
     "createdByAgent": "Your agent",
     "stateActive": "active",
@@ -123,13 +120,12 @@
     "noteLabel": "Note",
     "notePlaceholder": "Double it for leftovers, get bread…",
     "prepSource": "Also feeds {count, plural, one {# other meal} other {# other meals}}",
-    "prepDependent": "Reheated from {day}",
+    "prepDependent": "Reheated",
     "prepUnsourced": "Its cooking session is gone",
     "prepUnsourcedBanner": "{count, plural, one {# meal depends} other {# meals depend}} on a cooking session that no longer exists. They are kept: replan them or link them elsewhere.",
     "prepLink": "Reheated from…",
     "prepLinkHelp": "A meal can be served from another meal cooked the same day or earlier. The grocery list then counts its ingredients only once.",
     "prepLinkNone": "Cooked on the day",
-    "prepUnlink": "Unlink",
     "dragHint": "Drag a meal to move it. With a keyboard: tab to the handle, space to pick up, arrows to go from slot to slot, space to drop, escape to cancel.",
     "dragHandle": "Move {title}",
     "warnings": "Worth knowing",
@@ -175,13 +171,20 @@
     "save": "Save this meal",
     "clear": "Clear the feedback",
     "saved": "Saved.",
-    "quickAsk": "{title}, {day}: what did you do with it?",
     "signals": "What the data says",
     "signalsHelp": "Observations, not conclusions. Your agent can turn them into facts, which you then confirm.",
     "noSignals": "Nothing to report yet.",
     "budgetSuggestion": "{day} {meal}: {overruns} meals went over the {current} min budget. Raise it to {suggested} min?",
     "budgetApply": "Apply",
-    "budgetApplied": "Budget updated."
+    "budgetApplied": "Budget updated.",
+    "signalNames": {
+      "NEVER_COOKED_THOUGH_PLANNED": "Planned, never cooked",
+      "SLOT_OVERRUNS": "Slot runs over regularly",
+      "LOW_RATED_STILL_IN_LIBRARY": "Low rated, still in the library"
+    },
+    "signalMessages": {
+      "SLOT_OVERRUNS": "{day} {meal} often runs past its {current} min budget. {suggested} min would match what actually happens."
+    }
   },
   "pantry": {
     "title": "Pantry",
@@ -231,9 +234,7 @@
     "rejectReasonPlaceholder": "Too much fish, not enough time on Tuesday…",
     "rejectReasonHelp": "Your reason is kept and passed to the agent. It is the most direct way to improve the next proposal.",
     "rejectSubmit": "Reject the proposal",
-    "working": "Working…",
-    "accepted": "Proposal accepted.",
-    "rejected": "Proposal rejected."
+    "working": "Working…"
   },
   "recipes": {
     "title": "Recipes",
@@ -260,7 +261,8 @@
       "noSteps": "No steps recorded.",
       "revision": "Revision {number}",
       "deleted": "This recipe is deleted. It stays visible for history.",
-      "allergenWarning": "Contains a declared allergen"
+      "restore": "Restore this recipe",
+      "restoreHelp": "A deleted recipe is kept for thirty days before it is erased for good."
     },
     "form": {
       "titleNew": "New recipe",
@@ -308,8 +310,10 @@
       "removeStep": "Remove this step",
       "noIngredients": "No ingredients yet.",
       "noSteps": "No steps yet.",
-      "created": "Recipe saved.",
-      "updated": "Recipe updated."
+      "importUrl": "Recipe address"
+    },
+    "import": {
+      "defaultTitle": "Imported recipe"
     }
   },
   "grocery": {
@@ -411,8 +415,6 @@
     "weeklyBudgetCurrency": "Currency",
     "weeklyBudgetHelp": "Indicative. Ingredient prices are not tracked.",
     "agentAuthority": "Agent authority",
-    "agentAuthorityProposal": "Proposal, for you to approve",
-    "agentAuthorityDirect": "Direct, with history and undo",
     "agentAuthorityHelp": "In proposal mode, a week written by an agent waits for your agreement. In direct mode, it applies at once and stays reversible.",
     "allergens": "Allergens",
     "allergensHelp": "A strict allergen is the one absolute block in the system. List explicitly the words that must trigger it: nothing is guessed beyond this list.",
@@ -424,10 +426,32 @@
     "matchesHelp": "Comma separated.",
     "exclusions": "Refused ingredients",
     "exclusionsHelp": "Produces a warning, never a block.",
-    "equipment": "Equipment",
     "equipmentHelp": "A recipe that needs equipment you have not declared produces a warning.",
     "equipmentOther": "Other equipment",
-    "strictWarning": "A strict allergen can never be worked around, by you or by an agent."
+    "strictWarning": "A strict allergen can never be worked around, by you or by an agent.",
+    "equipmentTitle": "Equipment",
+    "equipment": {
+      "oven": "Oven",
+      "hob": "Hob",
+      "microwave": "Microwave",
+      "freezer": "Freezer",
+      "blender": "Blender",
+      "food_processor": "Food processor",
+      "stand_mixer": "Stand mixer",
+      "pressure_cooker": "Pressure cooker",
+      "slow_cooker": "Slow cooker",
+      "air_fryer": "Air fryer",
+      "wok": "Wok",
+      "cast_iron": "Cast iron pot",
+      "grill": "Grill",
+      "steamer": "Steamer",
+      "scale": "Scale",
+      "thermometer": "Thermometer"
+    },
+    "agentAuthorities": {
+      "proposal": "Proposal, for you to approve",
+      "direct": "Direct, with history and undo"
+    }
   },
   "facts": {
     "title": "Facts",
@@ -529,8 +553,6 @@
     "promptPackRules": "House rules",
     "promptPackPlan": "Plan a week",
     "promptPackReview": "Review the week",
-    "authority": "Agent authority",
-    "authorityHelp": "Set from the profile.",
     "reviewFacts": "Facts to confirm",
     "reviewFactsHelp": "Your agent can propose facts about you. They count in planning but stay marked until you confirm them.",
     "activity": "Agent activity",
@@ -557,7 +579,7 @@
     "exportDownload": "Download the export",
     "delete": "Delete the account",
     "deleteHelp": "Permanently erases all your data and revokes every connected agent. There is no grace period and no way back.",
-    "deleteConfirmLabel": "Type DELETE to confirm",
+    "deleteConfirmLabel": "Type {word} to confirm",
     "deleteConfirmWord": "DELETE",
     "deleteSubmit": "Delete permanently",
     "deleting": "Deleting…"
@@ -575,7 +597,11 @@
       "FACT_CAP_REACHED": "You have {active} active facts against a cap of {cap}. Retire one that is no longer useful first.",
       "MISSING_SCOPE": "This connection lacks the permissions needed: {missing}. Reconnect the client from the Agent screen to grant them.",
       "CLIENT_REVOKED": "This access was revoked. The client has to connect again from the Agent screen.",
-      "RATE_LIMITED": "This client went over {limit} calls per minute. Wait a minute before trying again."
+      "RATE_LIMITED": "This client went over {limit} calls per minute. Wait a minute before trying again.",
+      "VALIDATION": "One of the values sent is not valid.",
+      "VALIDATION_FIELD": "The field “{field}” is not valid.",
+      "NETWORK": "The change was not sent: the connection failed. It is not saved. Try again.",
+      "DELETE_CONFIRMATION": "Type the confirmation word exactly as shown. This permanently erases all your data."
     },
     "STRICT_ALLERGEN": "Strict allergen",
     "SLOT_NOT_PLANNED": "Slot not planned",
@@ -590,8 +616,21 @@
     "RATE_LIMITED": "Too many calls",
     "FACT_CAP_REACHED": "Fact cap reached",
     "VALIDATION": "Invalid data",
+    "PARSE_FAILED": "That page answered, but no recipe could be read from it. Check the address points at the recipe itself, or enter it by hand.",
+    "UPSTREAM_FAILED": "The site did not respond. The address is not at fault: try again later, or enter the recipe by hand.",
     "NOT_FOUND": "Not found",
-    "FORBIDDEN": "Access refused"
+    "FORBIDDEN": "Access refused",
+    "INTERNAL": "Internal error",
+    "NETWORK": "Nothing was sent",
+    "DELETE_CONFIRMATION": "Wrong confirmation word",
+    "screenTitle": "This screen could not be shown",
+    "screenHelp": "Reading the data failed. Nothing was changed: try again, or go back.",
+    "retry": "Try again",
+    "digest": "Error reference:",
+    "notFoundTitle": "This page does not exist",
+    "notFoundHelp": "The link may be an old one, or the week or recipe it names is gone.",
+    "fatalTitle": "The application could not start",
+    "fatalHelp": "Something failed before the page could be shown at all. Try again; if it persists, restart the instance."
   },
   "warnings": {
     "messages": {
@@ -600,7 +639,8 @@
       "REPEAT_RECIPE_THIS_WEEK": "\"{recipeTitle}\" appears {count} times this week, while your variety preference is {variety} out of 5.",
       "SERVINGS_SHORTFALL": "\"{recipeTitle}\" is planned for {servings} servings, and {drawn} more are drawn for other meals. Plan {required} servings in total, or draw less from it.",
       "NOT_BATCH_FRIENDLY": "\"{recipeTitle}\" is not marked as doubling and keeping well. It can still be a cooking session, but check it lasts until the meal that depends on it.",
-      "TIME_BUDGET_TIGHT": "{slot} goes {over} min over its budget ({active} min against a budget of {budget} min), which is still inside the tolerance."
+      "TIME_BUDGET_TIGHT": "{slot} goes {over} min over its budget ({active} min against a budget of {budget} min), which is still inside the tolerance.",
+      "SLOT_NO_LONGER_PLANNED": "{slot} is no longer a planned slot, but the meal that was in it has been kept. Clear the slot, or set it back to planned to see it in the grid again."
     },
     "DIET_MISMATCH": "Diet",
     "EXCLUDED_INGREDIENT": "Ingredient to avoid",
@@ -609,11 +649,7 @@
     "SERVINGS_SHORTFALL": "Not enough servings",
     "NOT_BATCH_FRIENDLY": "Recipe not suited to batching",
     "BUDGET_EXCEEDED": "Budget exceeded",
-    "TIME_BUDGET_TIGHT": "Time budget is tight"
-  },
-  "home": {
-    "status": "Plan your week, on your own or with your agent.",
-    "mcpReady": "MCP endpoint",
-    "docs": "The full specification lives in the docs folder."
+    "TIME_BUDGET_TIGHT": "Time budget is tight",
+    "SLOT_NO_LONGER_PLANNED": "Slot no longer planned"
   }
 }

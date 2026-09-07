@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import { factInputSchema, factMetadataSchema } from "@/domain/schemas";
 import { requireUser } from "@/lib/session";
 import {
   confirmFact,
@@ -13,6 +15,8 @@ import {
 } from "@/services/fact-service";
 import { runAction, type ActionResult } from "./result";
 
+const factIdSchema = z.uuid();
+
 function revalidateFacts(): void {
   revalidatePath("/faits");
   revalidatePath("/profil/apercu");
@@ -22,37 +26,56 @@ export async function createFactAction(
   input: unknown,
 ): Promise<ActionResult<FactView>> {
   const { ctx } = await requireUser();
-  const result = await runAction(() => createFact(ctx, input));
-  if (result.ok) revalidateFacts();
-  return result;
+  return runAction(async () => {
+    const saved = await createFact(ctx, factInputSchema.parse(input));
+    revalidateFacts();
+    return saved;
+  });
 }
 
 export async function confirmFactAction(
   factId: string,
 ): Promise<ActionResult<FactView>> {
   const { ctx } = await requireUser();
-  const result = await runAction(() => confirmFact(ctx, factId));
-  if (result.ok) revalidateFacts();
-  return result;
+  return runAction(async () => {
+    const saved = await confirmFact(ctx, factIdSchema.parse(factId));
+    revalidateFacts();
+    return saved;
+  });
 }
 
+/**
+ * The in-place edit: how a fact is filed and how sure we are of it. Deliberately
+ * narrow. The statement and the polarity are the fact's meaning, and changing a
+ * meaning in place is what the supersede path exists to prevent, so the facts
+ * screen calls this when only the filing changed and `supersedeFactAction` when
+ * the claim itself did.
+ */
 export async function updateFactMetadataAction(
   factId: string,
   changes: unknown,
 ): Promise<ActionResult<FactView>> {
   const { ctx } = await requireUser();
-  const result = await runAction(() => updateFactMetadata(ctx, factId, changes));
-  if (result.ok) revalidateFacts();
-  return result;
+  return runAction(async () => {
+    const saved = await updateFactMetadata(
+      ctx,
+      factIdSchema.parse(factId),
+      factMetadataSchema.parse(changes),
+    );
+    revalidateFacts();
+    return saved;
+  });
 }
 
 export async function retireFactAction(
   factId: string,
 ): Promise<ActionResult<FactView>> {
   const { ctx } = await requireUser();
-  const result = await runAction(() => retireFact(ctx, factId));
-  if (result.ok) revalidateFacts();
-  return result;
+  return runAction(async () => {
+    const saved = await retireFact(ctx, factIdSchema.parse(factId));
+    revalidateFacts();
+    return saved;
+  });
 }
 
 /**
@@ -64,7 +87,13 @@ export async function supersedeFactAction(
   input: unknown,
 ): Promise<ActionResult<SupersedeResult>> {
   const { ctx } = await requireUser();
-  const result = await runAction(() => supersedeFact(ctx, factId, input));
-  if (result.ok) revalidateFacts();
-  return result;
+  return runAction(async () => {
+    const saved = await supersedeFact(
+      ctx,
+      factIdSchema.parse(factId),
+      factInputSchema.parse(input),
+    );
+    revalidateFacts();
+    return saved;
+  });
 }

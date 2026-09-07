@@ -1,6 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import { manualLineInputSchema } from "@/domain/schemas";
+import { parseCycleStart } from "@/domain/shopping";
 import { requireUser } from "@/lib/session";
 import {
   addManualLine,
@@ -10,9 +13,20 @@ import {
   setLineChecked,
   type GenerateResult,
   type GroceryLineView,
-  type ManualLineInput,
 } from "@/services/grocery-service";
 import { runAction, type ActionResult } from "./result";
+
+/**
+ * A cycle start is the identity of a grocery list and goes straight into a
+ * revalidation path, so it is checked to be a real date rather than trusted to
+ * look like one. `parseCycleStart` refuses 2026-02-30 as well as gibberish.
+ */
+const cycleStartSchema = z
+  .string()
+  .refine((value) => parseCycleStart(value) !== null);
+
+const listIdSchema = z.uuid();
+const lineIdSchema = z.uuid();
 
 /** `cycleStart` is the `yyyy-mm-dd` the shopping cycle begins on. */
 function revalidateList(cycleStart: string): void {
@@ -23,9 +37,12 @@ export async function generateGroceryListAction(
   cycleStart: string,
 ): Promise<ActionResult<GenerateResult>> {
   const { ctx } = await requireUser();
-  const result = await runAction(() => generateGroceryList(ctx, cycleStart));
-  if (result.ok) revalidateList(cycleStart);
-  return result;
+  return runAction(async () => {
+    const cycle = cycleStartSchema.parse(cycleStart);
+    const result = await generateGroceryList(ctx, cycle);
+    revalidateList(cycle);
+    return result;
+  });
 }
 
 /**
@@ -39,18 +56,27 @@ export async function setLineCheckedAction(
   checked: boolean,
 ): Promise<ActionResult<void>> {
   const { ctx } = await requireUser();
-  return runAction(() => setLineChecked(ctx, lineId, checked));
+  return runAction(() =>
+    setLineChecked(ctx, lineIdSchema.parse(lineId), z.boolean().parse(checked)),
+  );
 }
 
 export async function addManualLineAction(
   cycleStart: string,
   listId: string,
-  input: ManualLineInput,
+  input: unknown,
 ): Promise<ActionResult<GroceryLineView>> {
   const { ctx } = await requireUser();
-  const result = await runAction(() => addManualLine(ctx, listId, input));
-  if (result.ok) revalidateList(cycleStart);
-  return result;
+  return runAction(async () => {
+    const cycle = cycleStartSchema.parse(cycleStart);
+    const line = await addManualLine(
+      ctx,
+      listIdSchema.parse(listId),
+      manualLineInputSchema.parse(input),
+    );
+    revalidateList(cycle);
+    return line;
+  });
 }
 
 export async function deleteLineAction(
@@ -58,9 +84,11 @@ export async function deleteLineAction(
   lineId: string,
 ): Promise<ActionResult<void>> {
   const { ctx } = await requireUser();
-  const result = await runAction(() => deleteLine(ctx, lineId));
-  if (result.ok) revalidateList(cycleStart);
-  return result;
+  return runAction(async () => {
+    const cycle = cycleStartSchema.parse(cycleStart);
+    await deleteLine(ctx, lineIdSchema.parse(lineId));
+    revalidateList(cycle);
+  });
 }
 
 export async function archiveGroceryListAction(
@@ -68,7 +96,9 @@ export async function archiveGroceryListAction(
   listId: string,
 ): Promise<ActionResult<void>> {
   const { ctx } = await requireUser();
-  const result = await runAction(() => archiveGroceryList(ctx, listId));
-  if (result.ok) revalidateList(cycleStart);
-  return result;
+  return runAction(async () => {
+    const cycle = cycleStartSchema.parse(cycleStart);
+    await archiveGroceryList(ctx, listIdSchema.parse(listId));
+    revalidateList(cycle);
+  });
 }

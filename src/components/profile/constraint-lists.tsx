@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   createAllergenAction,
@@ -11,8 +10,14 @@ import {
   deleteEquipmentAction,
   deleteExclusionAction,
 } from "@/app/actions/profile-actions";
-import { Feedback, type FeedbackState } from "@/components/feedback";
-import { EQUIPMENT_VOCABULARY } from "@/domain/vocabulary";
+import { Feedback } from "@/components/feedback";
+import { slugify } from "@/domain/slug";
+import {
+  ALLERGEN_SEVERITIES,
+  EQUIPMENT_KEYS,
+  type AllergenSeverityValue,
+} from "@/domain/vocabulary";
+import { useActionRunner } from "@/lib/use-action-runner";
 
 /**
  * Allergens, refused ingredients, and equipment.
@@ -26,14 +31,19 @@ import { EQUIPMENT_VOCABULARY } from "@/domain/vocabulary";
 export interface AllergenRow {
   readonly id: string;
   readonly name: string;
-  readonly severity: string;
-  readonly matches: string[];
+  readonly severity: AllergenSeverityValue;
+  /** The words that fire this allergen. Shown, because nothing is guessed. */
+  readonly matches: readonly string[];
 }
 
+/**
+ * `matches` used to be an optional field here as well and was never read: an
+ * exclusion's trigger words are sent when it is created and not displayed
+ * back.
+ */
 export interface NamedRow {
   readonly id: string;
   readonly name: string;
-  readonly matches?: string[];
 }
 
 export interface EquipmentRow {
@@ -53,48 +63,30 @@ export function ConstraintLists({
 }) {
   const t = useTranslations("profile");
   const common = useTranslations("common");
-  const router = useRouter();
-
-  const [feedback, setFeedback] = useState<FeedbackState>({});
-  const [pending, setPending] = useState(false);
+  const runner = useActionRunner();
 
   const [allergenName, setAllergenName] = useState("");
-  const [allergenSeverity, setAllergenSeverity] = useState("strict");
+  const [allergenSeverity, setAllergenSeverity] =
+    useState<AllergenSeverityValue>("strict");
   const [allergenMatches, setAllergenMatches] = useState("");
   const [exclusionName, setExclusionName] = useState("");
   const [exclusionMatches, setExclusionMatches] = useState("");
   const [customEquipment, setCustomEquipment] = useState("");
 
-  async function run(
-    action: () => Promise<{
-      ok: boolean;
-      code?: string;
-      message?: string;
-      details?: Record<string, unknown>;
-    }>,
-  ) {
-    setPending(true);
-    const result = await action();
-    setPending(false);
-    if (!result.ok) {
-      setFeedback({
-        error: {
-          code: result.code ?? "INTERNAL",
-          message: result.message ?? "",
-          details: result.details,
-        },
-      });
-      return false;
-    }
-    setFeedback({});
-    router.refresh();
-    return true;
-  }
-
   const declared = new Set(equipment.map((row) => row.key));
+  // Evaluated once. The same filter used to run twice, once to decide whether
+  // to render the section and once to render it.
+  const custom = useMemo(
+    () =>
+      equipment.filter(
+        (row) => !(EQUIPMENT_KEYS as readonly string[]).includes(row.key),
+      ),
+    [equipment],
+  );
+
   return (
     <div className="flex flex-col gap-8">
-      <Feedback {...feedback} />
+      <Feedback error={runner.feedback} warnings={runner.warnings} />
 
       <section className="flex flex-col gap-3">
         <div className="flex flex-col gap-1">
@@ -119,18 +111,16 @@ export function ConstraintLists({
                     allergen.severity === "strict" ? "chip-danger" : "chip-warn"
                   }`}
                 >
-                  {allergen.severity === "strict"
-                    ? t("severityStrict")
-                    : t("severityAvoid")}
+                  {severityLabel(t, allergen.severity)}
                 </span>
                 {allergen.matches.length > 0 ? (
                   <span className="micro">{allergen.matches.join(", ")}</span>
                 ) : null}
                 <button
                   type="button"
-                  disabled={pending}
+                  disabled={runner.pending}
                   onClick={() =>
-                    void run(() => deleteAllergenAction(allergen.id))
+                    void runner.run(() => deleteAllergenAction(allergen.id))
                   }
                   className="btn btn-ghost btn-sm ml-auto"
                 >
@@ -154,11 +144,16 @@ export function ConstraintLists({
             <span>{t("allergenSeverity")}</span>
             <select
               value={allergenSeverity}
-              onChange={(event) => setAllergenSeverity(event.target.value)}
+              onChange={(event) =>
+                setAllergenSeverity(event.target.value as AllergenSeverityValue)
+              }
               className="field"
             >
-              <option value="strict">{t("severityStrict")}</option>
-              <option value="avoid">{t("severityAvoid")}</option>
+              {ALLERGEN_SEVERITIES.map((severity) => (
+                <option key={severity} value={severity}>
+                  {severityLabel(t, severity)}
+                </option>
+              ))}
             </select>
           </label>
           <label className="label min-w-[12rem] flex-1">
@@ -172,20 +167,22 @@ export function ConstraintLists({
           </label>
           <button
             type="button"
-            disabled={pending || allergenName.trim().length === 0}
-            onClick={async () => {
-              const ok = await run(() =>
-                createAllergenAction({
-                  name: allergenName.trim(),
-                  severity: allergenSeverity,
-                  matches: splitList(allergenMatches),
-                }),
-              );
-              if (ok) {
-                setAllergenName("");
-                setAllergenMatches("");
-              }
-            }}
+            disabled={runner.pending || allergenName.trim().length === 0}
+            onClick={() =>
+              void runner
+                .run(() =>
+                  createAllergenAction({
+                    name: allergenName.trim(),
+                    severity: allergenSeverity,
+                    matches: splitList(allergenMatches),
+                  }),
+                )
+                .then((result) => {
+                  if (!result?.ok) return;
+                  setAllergenName("");
+                  setAllergenMatches("");
+                })
+            }
             className="btn btn-quiet"
           >
             {common("add")}
@@ -211,10 +208,10 @@ export function ConstraintLists({
                 <span>{exclusion.name}</span>
                 <button
                   type="button"
-                  disabled={pending}
+                  disabled={runner.pending}
                   aria-label={common("delete")}
                   onClick={() =>
-                    void run(() => deleteExclusionAction(exclusion.id))
+                    void runner.run(() => deleteExclusionAction(exclusion.id))
                   }
                   className="px-1.5 text-faint transition-colors hover:text-danger-ink disabled:opacity-30"
                 >
@@ -244,19 +241,21 @@ export function ConstraintLists({
           </label>
           <button
             type="button"
-            disabled={pending || exclusionName.trim().length === 0}
-            onClick={async () => {
-              const ok = await run(() =>
-                createExclusionAction({
-                  name: exclusionName.trim(),
-                  matches: splitList(exclusionMatches),
-                }),
-              );
-              if (ok) {
-                setExclusionName("");
-                setExclusionMatches("");
-              }
-            }}
+            disabled={runner.pending || exclusionName.trim().length === 0}
+            onClick={() =>
+              void runner
+                .run(() =>
+                  createExclusionAction({
+                    name: exclusionName.trim(),
+                    matches: splitList(exclusionMatches),
+                  }),
+                )
+                .then((result) => {
+                  if (!result?.ok) return;
+                  setExclusionName("");
+                  setExclusionMatches("");
+                })
+            }
             className="btn btn-quiet"
           >
             {common("add")}
@@ -266,70 +265,74 @@ export function ConstraintLists({
 
       <section className="flex flex-col gap-3 pt-2">
         <div className="flex flex-col gap-1">
-          <h2 className="eyebrow eyebrow-rule">{t("equipment")}</h2>
+          {/*
+            `profile.equipment` is now the object holding one name per key, so
+            the section heading has its own key. The domain used to ship a
+            French label beside each key and this screen rendered it as it
+            stood, which is how the English interface showed French.
+          */}
+          <h2 className="eyebrow eyebrow-rule">{t("equipmentTitle")}</h2>
           <p className="hint">{t("equipmentHelp")}</p>
         </div>
 
         <ul className="flex flex-wrap gap-2">
-          {EQUIPMENT_VOCABULARY.map((item) => {
-            const owned = equipment.find((row) => row.key === item.key);
+          {EQUIPMENT_KEYS.map((key) => {
+            const owned = equipment.find((row) => row.key === key);
+            // The label is UI copy and comes from the catalogues, keyed by the
+            // key the domain owns.
+            const label = t(`equipment.${key}`);
             return (
-              <li key={item.key}>
+              <li key={key}>
                 <button
                   type="button"
-                  disabled={pending}
-                  aria-pressed={declared.has(item.key)}
-                  onClick={() =>
-                    void run(() =>
-                      owned
-                        ? deleteEquipmentAction(owned.id)
-                        : createEquipmentAction({
-                            key: item.key,
-                            label: item.label,
-                          }),
-                    )
-                  }
+                  disabled={runner.pending}
+                  aria-pressed={declared.has(key)}
+                  onClick={() => {
+                    // Two calls rather than a ternary inside one: the two
+                    // actions return different shapes and `run` is generic in
+                    // that shape.
+                    if (owned) {
+                      void runner.run(() => deleteEquipmentAction(owned.id));
+                      return;
+                    }
+                    void runner.run(() =>
+                      createEquipmentAction({ key, label }),
+                    );
+                  }}
                   className={`btn btn-sm ${
-                    declared.has(item.key)
+                    declared.has(key)
                       ? "border-olive-line bg-olive-soft text-olive-ink"
                       : "btn-quiet"
                   }`}
                 >
-                  {item.label}
+                  {label}
                 </button>
               </li>
             );
           })}
         </ul>
 
-        {equipment.filter(
-          (row) => !EQUIPMENT_VOCABULARY.some((item) => item.key === row.key),
-        ).length > 0 ? (
+        {custom.length > 0 ? (
           <ul className="flex flex-wrap gap-2">
-            {equipment
-              .filter(
-                (row) =>
-                  !EQUIPMENT_VOCABULARY.some((item) => item.key === row.key),
-              )
-              .map((row) => (
-                <li
-                  key={row.id}
-                  className="flex items-center gap-2 rounded-[2px] border border-olive-line bg-olive-soft px-2 py-1 text-sm text-olive-ink"
+            {custom.map((row) => (
+              <li
+                key={row.id}
+                className="flex items-center gap-2 rounded-[2px] border border-olive-line bg-olive-soft px-2 py-1 text-sm text-olive-ink"
+              >
+                <span>{row.label ?? row.key}</span>
+                <button
+                  type="button"
+                  disabled={runner.pending}
+                  aria-label={common("delete")}
+                  onClick={() =>
+                    void runner.run(() => deleteEquipmentAction(row.id))
+                  }
+                  className="px-1.5 text-faint transition-colors hover:text-danger-ink disabled:opacity-30"
                 >
-                  <span>{row.label ?? row.key}</span>
-                  <button
-                    type="button"
-                    disabled={pending}
-                    aria-label={common("delete")}
-                    onClick={() =>
-                      void run(() => deleteEquipmentAction(row.id))
-                    }
-                    className="px-1.5 text-faint transition-colors hover:text-danger-ink disabled:opacity-30"
-                  >
-                    &times;
-                  </button>
-                </li>
-              ))}
+                  &times;
+                </button>
+              </li>
+            ))}
           </ul>
         ) : null}
 
@@ -344,13 +347,24 @@ export function ConstraintLists({
           </label>
           <button
             type="button"
-            disabled={pending || customEquipment.trim().length === 0}
-            onClick={async () => {
+            disabled={runner.pending || customEquipment.trim().length === 0}
+            onClick={() => {
               const label = customEquipment.trim();
-              const ok = await run(() =>
-                createEquipmentAction({ key: slugify(label), label }),
-              );
-              if (ok) setCustomEquipment("");
+              void runner
+                .run(() =>
+                  // The domain's `slugify`, shared with the slot editor. Both
+                  // components used to carry a copy of it, so the same label
+                  // could produce two different keys depending on which screen
+                  // typed it. The fallback is what a label of pure punctuation
+                  // becomes, because the schema refuses an empty key.
+                  createEquipmentAction({
+                    key: slugify(label, "equipement"),
+                    label,
+                  }),
+                )
+                .then((result) => {
+                  if (result?.ok) setCustomEquipment("");
+                });
             }}
             className="btn btn-quiet"
           >
@@ -362,21 +376,17 @@ export function ConstraintLists({
   );
 }
 
+/** The two severities, worded from the catalogues rather than by a ternary. */
+function severityLabel(
+  t: ReturnType<typeof useTranslations>,
+  severity: AllergenSeverityValue,
+): string {
+  return severity === "strict" ? t("severityStrict") : t("severityAvoid");
+}
+
 function splitList(value: string): string[] {
   return value
     .split(",")
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
-}
-
-function slugify(label: string): string {
-  return (
-    label
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "")
-      .slice(0, 40) || "equipement"
-  );
 }

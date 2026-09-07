@@ -1,9 +1,7 @@
-import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import { RecipeForm } from "@/components/recipes/recipe-form";
-import { isDomainError } from "@/domain/errors";
+import { loadRecipeOr404 } from "@/lib/page-data";
 import { requireUser } from "@/lib/session";
-import { getRecipe, type RecipeDetail } from "@/services/recipe-service";
 
 export default async function EditRecipePage({
   params,
@@ -14,13 +12,8 @@ export default async function EditRecipePage({
   const { ctx } = await requireUser();
   const t = await getTranslations("recipes.form");
 
-  let detail: RecipeDetail;
-  try {
-    detail = await getRecipe(ctx, id);
-  } catch (error) {
-    if (isDomainError(error) && error.code === "RECIPE_NOT_FOUND") notFound();
-    throw error;
-  }
+  // One helper, shared with the detail page, which carried the same try/catch.
+  const detail = await loadRecipeOr404(ctx, id);
 
   return (
     <div className="page mx-auto flex w-full max-w-4xl flex-col gap-6">

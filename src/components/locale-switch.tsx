@@ -1,7 +1,6 @@
 "use client";
 
-import { useLocale } from "next-intl";
-import { useRouter } from "next/navigation";
+import { useLocale, useTranslations } from "next-intl";
 import { useTransition } from "react";
 import { setLocaleAction } from "@/app/actions/locale-actions";
 import { locales } from "@/i18n/config";
@@ -12,11 +11,13 @@ import { locales } from "@/i18n/config";
  */
 export function LocaleSwitch() {
   const current = useLocale();
-  const router = useRouter();
+  const t = useTranslations("nav");
   const [pending, startTransition] = useTransition();
 
   return (
-    <div className="segmented" role="group" aria-label="Language">
+    // Was `aria-label="Language"`, hardcoded in English, on the one control in
+    // the application whose entire job is not to be in one language.
+    <div className="segmented" role="group" aria-label={t("language")}>
       {locales.map((locale) => (
         <button
           key={locale}
@@ -25,10 +26,11 @@ export function LocaleSwitch() {
           disabled={pending || locale === current}
           aria-current={locale === current ? "true" : undefined}
           onClick={() =>
-            startTransition(async () => {
-              await setLocaleAction(locale);
-              router.refresh();
-            })
+            // No `router.refresh()`: the action already calls
+            // `revalidatePath("/", "layout")`, which purges the client cache
+            // and re-renders the tree. Refreshing as well fetched the same
+            // page twice on every switch.
+            startTransition(() => setLocaleAction(locale))
           }
           className={locale === current ? "" : "cursor-pointer"}
         >

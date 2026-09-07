@@ -17,11 +17,11 @@
     "skipToContent": "Aller au contenu",
     "groupPlan": "Cuisine",
     "groupSettings": "Réglages",
-    "more": "Plus",
     "theme": "Thème",
     "themeLight": "Clair",
     "themeDark": "Sombre",
-    "weekBadge": "S{week} · {year}"
+    "weekBadge": "S{week} · {year}",
+    "language": "Langue"
   },
   "common": {
     "save": "Enregistrer",
@@ -94,12 +94,10 @@
     "next": "Semaine suivante",
     "today": "Semaine en cours",
     "groceryLink": "Liste de courses",
-    "emptySlot": "Vide",
     "skippedSlot": "Sauté, à ne pas remplir",
     "assign": "Ajouter une recette",
     "clear": "Vider le créneau",
     "duplicate": "Dupliquer vers…",
-    "move": "Déplacer vers…",
     "editEntry": "Portions et note",
     "noPlannedSlots": "Aucun créneau planifié. Configurez votre grille pour commencer.",
     "configureSlots": "Configurer les créneaux",
@@ -112,7 +110,6 @@
     "versionHistory": "Historique des versions",
     "versionsHelp": "Chaque modification crée une nouvelle version. Rien n'est écrasé, tout est réversible.",
     "revert": "Revenir à cette version",
-    "reverted": "Version restaurée dans une nouvelle version.",
     "createdByUser": "Vous",
     "createdByAgent": "Votre agent",
     "stateActive": "active",
@@ -123,13 +120,12 @@
     "noteLabel": "Note",
     "notePlaceholder": "Doubler pour les restes, prévoir du pain…",
     "prepSource": "Sert aussi {count, plural, one {# autre repas} other {# autres repas}}",
-    "prepDependent": "Réchauffé depuis {day}",
+    "prepDependent": "Réchauffé",
     "prepUnsourced": "Sa session de cuisine a disparu",
     "prepUnsourcedBanner": "{count, plural, one {# repas dépend} other {# repas dépendent}} d'une session de cuisine qui n'existe plus. Ils sont conservés : à vous de les replanifier ou de les relier ailleurs.",
     "prepLink": "Réchauffé depuis…",
     "prepLinkHelp": "Un repas peut être servi par la cuisine d'un autre repas du même jour ou d'un jour précédent. La liste de courses ne compte alors ses ingrédients qu'une fois.",
     "prepLinkNone": "Cuisiné sur place",
-    "prepUnlink": "Ne plus relier",
     "dragHint": "Glissez un repas pour le déplacer. Au clavier : tabulation jusqu'à la poignée, espace pour saisir, flèches pour aller de créneau en créneau, espace pour déposer, échap pour annuler.",
     "dragHandle": "Déplacer {title}",
     "warnings": "À savoir",
@@ -175,13 +171,20 @@
     "save": "Enregistrer ce repas",
     "clear": "Effacer le retour",
     "saved": "Enregistré.",
-    "quickAsk": "{title}, {day} : qu'en avez-vous fait ?",
     "signals": "Ce que les données disent",
     "signalsHelp": "Des observations, pas des conclusions. Votre agent peut les transformer en faits, que vous confirmerez.",
     "noSignals": "Rien à signaler pour l'instant.",
     "budgetSuggestion": "{day} {meal} : {overruns} repas ont dépassé le budget de {current} min. Passer à {suggested} min ?",
     "budgetApply": "Appliquer",
-    "budgetApplied": "Budget mis à jour."
+    "budgetApplied": "Budget mis à jour.",
+    "signalNames": {
+      "NEVER_COOKED_THOUGH_PLANNED": "Planifiée, jamais cuisinée",
+      "SLOT_OVERRUNS": "Créneau régulièrement dépassé",
+      "LOW_RATED_STILL_IN_LIBRARY": "Mal notée, toujours dans la bibliothèque"
+    },
+    "signalMessages": {
+      "SLOT_OVERRUNS": "{day} {meal} dépasse souvent son budget de {current} min. {suggested} min correspondraient mieux à ce qui se passe vraiment."
+    }
   },
   "pantry": {
     "title": "Placards",
@@ -231,9 +234,7 @@
     "rejectReasonPlaceholder": "Trop de poisson, pas assez de temps le mardi…",
     "rejectReasonHelp": "Votre raison est conservée et transmise à l'agent. C'est la façon la plus directe d'améliorer la prochaine proposition.",
     "rejectSubmit": "Refuser la proposition",
-    "working": "Traitement…",
-    "accepted": "Proposition acceptée.",
-    "rejected": "Proposition refusée."
+    "working": "Traitement…"
   },
   "recipes": {
     "title": "Recettes",
@@ -260,7 +261,8 @@
       "noSteps": "Aucune étape enregistrée.",
       "revision": "Révision {number}",
       "deleted": "Cette recette est supprimée. Elle reste visible pour l'historique.",
-      "allergenWarning": "Contient un allergène déclaré"
+      "restore": "Restaurer cette recette",
+      "restoreHelp": "Une recette supprimée est conservée trente jours avant d'être effacée pour de bon."
     },
     "form": {
       "titleNew": "Nouvelle recette",
@@ -308,8 +310,10 @@
       "removeStep": "Retirer cette étape",
       "noIngredients": "Aucun ingrédient pour le moment.",
       "noSteps": "Aucune étape pour le moment.",
-      "created": "Recette enregistrée.",
-      "updated": "Recette mise à jour."
+      "importUrl": "Adresse de la recette"
+    },
+    "import": {
+      "defaultTitle": "Recette importée"
     }
   },
   "grocery": {
@@ -411,8 +415,6 @@
     "weeklyBudgetCurrency": "Devise",
     "weeklyBudgetHelp": "Indicatif. Les prix des ingrédients ne sont pas suivis.",
     "agentAuthority": "Autorité de l'agent",
-    "agentAuthorityProposal": "Proposition, à valider par vous",
-    "agentAuthorityDirect": "Directe, avec historique et retour arrière",
     "agentAuthorityHelp": "En mode proposition, une semaine écrite par un agent attend votre accord. En mode direct, elle s'applique tout de suite et reste réversible.",
     "allergens": "Allergènes",
     "allergensHelp": "Un allergène strict est le seul blocage absolu du système. Listez explicitement les mots qui doivent le déclencher : rien n'est deviné au-delà de cette liste.",
@@ -424,10 +426,32 @@
     "matchesHelp": "Séparés par des virgules.",
     "exclusions": "Ingrédients refusés",
     "exclusionsHelp": "Produit un avertissement, jamais un blocage.",
-    "equipment": "Équipement",
     "equipmentHelp": "Une recette qui demande un équipement que vous n'avez pas déclaré produit un avertissement.",
     "equipmentOther": "Autre équipement",
-    "strictWarning": "Un allergène strict ne peut jamais être contourné, ni par vous ni par un agent."
+    "strictWarning": "Un allergène strict ne peut jamais être contourné, ni par vous ni par un agent.",
+    "equipmentTitle": "Équipement",
+    "equipment": {
+      "oven": "Four",
+      "hob": "Plaques",
+      "microwave": "Micro-ondes",
+      "freezer": "Congélateur",
+      "blender": "Blender",
+      "food_processor": "Robot ménager",
+      "stand_mixer": "Robot pâtissier",
+      "pressure_cooker": "Cocotte-minute",
+      "slow_cooker": "Cuiseur lent",
+      "air_fryer": "Friteuse à air",
+      "wok": "Wok",
+      "cast_iron": "Cocotte en fonte",
+      "grill": "Gril",
+      "steamer": "Cuiseur vapeur",
+      "scale": "Balance",
+      "thermometer": "Thermomètre"
+    },
+    "agentAuthorities": {
+      "proposal": "Proposition, à valider par vous",
+      "direct": "Directe, avec historique et retour arrière"
+    }
   },
   "facts": {
     "title": "Faits",
@@ -529,8 +553,6 @@
     "promptPackRules": "Règles de la maison",
     "promptPackPlan": "Planifier une semaine",
     "promptPackReview": "Faire le point sur la semaine",
-    "authority": "Autorité de l'agent",
-    "authorityHelp": "Se règle depuis le profil.",
     "reviewFacts": "Faits à confirmer",
     "reviewFactsHelp": "Votre agent peut proposer des faits sur vous. Ils comptent dans la planification mais restent marqués tant que vous ne les avez pas confirmés.",
     "activity": "Activité de l'agent",
@@ -557,7 +579,7 @@
     "exportDownload": "Télécharger l'export",
     "delete": "Supprimer le compte",
     "deleteHelp": "Efface définitivement toutes vos données et révoque tous les agents connectés. Il n'y a ni délai de grâce ni retour en arrière.",
-    "deleteConfirmLabel": "Tapez SUPPRIMER pour confirmer",
+    "deleteConfirmLabel": "Tapez {word} pour confirmer",
     "deleteConfirmWord": "SUPPRIMER",
     "deleteSubmit": "Supprimer définitivement",
     "deleting": "Suppression…"
@@ -575,7 +597,11 @@
       "FACT_CAP_REACHED": "Vous avez {active} faits actifs pour un plafond de {cap}. Retirez d'abord un fait devenu inutile.",
       "MISSING_SCOPE": "Cette connexion n'a pas les autorisations nécessaires : {missing}. Reconnectez le client depuis l'écran Agent pour les accorder.",
       "CLIENT_REVOKED": "Cet accès a été révoqué. Le client doit se reconnecter depuis l'écran Agent.",
-      "RATE_LIMITED": "Ce client a dépassé {limit} appels par minute. Attendez une minute avant de réessayer."
+      "RATE_LIMITED": "Ce client a dépassé {limit} appels par minute. Attendez une minute avant de réessayer.",
+      "VALIDATION": "Une valeur envoyée n'est pas valide.",
+      "VALIDATION_FIELD": "Le champ « {field} » n'est pas valide.",
+      "NETWORK": "La modification n'a pas été envoyée : la connexion a échoué. Elle n'est pas enregistrée. Réessayez.",
+      "DELETE_CONFIRMATION": "Tapez le mot de confirmation exactement comme il est affiché. Cette action efface définitivement toutes vos données."
     },
     "STRICT_ALLERGEN": "Allergène strict",
     "SLOT_NOT_PLANNED": "Créneau non planifié",
@@ -590,8 +616,21 @@
     "RATE_LIMITED": "Trop d'appels",
     "FACT_CAP_REACHED": "Limite de faits atteinte",
     "VALIDATION": "Donnée invalide",
+    "PARSE_FAILED": "Cette page a bien répondu, mais aucune recette n’a pu en être lue. Vérifiez que l’adresse pointe vers la recette elle-même, ou saisissez-la à la main.",
+    "UPSTREAM_FAILED": "Le site n’a pas répondu. Ce n’est pas l’adresse qui est en cause : réessayez plus tard, ou saisissez la recette à la main.",
     "NOT_FOUND": "Introuvable",
-    "FORBIDDEN": "Accès refusé"
+    "FORBIDDEN": "Accès refusé",
+    "INTERNAL": "Erreur interne",
+    "NETWORK": "Rien n'a été envoyé",
+    "DELETE_CONFIRMATION": "Mot de confirmation incorrect",
+    "screenTitle": "Cet écran n'a pas pu s'afficher",
+    "screenHelp": "La lecture des données a échoué. Rien n'a été modifié : réessayez, ou revenez en arrière.",
+    "retry": "Réessayer",
+    "digest": "Référence de l'erreur :",
+    "notFoundTitle": "Cette page n'existe pas",
+    "notFoundHelp": "Le lien est peut-être ancien, ou la semaine et la recette qu'il désigne n'existent plus.",
+    "fatalTitle": "L'application n'a pas pu démarrer",
+    "fatalHelp": "Une erreur est survenue avant même que la page puisse s'afficher. Réessayez ; si cela persiste, redémarrez l'instance."
   },
   "warnings": {
     "messages": {
@@ -600,7 +639,8 @@
       "REPEAT_RECIPE_THIS_WEEK": "« {recipeTitle} » apparaît {count} fois cette semaine, alors que votre préférence de variété est de {variety} sur 5.",
       "SERVINGS_SHORTFALL": "« {recipeTitle} » est prévu pour {servings} portions, et {drawn} de plus sont tirées pour d'autres repas. Prévoyez {required} portions au total, ou réduisez ce qui est tiré.",
       "NOT_BATCH_FRIENDLY": "« {recipeTitle} » n'est pas marquée comme se doublant et se conservant bien. Elle peut quand même servir de session de cuisine, mais vérifiez qu'elle tient jusqu'au repas qui en dépend.",
-      "TIME_BUDGET_TIGHT": "{slot} dépasse son budget de {over} min ({active} min pour un budget de {budget} min), ce qui reste dans la tolérance."
+      "TIME_BUDGET_TIGHT": "{slot} dépasse son budget de {over} min ({active} min pour un budget de {budget} min), ce qui reste dans la tolérance.",
+      "SLOT_NO_LONGER_PLANNED": "{slot} n’est plus un créneau planifié, mais le repas qui s’y trouvait est conservé. Videz le créneau, ou remettez-le en planifié pour le revoir dans la grille."
     },
     "DIET_MISMATCH": "Régime alimentaire",
     "EXCLUDED_INGREDIENT": "Ingrédient à éviter",
@@ -609,11 +649,7 @@
     "SERVINGS_SHORTFALL": "Portions insuffisantes",
     "NOT_BATCH_FRIENDLY": "Recette peu adaptée au batch",
     "BUDGET_EXCEEDED": "Budget dépassé",
-    "TIME_BUDGET_TIGHT": "Budget de temps juste"
-  },
-  "home": {
-    "status": "Planifiez votre semaine, seul ou avec votre agent.",
-    "mcpReady": "Point de terminaison MCP",
-    "docs": "La spécification complète se trouve dans le dossier docs."
+    "TIME_BUDGET_TIGHT": "Budget de temps juste",
+    "SLOT_NO_LONGER_PLANNED": "Créneau plus planifié"
   }
 }

@@ -1,16 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
   applyBudgetSuggestionAction,
   clearFeedbackAction,
   recordFeedbackAction,
 } from "@/app/actions/feedback-actions";
-import { Feedback, type FeedbackState } from "@/components/feedback";
-import { FEEDBACK_OUTCOMES, PORTION_ISSUES } from "@/domain/vocabulary";
+import { Feedback } from "@/components/feedback";
+import {
+  FEEDBACK_OUTCOMES,
+  PORTION_ISSUES,
+  type FeedbackOutcome,
+  type PortionIssue,
+} from "@/domain/vocabulary";
 import type { IsoWeek } from "@/domain/week";
+import { useActionRunner, type ActionRunner } from "@/lib/use-action-runner";
 import type { FeedbackView } from "@/services/feedback-service";
 import type { BudgetSuggestion, UnresolvedSignal } from "@/domain/signals";
 
@@ -44,39 +49,24 @@ export function FeedbackBoard({
   const t = useTranslations("feedback");
   const days = useTranslations("week.days");
   const common = useTranslations("common");
-  const router = useRouter();
 
-  const [feedbackState, setFeedbackState] = useState<FeedbackState>({});
-  const [pending, setPending] = useState(false);
-
-  async function run(
-    action: () => Promise<{
-      ok: boolean;
-      code?: string;
-      message?: string;
-      details?: Record<string, unknown>;
-    }>,
-  ): Promise<void> {
-    setPending(true);
-    const result = await action();
-    setPending(false);
-    if (!result.ok) {
-      setFeedbackState({
-        error: {
-          code: result.code ?? "INTERNAL",
-          message: result.message ?? "",
-          details: result.details,
-        },
-      });
-      return;
-    }
-    setFeedbackState({});
-    router.refresh();
-  }
+  const runner = useActionRunner();
+  // Which of the two things on this screen last succeeded, so the confirmation
+  // says what was saved. Both messages existed in the catalogues and neither
+  // was ever shown.
+  const [confirmed, setConfirmed] = useState<"feedback" | "budget" | null>(
+    null,
+  );
 
   return (
     <div className="flex flex-col gap-5">
-      <Feedback {...feedbackState} />
+      <Feedback error={runner.feedback} warnings={runner.warnings} />
+
+      {confirmed !== null && runner.feedback === null ? (
+        <p className="banner banner-ok" aria-live="polite">
+          {confirmed === "feedback" ? t("saved") : t("budgetApplied")}
+        </p>
+      ) : null}
 
       {rows.length === 0 ? (
         <p className="hint">{t("empty")}</p>
@@ -87,9 +77,9 @@ export function FeedbackBoard({
               key={row.entryId}
               week={week}
               row={row}
-              disabled={pending}
+              runner={runner}
               dayLabel={days(String(row.dayOfWeek))}
-              onRun={run}
+              onSaved={() => setConfirmed("feedback")}
             />
           ))}
         </ul>
@@ -106,8 +96,14 @@ export function FeedbackBoard({
         {signals.length > 0 ? (
           <ul className="ruled flex flex-col text-sm">
             {signals.map((signal, index) => (
-              <li key={`${signal.code}-${index}`} className="py-2">
-                {signal.message}
+              <li
+                key={`${signal.code}-${index}`}
+                className="flex flex-col gap-0.5 py-2"
+              >
+                <span className="label-text">
+                  {t(`signalNames.${signal.code}`)}
+                </span>
+                <SignalMessage signal={signal} />
               </li>
             ))}
           </ul>
@@ -129,15 +125,26 @@ export function FeedbackBoard({
             </span>
             <button
               type="button"
-              disabled={pending}
+              disabled={runner.pending}
               onClick={() =>
-                void run(() =>
-                  applyBudgetSuggestionAction(
-                    suggestion.dayOfWeek,
-                    suggestion.mealTypeId,
-                    suggestion.suggestedBudgetMin,
-                    null,
-                  ),
+                void runner.run(
+                  () =>
+                    /*
+                     * The slot reference and the new budget, and nothing else.
+                     * This used to pass a whole slot configuration, including
+                     * `defaultServings: null`, which wiped whatever the slot
+                     * had. The action now patches one column through the
+                     * service, so accepting a suggestion cannot change the
+                     * slot's state or its servings.
+                     */
+                    applyBudgetSuggestionAction(
+                      {
+                        dayOfWeek: suggestion.dayOfWeek,
+                        mealTypeId: suggestion.mealTypeId,
+                      },
+                      suggestion.suggestedBudgetMin,
+                    ),
+                  { onSuccess: () => setConfirmed("budget") },
                 )
               }
               className="btn btn-quiet btn-sm ml-auto"
@@ -149,36 +156,91 @@ export function FeedbackBoard({
       </section>
 
       <p className="sr-only" aria-live="polite">
-        {pending ? common("saving") : ""}
+        {runner.pending ? common("saving") : ""}
       </p>
     </div>
   );
+}
+
+/**
+ * A signal, worded in the reader's language where its details allow it.
+ *
+ * `SLOT_OVERRUNS` carries everything its sentence needs. The two recipe
+ * signals carry an id and a count but not the title, so there is nothing to
+ * build a sentence from and the service's own French sentence is shown, which
+ * is the same degradation `src/lib/error-message.ts` documents for a code with
+ * no template. Adding `recipeTitle` to those details is a domain change and is
+ * noted as one.
+ */
+function SignalMessage({ signal }: { signal: UnresolvedSignal }) {
+  const t = useTranslations("feedback.signalMessages");
+  const days = useTranslations("week.days");
+
+  if (signal.code === "SLOT_OVERRUNS") {
+    const day = signal.details["dayOfWeek"];
+    const label = signal.details["mealTypeLabel"];
+    const current = signal.details["currentBudgetMin"];
+    const suggested = signal.details["suggestedBudgetMin"];
+    if (
+      typeof day === "number" &&
+      typeof label === "string" &&
+      typeof current === "number" &&
+      typeof suggested === "number"
+    ) {
+      return (
+        <span>
+          {t("SLOT_OVERRUNS", {
+            day: days.has(String(day)) ? days(String(day)) : String(day),
+            meal: label.toLowerCase(),
+            current,
+            suggested,
+          })}
+        </span>
+      );
+    }
+  }
+
+  return <span>{signal.message}</span>;
+}
+
+/**
+ * A stored value as one of a vocabulary's members, or the empty selection.
+ * Every one of these selects offers "none", so the empty string is a real
+ * value here rather than a fallback that hides a mismatch.
+ */
+function oneOf<T extends string>(
+  vocabulary: readonly T[],
+  value: string | null | undefined,
+): T | "" {
+  if (typeof value !== "string") return "";
+  return (vocabulary as readonly string[]).includes(value) ? (value as T) : "";
 }
 
 function FeedbackRowForm({
   week,
   row,
   dayLabel,
-  disabled,
-  onRun,
+  runner,
+  onSaved,
 }: {
   week: IsoWeek;
   row: FeedbackRow;
   dayLabel: string;
-  disabled: boolean;
-  onRun: (
-    action: () => Promise<{
-      ok: boolean;
-      code?: string;
-      message?: string;
-      details?: Record<string, unknown>;
-    }>,
-  ) => Promise<void>;
+  runner: ActionRunner;
+  onSaved: () => void;
 }) {
   const t = useTranslations("feedback");
   const common = useTranslations("common");
 
-  const [outcome, setOutcome] = useState(row.feedback?.outcome ?? "");
+  /*
+   * Narrowed rather than asserted. `FeedbackView` types both of these as
+   * `string`, and a stored value the vocabulary no longer has would otherwise
+   * be selected in a `<select>` that does not offer it, which renders as no
+   * selection at all. Tightening the view is a service change.
+   */
+  const [outcome, setOutcome] = useState<FeedbackOutcome | "">(() =>
+    oneOf(FEEDBACK_OUTCOMES, row.feedback?.outcome),
+  );
   const [swappedFor, setSwappedFor] = useState(row.feedback?.swappedFor ?? "");
   const [rating, setRating] = useState(
     row.feedback?.rating === null || row.feedback?.rating === undefined
@@ -186,9 +248,11 @@ function FeedbackRowForm({
       : String(row.feedback.rating),
   );
   const [note, setNote] = useState(row.feedback?.note ?? "");
-  const [tookLonger, setTookLonger] = useState(row.feedback?.tookLonger ?? false);
-  const [portionIssue, setPortionIssue] = useState(
-    row.feedback?.portionIssue ?? "",
+  const [tookLonger, setTookLonger] = useState(
+    row.feedback?.tookLonger ?? false,
+  );
+  const [portionIssue, setPortionIssue] = useState<PortionIssue | "">(() =>
+    oneOf(PORTION_ISSUES, row.feedback?.portionIssue),
   );
 
   return (
@@ -212,7 +276,9 @@ function FeedbackRowForm({
           <span>{t("outcome")}</span>
           <select
             value={outcome}
-            onChange={(event) => setOutcome(event.target.value)}
+            onChange={(event) =>
+              setOutcome(event.target.value as FeedbackOutcome | "")
+            }
             className="field"
           >
             <option value="">{common("none")}</option>
@@ -256,7 +322,9 @@ function FeedbackRowForm({
           <span>{t("portionIssue")}</span>
           <select
             value={portionIssue}
-            onChange={(event) => setPortionIssue(event.target.value)}
+            onChange={(event) =>
+              setPortionIssue(event.target.value as PortionIssue | "")
+            }
             className="field"
           >
             <option value="">{t("portions.none")}</option>
@@ -291,17 +359,19 @@ function FeedbackRowForm({
       <div className="flex flex-wrap gap-3">
         <button
           type="button"
-          disabled={disabled || outcome === ""}
+          disabled={runner.pending || outcome === ""}
           onClick={() =>
-            void onRun(() =>
-              recordFeedbackAction(week, row.entryId, {
-                outcome,
-                swappedFor: swappedFor.trim() || null,
-                rating: rating === "" ? null : Number(rating),
-                note: note.trim() || null,
-                tookLonger,
-                portionIssue: portionIssue === "" ? null : portionIssue,
-              }),
+            void runner.run(
+              () =>
+                recordFeedbackAction(week, row.entryId, {
+                  outcome,
+                  swappedFor: swappedFor.trim() || null,
+                  rating: rating === "" ? null : Number(rating),
+                  note: note.trim() || null,
+                  tookLonger,
+                  portionIssue: portionIssue === "" ? null : portionIssue,
+                }),
+              { onSuccess: onSaved },
             )
           }
           className="btn btn-primary btn-sm"
@@ -312,8 +382,10 @@ function FeedbackRowForm({
         {row.feedback ? (
           <button
             type="button"
-            disabled={disabled}
-            onClick={() => void onRun(() => clearFeedbackAction(week, row.entryId))}
+            disabled={runner.pending}
+            onClick={() =>
+              void runner.run(() => clearFeedbackAction(week, row.entryId))
+            }
             className="btn btn-ghost btn-sm"
           >
             {t("clear")}

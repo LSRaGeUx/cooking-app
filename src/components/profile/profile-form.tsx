@@ -1,21 +1,31 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { updateProfileAction } from "@/app/actions/profile-actions";
-import { Feedback, type FeedbackState } from "@/components/feedback";
-import { AGENT_AUTHORITIES, DIETS } from "@/domain/vocabulary";
+import { Feedback } from "@/components/feedback";
+import {
+  AGENT_AUTHORITIES,
+  DIETS,
+  type AgentAuthority,
+  type Diet,
+} from "@/domain/vocabulary";
+import { emptyToNull, optionalNumber } from "@/lib/form-values";
+import { useActionRunner } from "@/lib/use-action-runner";
 
 /**
  * The enforced half of the profile, grouped the way the spec groups it:
  * dietary, kitchen, organization, preferences. Every field here either blocks a
  * write, warns on one, or is read by an agent, which is why none of it is free
  * text except the diet notes.
+ *
+ * `diet` and `agentAuthority` carry the vocabulary unions rather than `string`,
+ * so a value the enum does not have is a compile error here instead of a
+ * refusal from the service.
  */
 
 export interface ProfileFormValues {
-  readonly diet: string;
+  readonly diet: Diet;
   readonly dietNotes: string | null;
   readonly skillLevel: number;
   readonly defaultServings: number;
@@ -25,65 +35,64 @@ export interface ProfileFormValues {
   readonly shoppingDay: number | null;
   readonly weeklyBudgetAmount: number | null;
   readonly weeklyBudgetCurrency: string | null;
-  readonly agentAuthority: string;
+  readonly agentAuthority: AgentAuthority;
 }
 
 export function ProfileForm({ profile }: { profile: ProfileFormValues }) {
   const t = useTranslations("profile");
   const common = useTranslations("common");
   const days = useTranslations("week.days");
-  const router = useRouter();
+  const runner = useActionRunner();
 
-  const [values, setValues] = useState<ProfileFormValues>(profile);
-  const [feedback, setFeedback] = useState<FeedbackState>({});
-  const [pending, setPending] = useState(false);
+  /*
+   * What the user has typed, keyed by the props it was typed against. The
+   * previous version seeded `useState` from `profile` and never looked at the
+   * prop again, so a profile changed elsewhere (an agent over MCP, or this same
+   * form in another tab) never appeared. Comparing identities during render
+   * means a save that refreshes the page drops the draft and shows what was
+   * actually stored, with no effect and no stale frame.
+   */
+  const [draft, setDraft] = useState<{
+    readonly of: ProfileFormValues;
+    readonly values: ProfileFormValues;
+  } | null>(null);
+  const values =
+    draft !== null && draft.of === profile ? draft.values : profile;
+
   const [saved, setSaved] = useState(false);
 
   function set<K extends keyof ProfileFormValues>(
     key: K,
     value: ProfileFormValues[K],
   ): void {
-    setValues((current) => ({ ...current, [key]: value }));
+    setDraft({ of: profile, values: { ...values, [key]: value } });
     setSaved(false);
   }
 
-  async function onSubmit(event: React.FormEvent<HTMLFormElement>): Promise<void> {
+  function onSubmit(event: React.FormEvent<HTMLFormElement>): void {
     event.preventDefault();
-    setPending(true);
-    setFeedback({});
-
-    const result = await updateProfileAction({
-      diet: values.diet,
-      dietNotes: emptyToNull(values.dietNotes),
-      skillLevel: values.skillLevel,
-      defaultServings: values.defaultServings,
-      defaultTimeBudgetMin: values.defaultTimeBudgetMin,
-      timeBudgetToleranceMin: values.timeBudgetToleranceMin,
-      varietyPreference: values.varietyPreference,
-      shoppingDay: values.shoppingDay,
-      weeklyBudgetAmount: values.weeklyBudgetAmount,
-      weeklyBudgetCurrency: emptyToNull(values.weeklyBudgetCurrency),
-      agentAuthority: values.agentAuthority,
-    });
-
-    setPending(false);
-    if (!result.ok) {
-      setFeedback({
-        error: {
-          code: result.code,
-          message: result.message,
-          details: result.details,
-        },
-      });
-      return;
-    }
-    setSaved(true);
-    router.refresh();
+    void runner.run(
+      () =>
+        updateProfileAction({
+          diet: values.diet,
+          dietNotes: emptyToNull(values.dietNotes),
+          skillLevel: values.skillLevel,
+          defaultServings: values.defaultServings,
+          defaultTimeBudgetMin: values.defaultTimeBudgetMin,
+          timeBudgetToleranceMin: values.timeBudgetToleranceMin,
+          varietyPreference: values.varietyPreference,
+          shoppingDay: values.shoppingDay,
+          weeklyBudgetAmount: values.weeklyBudgetAmount,
+          weeklyBudgetCurrency: emptyToNull(values.weeklyBudgetCurrency),
+          agentAuthority: values.agentAuthority,
+        }),
+      { onSuccess: () => setSaved(true) },
+    );
   }
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-6">
-      <Feedback {...feedback} />
+      <Feedback error={runner.feedback} warnings={runner.warnings} />
 
       <section className="flex flex-col gap-4">
         <h2 className="eyebrow eyebrow-rule">{t("groups.dietary")}</h2>
@@ -91,7 +100,7 @@ export function ProfileForm({ profile }: { profile: ProfileFormValues }) {
           <span>{t("diet")}</span>
           <select
             value={values.diet}
-            onChange={(event) => set("diet", event.target.value)}
+            onChange={(event) => set("diet", event.target.value as Diet)}
             className="field"
           >
             {DIETS.map((diet) => (
@@ -205,7 +214,6 @@ export function ProfileForm({ profile }: { profile: ProfileFormValues }) {
           </select>
           <span className="hint">{t("shoppingDayHelp")}</span>
         </label>
-
       </section>
 
       <section className="flex flex-col gap-4 pt-2">
@@ -262,14 +270,19 @@ export function ProfileForm({ profile }: { profile: ProfileFormValues }) {
           <span>{t("agentAuthority")}</span>
           <select
             value={values.agentAuthority}
-            onChange={(event) => set("agentAuthority", event.target.value)}
+            onChange={(event) =>
+              set("agentAuthority", event.target.value as AgentAuthority)
+            }
             className="field"
           >
+            {/*
+              Labelled by key, not by a binary ternary. The previous version
+              read `authority === "proposal" ? … : …`, so a third authority
+              added to the vocabulary would have been labelled "direct".
+            */}
             {AGENT_AUTHORITIES.map((authority) => (
               <option key={authority} value={authority}>
-                {authority === "proposal"
-                  ? t("agentAuthorityProposal")
-                  : t("agentAuthorityDirect")}
+                {t(`agentAuthorities.${authority}`)}
               </option>
             ))}
           </select>
@@ -278,10 +291,14 @@ export function ProfileForm({ profile }: { profile: ProfileFormValues }) {
       </section>
 
       <div className="flex items-center gap-3 border-t border-rule pt-5">
-        <button type="submit" disabled={pending} className="btn btn-primary">
-          {pending ? common("saving") : common("save")}
+        <button
+          type="submit"
+          disabled={runner.pending}
+          className="btn btn-primary"
+        >
+          {runner.pending ? common("saving") : common("save")}
         </button>
-        {saved ? (
+        {saved && runner.feedback === null ? (
           <span className="chip chip-ok" aria-live="polite">
             {t("saved")}
           </span>
@@ -289,17 +306,4 @@ export function ProfileForm({ profile }: { profile: ProfileFormValues }) {
       </div>
     </form>
   );
-}
-
-function optionalNumber(value: string): number | null {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return null;
-  const parsed = Number(trimmed.replace(",", "."));
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function emptyToNull(value: string | null): string | null {
-  if (value === null) return null;
-  const trimmed = value.trim();
-  return trimmed.length === 0 ? null : trimmed;
 }
