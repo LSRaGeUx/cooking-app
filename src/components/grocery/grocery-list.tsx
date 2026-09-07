@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useCallback, useMemo, useState } from "react";
+import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import {
   addManualLineAction,
   archiveGroceryListAction,
@@ -10,10 +10,13 @@ import {
   generateGroceryListAction,
   setLineCheckedAction,
 } from "@/app/actions/grocery-actions";
-import { Feedback, type FeedbackState } from "@/components/feedback";
-import { pluralizeUnit } from "@/domain/units";
+import { EmptyState } from "@/components/empty-state";
+import { Feedback } from "@/components/feedback";
+import type { RenderableError } from "@/lib/error-message";
+import { emptyToNull, formatQuantity, optionalNumber } from "@/lib/form-values";
 import { sealClass } from "@/lib/recipe-seal";
-import { useOfflineChecks } from "@/lib/offline-queue";
+import { useActionRunner } from "@/lib/use-action-runner";
+import { useOfflineChecks, type FlushReport } from "@/lib/offline-queue";
 import type {
   GroceryEntrySource,
   GroceryLineView,
@@ -31,6 +34,14 @@ import type {
  * shopping. And the regenerate button is deliberately explicit rather than
  * automatic: the list is a snapshot the user is working from, and rearranging it
  * under them without being asked is the one thing this screen must never do.
+ *
+ * What the screen does *not* do any more is treat its own copy of the lines as
+ * the truth. `list.lines` used to be copied into state at mount and never
+ * resynchronised, so a list an agent regenerated over MCP, or one archived and
+ * rebuilt, kept rendering the lines this component saw when it mounted, and the
+ * `wasEmpty` check that decides whether to highlight a diff read that stale
+ * copy. The server's lines are rendered directly, with the result of the last
+ * local write kept as an overlay that a new server render discards.
  */
 export function GroceryList({
   cycleStart,
@@ -49,17 +60,65 @@ export function GroceryList({
 }) {
   const t = useTranslations("grocery");
   const common = useTranslations("common");
-  const router = useRouter();
+  const locale = useLocale();
+  const runner = useActionRunner();
 
-  const [lines, setLines] = useState<readonly GroceryLineView[]>(
-    list?.lines ?? [],
-  );
+  const serverLines = list?.lines ?? NO_LINES;
+
+  /*
+   * Local edits, held only until the server's own render arrives. Keyed by the
+   * array they were derived from, so a refresh discards them in the same render
+   * that brings the new lines in: no effect, and no frame showing the old list.
+   */
+  const [overlay, setOverlay] = useState<{
+    readonly of: readonly GroceryLineView[];
+    readonly lines: readonly GroceryLineView[];
+  } | null>(null);
+  const lines =
+    overlay !== null && overlay.of === serverLines
+      ? overlay.lines
+      : serverLines;
+
   const [changedIds, setChangedIds] = useState<ReadonlySet<string>>(new Set());
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
-  const [feedback, setFeedback] = useState<FeedbackState>({});
-  const [pending, setPending] = useState(false);
+  // Its own flag rather than a sentinel string in the set above. That
+  // sentinel was a NUL character, which made every tool that reads this
+  // file treat it as binary.
+  const [optionalCollapsed, setOptionalCollapsed] = useState(false);
   const [diffSummary, setDiffSummary] = useState<string | null>(null);
-  const offline = useOfflineChecks(setLineCheckedAction);
+  const [replayError, setReplayError] = useState<RenderableError | null>(null);
+
+  /** Replaces the overlay, always against the lines the server last sent. */
+  const edit = useCallback(
+    (
+      change: (
+        current: readonly GroceryLineView[],
+      ) => readonly GroceryLineView[],
+    ) => {
+      setOverlay((previous) => ({
+        of: serverLines,
+        lines: change(
+          previous !== null && previous.of === serverLines
+            ? previous.lines
+            : serverLines,
+        ),
+      }));
+    },
+    [serverLines],
+  );
+
+  /*
+   * A replay of queued ticks can find out that the server refuses one. That
+   * used to be swallowed, with a comment claiming the screen reloaded the
+   * truth; nothing reloaded, so a tick simply vanished. The first refusal is
+   * shown and the list is re-read.
+   */
+  const onReplay = useCallback((report: FlushReport) => {
+    const [first] = report.refusals;
+    if (first) setReplayError(first);
+  }, []);
+
+  const offline = useOfflineChecks(setLineCheckedAction, onReplay);
 
   // Staples are set aside rather than dropped. The one week you are out of
   // flour is the week a silently missing line ruins dinner, so they stay
@@ -80,133 +139,106 @@ export function GroceryList({
     () => lines.filter((line) => !line.coveredByPantry && line.optional),
     [lines],
   );
-  const groups = useMemo(() => groupByAisle(toBuy), [toBuy]);
+  const groups = useMemo(() => groupByAisle(toBuy, locale), [toBuy, locale]);
   const checkedCount = toBuy.filter((line) => line.checked).length;
 
-  async function regenerate(): Promise<void> {
+  function regenerate(): void {
     // Highlighting is for a merge. On a first build every line is new, and
     // marking all of them says nothing while making the list hard to read.
+    // Read from what is on screen now, which is the server's list plus any
+    // local edit, rather than from a copy taken at mount.
     const wasEmpty = lines.length === 0;
-    setPending(true);
-    const result = await generateGroceryListAction(cycleStart);
-    setPending(false);
 
-    if (!result.ok) {
-      setFeedback({
-        error: {
-          code: result.code,
-          message: result.message,
-          details: result.details,
-        },
-      });
-      return;
-    }
-
-    setFeedback({});
-    setLines(result.data.list.lines);
-    setChangedIds(wasEmpty ? new Set() : new Set(result.data.diff.changedLineIds));
-    setDiffSummary(
-      t("diff", {
-        added: result.data.diff.added,
-        updated: result.data.diff.updated,
-        removed: result.data.diff.removed,
-      }),
-    );
-    router.refresh();
+    void runner.run(() => generateGroceryListAction(cycleStart), {
+      onSuccess: (data) => {
+        setChangedIds(wasEmpty ? new Set() : new Set(data.diff.changedLineIds));
+        setDiffSummary(
+          t("diff", {
+            added: data.diff.added,
+            updated: data.diff.updated,
+            removed: data.diff.removed,
+          }),
+        );
+        edit(() => data.list.lines);
+      },
+    });
   }
 
   async function toggle(line: GroceryLineView): Promise<void> {
     const next = !line.checked;
-    setLines((current) =>
-      current.map((row) => (row.id === line.id ? { ...row, checked: next } : row)),
+    edit((current) =>
+      current.map((row) =>
+        row.id === line.id ? { ...row, checked: next } : row,
+      ),
     );
 
     const outcome = await offline.submit(line.id, next);
     // A queued tick stays on screen: it is going to be written. Only a refusal
     // from the server puts the box back where the server says it is.
     if (outcome.kind === "refused") {
-      setLines((current) =>
+      edit((current) =>
         current.map((row) =>
           row.id === line.id ? { ...row, checked: line.checked } : row,
         ),
       );
-      setFeedback({ error: outcome.error });
+      setReplayError(outcome.error);
     }
   }
 
-  async function removeLine(lineId: string): Promise<void> {
-    setPending(true);
-    const result = await deleteLineAction(cycleStart, lineId);
-    setPending(false);
-    if (!result.ok) {
-      setFeedback({
-        error: {
-          code: result.code,
-          message: result.message,
-          details: result.details,
-        },
-      });
-      return;
-    }
-    setLines((current) => current.filter((row) => row.id !== lineId));
-  }
-
-  async function addLine(form: FormData): Promise<void> {
-    if (!list) return;
-    const displayName = String(form.get("displayName") ?? "").trim();
-    if (displayName.length === 0) return;
-
-    setPending(true);
-    const result = await addManualLineAction(cycleStart, list.id, {
-      displayName,
-      quantity: optionalNumber(String(form.get("quantity") ?? "")),
-      unit: emptyToNull(String(form.get("unit") ?? "")),
-      aisle: emptyToNull(String(form.get("aisle") ?? "")),
+  function removeLine(lineId: string): void {
+    void runner.run(() => deleteLineAction(cycleStart, lineId), {
+      onSuccess: () =>
+        edit((current) => current.filter((row) => row.id !== lineId)),
     });
-    setPending(false);
-
-    if (!result.ok) {
-      setFeedback({
-        error: {
-          code: result.code,
-          message: result.message,
-          details: result.details,
-        },
-      });
-      return;
-    }
-    setLines((current) => [...current, result.data]);
-    setFeedback({});
   }
+
+  function addLine(form: FormData): void {
+    if (!list) return;
+    const displayName = emptyToNull(form.get("displayName"));
+    if (displayName === null) return;
+
+    void runner.run(
+      () =>
+        addManualLineAction(cycleStart, list.id, {
+          displayName,
+          quantity: optionalNumber(form.get("quantity")),
+          unit: emptyToNull(form.get("unit")),
+          aisle: emptyToNull(form.get("aisle")),
+        }),
+      { onSuccess: (line) => edit((current) => [...current, line]) },
+    );
+  }
+
+  const feedbackError = runner.feedback ?? replayError;
 
   if (!list) {
     return (
-      <div className="flex flex-col items-start gap-5 rounded-[3px] border border-dashed border-rule-strong bg-surface/40 px-8 py-14">
-        <Feedback {...feedback} />
-        <p className="display max-w-[24ch] text-[clamp(1.6rem,3vw,2.4rem)] leading-tight">
-          {hasActivePlan ? t("empty") : t("noPlan")}
-        </p>
-        {hasActivePlan ? (
-          <button
-            type="button"
-            disabled={pending}
-            onClick={() => void regenerate()}
-            className="btn btn-primary"
-          >
-            {pending ? t("generating") : t("generate")}
-          </button>
-        ) : (
-          <a href={weekHref} className="btn btn-quiet">
-            {t("goToWeek")}
-          </a>
-        )}
+      <div className="page">
+        <Feedback error={feedbackError} warnings={runner.warnings} />
+        <EmptyState
+          message={hasActivePlan ? t("empty") : t("noPlan")}
+          {...(hasActivePlan
+            ? {}
+            : { action: { href: weekHref, label: t("goToWeek") } })}
+        >
+          {hasActivePlan ? (
+            <button
+              type="button"
+              disabled={runner.pending}
+              onClick={regenerate}
+              className="btn btn-primary"
+            >
+              {runner.pending ? t("generating") : t("generate")}
+            </button>
+          ) : null}
+        </EmptyState>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col">
-      <Feedback {...feedback} />
+      <Feedback error={feedbackError} warnings={runner.warnings} />
 
       {/*
         Said once, on the screen where it matters, with the one link that fixes
@@ -215,9 +247,9 @@ export function GroceryList({
       {!hasShoppingDay ? (
         <p className="band flex flex-wrap items-center gap-3 bg-panel px-5 py-3 lg:px-8">
           <span className="hint">{t("noShoppingDay")}</span>
-          <a href="/profil" className="btn btn-sm ml-auto">
+          <Link href="/profil" className="btn btn-sm ml-auto">
             {t("setShoppingDay")}
-          </a>
+          </Link>
         </p>
       ) : null}
 
@@ -243,20 +275,20 @@ export function GroceryList({
       <div className="sticky top-0 z-20 bg-ground">
         <div className="measure-wide border-x-2 border-b-2 border-rule bg-panel">
           <div className="flex items-end gap-4 px-5 py-3 lg:px-8">
-          <span aria-hidden="true" className="numeral text-4xl">
-            {checkedCount}
-            <span className="text-faint">/{toBuy.length}</span>
-          </span>
-          <span className="sr-only">
-            {t("progress", { checked: checkedCount, total: toBuy.length })}
-          </span>
+            <span aria-hidden="true" className="numeral text-4xl">
+              {checkedCount}
+              <span className="text-faint">/{toBuy.length}</span>
+            </span>
+            <span className="sr-only">
+              {t("progress", { checked: checkedCount, total: toBuy.length })}
+            </span>
             <button
               type="button"
-              disabled={pending}
-              onClick={() => void regenerate()}
+              disabled={runner.pending}
+              onClick={regenerate}
               className="btn btn-sm ml-auto"
             >
-              {pending ? t("generating") : t("regenerate")}
+              {runner.pending ? t("generating") : t("regenerate")}
             </button>
           </div>
           <div aria-hidden="true" className="h-2 w-full border-t-2 border-rule">
@@ -271,10 +303,7 @@ export function GroceryList({
       </div>
 
       {diffSummary ? (
-        <p
-          className="band bg-panel px-5 py-2 lg:px-8"
-          aria-live="polite"
-        >
+        <p className="band bg-panel px-5 py-2 lg:px-8" aria-live="polite">
           <span className="micro">{diffSummary}</span>
         </p>
       ) : null}
@@ -284,13 +313,14 @@ export function GroceryList({
       ) : (
         <div className="measure-wide flex flex-col border-x-2 border-rule">
           {groups.map((group) => {
-            const isCollapsed = collapsed.has(group.aisle ?? "");
+            const key = group.aisle ?? "";
+            const isCollapsed = collapsed.has(key);
             return (
               <section key={group.aisle ?? "__none"} className="flex flex-col">
                 <button
                   type="button"
                   onClick={() =>
-                    setCollapsed((current) => toggleIn(current, group.aisle ?? ""))
+                    setCollapsed((current) => toggleIn(current, key))
                   }
                   aria-expanded={!isCollapsed}
                   className="flex w-full items-baseline justify-between gap-3 border-b-2 border-rule bg-ink px-5 py-2 text-left text-on-ink lg:px-8"
@@ -301,6 +331,11 @@ export function GroceryList({
                   <span className="label-text opacity-70">
                     {group.lines.filter((line) => line.checked).length}/
                     {group.lines.length}
+                  </span>
+                  {/* Said in words for a screen reader; aria-expanded alone
+                      leaves the button reading as its own aisle name. */}
+                  <span className="sr-only">
+                    {isCollapsed ? t("expand") : t("collapse")}
                   </span>
                 </button>
 
@@ -313,13 +348,14 @@ export function GroceryList({
                           line={block.line}
                           sources={list.sources}
                           highlighted={changedIds.has(block.line.id)}
-                          disabled={pending}
+                          disabled={runner.pending}
                           onToggle={() => void toggle(block.line)}
-                          onRemove={() => void removeLine(block.line.id)}
+                          onRemove={() => removeLine(block.line.id)}
                         />
                       ) : (
                         <li key={block.group} className="py-1">
                           <p className="micro pt-1">{t("unmergeable")}</p>
+                          <p className="hint">{t("unmergeableHelp")}</p>
                           <ul className="flex flex-col border-l-2 border-amber-line pl-3">
                             {block.lines.map((line) => (
                               <LineRow
@@ -327,9 +363,9 @@ export function GroceryList({
                                 line={line}
                                 sources={list.sources}
                                 highlighted={changedIds.has(line.id)}
-                                disabled={pending}
+                                disabled={runner.pending}
                                 onToggle={() => void toggle(line)}
-                                onRemove={() => void removeLine(line.id)}
+                                onRemove={() => removeLine(line.id)}
                               />
                             ))}
                           </ul>
@@ -350,10 +386,8 @@ export function GroceryList({
             <section className="flex flex-col">
               <button
                 type="button"
-                onClick={() =>
-                  setCollapsed((current) => toggleIn(current, OPTIONAL_KEY))
-                }
-                aria-expanded={!collapsed.has(OPTIONAL_KEY)}
+                onClick={() => setOptionalCollapsed((closed) => !closed)}
+                aria-expanded={!optionalCollapsed}
                 className="flex w-full items-baseline justify-between gap-3 border-b-2 border-rule bg-panel px-5 py-2 text-left lg:px-8"
               >
                 <span className="label-text">{t("optionalSection")}</span>
@@ -361,9 +395,12 @@ export function GroceryList({
                   {optional.filter((line) => line.checked).length}/
                   {optional.length}
                 </span>
+                <span className="sr-only">
+                  {optionalCollapsed ? t("expand") : t("collapse")}
+                </span>
               </button>
 
-              {collapsed.has(OPTIONAL_KEY) ? null : (
+              {optionalCollapsed ? null : (
                 <ul className="flex flex-col">
                   {optional.map((line) => (
                     <LineRow
@@ -371,9 +408,9 @@ export function GroceryList({
                       line={line}
                       sources={list.sources}
                       highlighted={changedIds.has(line.id)}
-                      disabled={pending}
+                      disabled={runner.pending}
                       onToggle={() => void toggle(line)}
-                      onRemove={() => void removeLine(line.id)}
+                      onRemove={() => removeLine(line.id)}
                     />
                   ))}
                 </ul>
@@ -392,12 +429,8 @@ export function GroceryList({
           <ul className="flex flex-wrap gap-x-4 gap-y-1 pt-3">
             {covered.map((line) => (
               <li key={line.id} className="text-sm text-muted line-through">
-                {[
-                  line.quantity !== null ? formatQuantity(line.quantity) : null,
-                  pluralizeUnit(line.unit, line.quantity),
-                  line.displayName,
-                ]
-                  .filter((part) => part !== null && part !== "")
+                {[formatQuantity(line.quantity, line.unit), line.displayName]
+                  .filter((part) => part !== "")
                   .join(" ")}
               </li>
             ))}
@@ -409,6 +442,7 @@ export function GroceryList({
         action={addLine}
         className="measure-wide flex flex-wrap items-end gap-3 border-x-2 border-b-2 border-rule bg-panel px-5 py-5 lg:px-8"
       >
+        <h2 className="label-text w-full">{t("addLine")}</h2>
         <label className="label min-w-[10rem] flex-1">
           <span>{t("addLineName")}</span>
           <input
@@ -420,29 +454,19 @@ export function GroceryList({
         </label>
         <label className="label w-20">
           <span>{t("addLineQuantity")}</span>
-          <input
-            name="quantity"
-            inputMode="decimal"
-            className="field"
-          />
+          <input name="quantity" inputMode="decimal" className="field" />
         </label>
         <label className="label w-20">
           <span>{t("addLineUnit")}</span>
-          <input
-            name="unit"
-            className="field"
-          />
+          <input name="unit" className="field" />
         </label>
         <label className="label min-w-[8rem] flex-1">
           <span>{t("addLineAisle")}</span>
-          <input
-            name="aisle"
-            className="field"
-          />
+          <input name="aisle" className="field" />
         </label>
         <button
           type="submit"
-          disabled={pending}
+          disabled={runner.pending}
           className="btn btn-quiet"
         >
           {common("add")}
@@ -451,12 +475,10 @@ export function GroceryList({
 
       <button
         type="button"
-        disabled={pending}
-        onClick={() => {
-          void archiveGroceryListAction(cycleStart, list.id).then(() =>
-            router.refresh(),
-          );
-        }}
+        disabled={runner.pending}
+        onClick={() =>
+          void runner.run(() => archiveGroceryListAction(cycleStart, list.id))
+        }
         className="btn btn-ghost btn-sm m-5 self-start lg:mx-8"
       >
         {t("archive")}
@@ -486,8 +508,9 @@ function LineRow({
     line.sourceEntryIds.includes(source.entryId),
   );
   const meals = dishes.map((source) => source.title);
-  const edge = dishes[0]
-    ? sealClass(dishes[0].recipeId ?? dishes[0].entryId)
+  const [firstDish] = dishes;
+  const edge = firstDish
+    ? sealClass(firstDish.recipeId ?? firstDish.entryId)
     : "";
 
   return (
@@ -514,12 +537,8 @@ function LineRow({
             line.checked ? "text-faint line-through" : ""
           }`}
         >
-          {[
-            line.quantity !== null ? formatQuantity(line.quantity) : null,
-            pluralizeUnit(line.unit, line.quantity),
-            line.displayName,
-          ]
-            .filter((part) => part !== null && part !== "")
+          {[formatQuantity(line.quantity, line.unit), line.displayName]
+            .filter((part) => part !== "")
             .join(" ")}
         </span>
         {line.useSoon ? (
@@ -567,8 +586,12 @@ function LineRow({
   );
 }
 
-/** The optional section's collapse key. No aisle can be spelled like this. */
-const OPTIONAL_KEY = "\u0000optional";
+/**
+ * A stable empty array for a cycle that has no list yet. A fresh `[]` per
+ * render would give the overlay a new key on every render, which discards a
+ * local edit on the very next paint.
+ */
+const NO_LINES: readonly GroceryLineView[] = [];
 
 type Block =
   | { kind: "single"; line: GroceryLineView }
@@ -584,8 +607,15 @@ interface AisleGroup {
  * Aisle sections, with the lines of one unmergeable ingredient kept adjacent
  * under a single heading so the two halves of "2 oignons / 300 g d'oignons"
  * cannot drift apart in the list.
+ *
+ * Sorted in the reader's locale, not in French. An aisle name is whatever the
+ * cook typed, and collating "Épicerie" with French rules while the interface is
+ * in English put it in a place an English reader would not look for it.
  */
-function groupByAisle(lines: readonly GroceryLineView[]): AisleGroup[] {
+function groupByAisle(
+  lines: readonly GroceryLineView[],
+  locale: string,
+): AisleGroup[] {
   const byAisle = new Map<string, GroceryLineView[]>();
   for (const line of lines) {
     const key = line.aisle ?? "";
@@ -594,11 +624,14 @@ function groupByAisle(lines: readonly GroceryLineView[]): AisleGroup[] {
     byAisle.set(key, group);
   }
 
+  const collator = new Intl.Collator(locale);
+
   return [...byAisle.entries()]
     .sort(([a], [b]) => {
+      // "No aisle" last, whatever the collation says about the empty string.
       if (a === "") return 1;
       if (b === "") return -1;
-      return a.localeCompare(b, "fr");
+      return collator.compare(a, b);
     })
     .map(([aisle, group]) => {
       const blocks: Block[] = [];
@@ -632,22 +665,4 @@ function toggleIn(
   if (next.has(value)) next.delete(value);
   else next.add(value);
   return next;
-}
-
-function formatQuantity(quantity: number): string {
-  return Number.isInteger(quantity)
-    ? String(quantity)
-    : String(Number(quantity.toFixed(2)));
-}
-
-function optionalNumber(value: string): number | null {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return null;
-  const parsed = Number(trimmed.replace(",", "."));
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function emptyToNull(value: string): string | null {
-  const trimmed = value.trim();
-  return trimmed.length === 0 ? null : trimmed;
 }

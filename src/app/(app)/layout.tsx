@@ -2,10 +2,10 @@ import { cookies } from "next/headers";
 import { getTranslations } from "next-intl/server";
 import { AppNav } from "@/components/app-nav";
 import { currentIsoWeek, formatIsoWeek } from "@/domain/week";
+import { loadProfile } from "@/lib/page-data";
 import { requireUser } from "@/lib/session";
 import { defaultTheme, isTheme, THEME_COOKIE } from "@/lib/theme";
 import { cycleContaining, formatCycleStart } from "@/domain/shopping";
-import { getProfile } from "@/services/profile-service";
 
 /**
  * Everything behind this layout requires a session. Calling requireUser here as
@@ -29,7 +29,11 @@ export default async function AppLayout({
 
   // The bar points at the shop you are in the middle of, not at the calendar
   // week. On the shopping day itself that is already the cycle starting today.
-  const profile = await getProfile(ctx);
+  //
+  // Through `loadProfile`, which is the same read memoized for the request, so
+  // this layout and the page beneath it share one query instead of running the
+  // same one twice on every render of every screen.
+  const profile = await loadProfile(ctx);
   const cycle = cycleContaining(new Date(), profile.shoppingDay);
   const stored = (await cookies()).get(THEME_COOKIE)?.value;
   const theme = isTheme(stored) ? stored : defaultTheme;

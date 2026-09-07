@@ -17,19 +17,24 @@ export default async function WeekReviewPage({
 }: {
   params: Promise<{ week: string }>;
 }) {
+  // No `decodeURIComponent`: Next hands params over already decoded, so the
+  // second decode threw a URIError on a stray percent and turned what should
+  // be a 404 into a 500.
   const { week: rawWeek } = await params;
-  const isoWeek = parseIsoWeek(decodeURIComponent(rawWeek));
+  const isoWeek = parseIsoWeek(rawWeek);
   if (!isoWeek) notFound();
 
   const { ctx } = await requireUser();
   const t = await getTranslations("feedback");
 
-  const view = await getWeekView(ctx, isoWeek);
+  const [view, { signals, budgetSuggestions }] = await Promise.all([
+    getWeekView(ctx, isoWeek),
+    loadSignals(ctx),
+  ]);
   const feedback = await loadFeedbackForEntries(
     ctx,
     view.entries.map((entry) => entry.id),
   );
-  const { signals, budgetSuggestions } = await loadSignals(ctx);
 
   const rows = view.entries.map((entry) => {
     const slot = view.slots.find(

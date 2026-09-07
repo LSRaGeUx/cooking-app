@@ -1,5 +1,9 @@
 import { ZodError } from "zod";
-import { isDomainError, type DomainWarning } from "@/domain/errors";
+import {
+  isDomainError,
+  type DomainErrorDetails,
+  type DomainWarning,
+} from "@/domain/errors";
 
 /**
  * The single shape a server action ever returns. Actions never throw at the
@@ -10,17 +14,23 @@ import { isDomainError, type DomainWarning } from "@/domain/errors";
  * it actionable ("choisissez une recette plus rapide, ou augmentez le budget de
  * ce créneau"). The UI adds a localized heading keyed by `code` rather than
  * restating the rule, so there is one place where each rule is worded.
+ *
+ * The two failures this file raises itself carry no message at all. They are
+ * not rules and have no French sentence to pass on: a Zod failure is worded on
+ * the screen from `code` plus the failing field, and an unexpected throw is
+ * worded from `common.unknownError`. Writing either sentence here would put UI
+ * copy in a server action, in one language, outside next-intl.
  */
 export type ActionResult<T> =
   | { readonly ok: true; readonly data: T; readonly warnings: DomainWarning[] }
   | {
       readonly ok: false;
       readonly code: string;
-      readonly message: string;
-      readonly details?: Record<string, unknown>;
+      readonly message?: string;
+      readonly details?: DomainErrorDetails;
     };
 
-export interface WithWarnings {
+interface WithWarnings {
   readonly warnings?: DomainWarning[];
 }
 
@@ -33,7 +43,7 @@ export async function runAction<T>(
       data !== null &&
       typeof data === "object" &&
       Array.isArray((data as WithWarnings).warnings)
-        ? ((data as WithWarnings).warnings as DomainWarning[])
+        ? ((data as WithWarnings).warnings ?? [])
         : [];
     return { ok: true, data, warnings };
   } catch (error) {
@@ -42,7 +52,7 @@ export async function runAction<T>(
         ok: false,
         code: error.code,
         message: error.message,
-        details: error.details as Record<string, unknown>,
+        details: error.details,
       };
     }
 
@@ -51,20 +61,20 @@ export async function runAction<T>(
       return {
         ok: false,
         code: "VALIDATION",
-        message: first
-          ? `${first.path.join(".") || "valeur"} : ${first.message}`
-          : "Donnée invalide.",
-        details: { issues: error.issues },
+        // The dotted path, not a sentence: Zod's own message is English and
+        // untranslatable, and the screen only needs to know which field.
+        details: {
+          ...(first && first.path.length > 0
+            ? { field: first.path.join(".") }
+            : {}),
+          issues: error.issues,
+        },
       };
     }
 
-    // Anything else is a bug rather than a rule. Log it server-side and give
-    // the screen something honest to show.
+    // Anything else is a bug rather than a rule. Log it server-side and let the
+    // screen say so in the reader's language.
     console.error("Unhandled action failure", error);
-    return {
-      ok: false,
-      code: "INTERNAL",
-      message: "Une erreur inattendue est survenue. Réessayez.",
-    };
+    return { ok: false, code: "INTERNAL" };
   }
 }

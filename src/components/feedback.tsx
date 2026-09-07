@@ -31,7 +31,15 @@ export function Feedback({ error, warnings = [] }: FeedbackState) {
   if (!error && warnings.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-2" aria-live="polite">
+    /*
+     * No `aria-live` on the wrapper. It used to carry `aria-live="polite"`
+     * around a child with `role="alert"`, which is itself an assertive live
+     * region: two live modes on one announcement, and the outer one wins in
+     * some screen readers, so a refused write could be read out politely, after
+     * whatever the user was already hearing. The alert on the error and the
+     * plain region on the warnings are the two behaviours actually wanted.
+     */
+    <div className="flex flex-col gap-2">
       {error ? (
         <div role="alert" className="banner banner-danger banner-block">
           <p className="font-medium text-danger-ink">
@@ -44,6 +52,7 @@ export function Feedback({ error, warnings = [] }: FeedbackState) {
       {warnings.map((warning, index) => (
         <div
           key={`${warning.code}-${index}`}
+          aria-live="polite"
           className="banner banner-warn banner-block"
         >
           <p className="font-medium text-amber-ink">

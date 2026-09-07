@@ -16,8 +16,11 @@ export default async function ProposalPage({
 }: {
   params: Promise<{ week: string }>;
 }) {
+  // No `decodeURIComponent`: Next hands params over already decoded, so the
+  // second decode threw a URIError on a stray percent and turned what should
+  // be a 404 into a 500.
   const { week: rawWeek } = await params;
-  const isoWeek = parseIsoWeek(decodeURIComponent(rawWeek));
+  const isoWeek = parseIsoWeek(rawWeek);
   if (!isoWeek) notFound();
 
   const { ctx } = await requireUser();

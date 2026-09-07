@@ -1,6 +1,10 @@
 import { getTranslations } from "next-intl/server";
 import { FactBoard } from "@/components/facts/fact-board";
-import { FACT_CATEGORIES, FACT_STATUSES, DEFAULT_FACT_CAP } from "@/domain/vocabulary";
+import {
+  FACT_CATEGORIES,
+  FACT_STATUSES,
+  DEFAULT_FACT_CAP,
+} from "@/domain/vocabulary";
 import { requireUser } from "@/lib/session";
 import { countActiveFacts, listFacts } from "@/services/fact-service";
 

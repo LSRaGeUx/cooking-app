@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import type { SlotDefinition } from "@/domain/slots";
+import { parseSlotKey, slotKey } from "@/lib/slot-key";
 import type { PlanEntryView } from "@/services/plan-service";
 
 /**
@@ -52,15 +53,21 @@ export function EntryPanel({
   const targets = slots.filter(
     (slot) =>
       slot.state === "planned" &&
-      !(slot.dayOfWeek === entry.dayOfWeek && slot.mealTypeId === entry.mealTypeId),
+      !(
+        slot.dayOfWeek === entry.dayOfWeek &&
+        slot.mealTypeId === entry.mealTypeId
+      ),
   );
 
   return (
-    <div
-      role="dialog"
-      aria-label={t("editEntry")}
-      className="slip-float flex flex-col gap-4 p-4"
-    >
+    /*
+     * No role and no label of its own: this is always rendered inside the
+     * shared <Modal>, which is a real <dialog> opened with showModal(), so the
+     * dialog role, the modal semantics, the focus trap and the label come from
+     * the element around it. Declaring them again here nested one dialog inside
+     * another as far as a screen reader was concerned.
+     */
+    <div className="flex flex-col gap-4 p-4">
       <div className="flex items-baseline justify-between gap-2">
         <h3 className="display text-base leading-snug">
           {entry.recipeTitleSnapshot}
@@ -97,7 +104,10 @@ export function EntryPanel({
         type="button"
         disabled={disabled}
         onClick={() =>
-          onSave({ servings, note: note.trim().length > 0 ? note.trim() : null })
+          onSave({
+            servings,
+            note: note.trim().length > 0 ? note.trim() : null,
+          })
         }
         className="btn btn-primary self-start"
       >
@@ -115,8 +125,8 @@ export function EntryPanel({
             <option value="">{common("none")}</option>
             {targets.map((slot) => (
               <option
-                key={`${slot.dayOfWeek}:${slot.mealTypeId}`}
-                value={`${slot.dayOfWeek}:${slot.mealTypeId}`}
+                key={slotKey(slot.dayOfWeek, slot.mealTypeId)}
+                value={slotKey(slot.dayOfWeek, slot.mealTypeId)}
               >
                 {days(String(slot.dayOfWeek))} {slot.mealTypeLabel}
               </option>
@@ -127,9 +137,11 @@ export function EntryPanel({
           type="button"
           disabled={disabled || duplicateTarget === ""}
           onClick={() => {
-            const [day, mealTypeId] = duplicateTarget.split(":");
-            if (!day || !mealTypeId) return;
-            onDuplicate({ dayOfWeek: Number(day), mealTypeId });
+            // One parser, shared with the grid and the slot editor. This used
+            // to split on every colon, which loses anything after a second one.
+            const target = parseSlotKey(duplicateTarget);
+            if (!target) return;
+            onDuplicate(target);
           }}
           className="btn btn-quiet btn-sm self-start"
         >

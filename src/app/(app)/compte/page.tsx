@@ -17,7 +17,11 @@ export default async function AccountPage() {
       <section className="flex flex-col gap-3">
         <h2 className="eyebrow eyebrow-rule">{t("export")}</h2>
         <p className="hint">{t("exportHelp")}</p>
-        <a href="/api/compte/export" download className="btn btn-quiet self-start">
+        <a
+          href="/api/compte/export"
+          download
+          className="btn btn-quiet self-start"
+        >
           {t("exportDownload")}
         </a>
       </section>

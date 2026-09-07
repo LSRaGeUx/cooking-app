@@ -24,10 +24,11 @@ export default async function RecipesPage({
 }) {
   const params = await searchParams;
   const query = typeof params.q === "string" ? params.q : "";
-  const maxActiveTime =
-    typeof params.max === "string" && params.max.length > 0
-      ? Number(params.max)
-      : undefined;
+  // Kept as the string it came in as, so the field can be filled back in
+  // without a cast. `params.max as string | undefined` was asserting what the
+  // narrowing above it had already established.
+  const maxRaw = typeof params.max === "string" ? params.max : "";
+  const maxActiveTime = maxRaw.length > 0 ? Number(maxRaw) : undefined;
 
   const { ctx } = await requireUser();
   const t = await getTranslations("recipes");
@@ -65,6 +66,7 @@ export default async function RecipesPage({
       </section>
 
       <form className="band flex flex-wrap items-end gap-4 bg-panel px-5 py-4 lg:px-8">
+        <h2 className="label-text w-full text-muted">{t("filters")}</h2>
         <label className="label max-w-md flex-1">
           <span>{common("search")}</span>
           <input
@@ -81,7 +83,7 @@ export default async function RecipesPage({
             type="number"
             name="max"
             min={0}
-            defaultValue={params.max as string | undefined}
+            defaultValue={maxRaw}
             className="field"
           />
         </label>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 
 /**
@@ -23,11 +23,22 @@ export function SnapshotView({
 
   const content = tab === "markdown" ? markdown : json;
 
+  // Cleared on unmount: a navigation inside two seconds of a copy used to call
+  // setState on a component that was gone.
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (copiedTimer.current !== null) clearTimeout(copiedTimer.current);
+    },
+    [],
+  );
+
   async function copy(): Promise<void> {
     try {
       await navigator.clipboard.writeText(content);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      if (copiedTimer.current !== null) clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => setCopied(false), 2000);
     } catch {
       // A clipboard the browser refuses is not worth an error banner: the text
       // is right there to select.
@@ -37,22 +48,26 @@ export function SnapshotView({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-3">
+        {/*
+          `aria-current` only. Both attributes were set on both buttons, and
+          they say different things: aria-pressed makes each one a toggle that
+          is on or off, aria-current makes the pair a set with one selected.
+          A screen reader announced "pressed, current", which is a control that
+          does not exist. This is a set with one selected, and .segmented styles
+          on aria-current, so that is the one that stays.
+        */}
         <div className="segmented">
           <button
             type="button"
             onClick={() => setTab("markdown")}
-            aria-pressed={tab === "markdown"}
             aria-current={tab === "markdown" ? "true" : undefined}
-            
           >
             {t("markdown")}
           </button>
           <button
             type="button"
             onClick={() => setTab("json")}
-            aria-pressed={tab === "json"}
             aria-current={tab === "json" ? "true" : undefined}
-            
           >
             {t("json")}
           </button>

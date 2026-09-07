@@ -25,7 +25,8 @@ export default async function ConsentPage({
   const params = await searchParams;
   const t = await getTranslations("consent");
 
-  const clientId = typeof params.client_id === "string" ? params.client_id : null;
+  const clientId =
+    typeof params.client_id === "string" ? params.client_id : null;
   const requestedScopes = parseScopes(params.scope);
 
   /**
@@ -37,7 +38,9 @@ export default async function ConsentPage({
    * access the instance has withdrawn is a lie to the person reading it.
    */
   const session = await getCurrentSession();
-  const allowed = session?.user ? checkAccess(session.user.email).allowed : false;
+  const allowed = session?.user
+    ? checkAccess(session.user.email).allowed
+    : false;
   if (!allowed) {
     return (
       <AuthShell>

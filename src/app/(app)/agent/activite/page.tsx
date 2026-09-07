@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { getLocale, getTranslations } from "next-intl/server";
+import { ActivityResultChip } from "@/components/agent/activity-result";
+import { activityQuerySchema } from "@/domain/schemas";
 import { requireUser } from "@/lib/session";
 import { listAgentActivity } from "@/services/activity-service";
 
@@ -8,28 +10,41 @@ import { listAgentActivity } from "@/services/activity-service";
  * or delete an entry from anywhere in the app: a log an agent could tidy up
  * would not be worth reading.
  */
+const PAGE_SIZE = 100;
+
 export default async function ActivityPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const page = Math.max(Number(params.page ?? "1") || 1, 1);
-  const pageSize = 100;
+
+  /*
+   * A positive integer, through the domain schema. `Number(params.page)`
+   * accepted "1.5" and produced a fractional offset, and "1e3" a page nobody
+   * asked for. The parse falls back to the first page rather than refusing,
+   * because a bad query string in a log viewer is a typo, not an error worth a
+   * screen of its own.
+   */
+  const page = pageNumber(params.page);
+  const query = activityQuerySchema.parse({
+    limit: PAGE_SIZE,
+    offset: (page - 1) * PAGE_SIZE,
+  });
 
   const { ctx } = await requireUser();
   const t = await getTranslations("agent");
 
-  const { entries, total } = await listAgentActivity(ctx, {
-    limit: pageSize,
-    offset: (page - 1) * pageSize,
-  });
+  const [{ entries, total }, locale] = await Promise.all([
+    listAgentActivity(ctx, query),
+    getLocale(),
+  ]);
 
-  const formatter = new Intl.DateTimeFormat(await getLocale(), {
+  const formatter = new Intl.DateTimeFormat(locale, {
     dateStyle: "medium",
     timeStyle: "medium",
   });
-  const lastPage = Math.max(Math.ceil(total / pageSize), 1);
+  const lastPage = Math.max(Math.ceil(total / PAGE_SIZE), 1);
 
   return (
     <div className="page flex flex-col gap-5">
@@ -72,21 +87,11 @@ export default async function ActivityPage({
                     </span>
                   </td>
                   <td>
-                    <span
-                      className={`chip ${
-                        entry.result === "ok"
-                          ? "chip-ok"
-                          : entry.result === "rejected"
-                            ? "chip-warn"
-                            : "chip-danger"
-                      }`}
-                    >
-                      {entry.result === "ok"
-                        ? t("resultOk")
-                        : entry.result === "rejected"
-                          ? `${t("resultRejected")} · ${entry.rejectionCode ?? ""}`
-                          : t("resultError")}
-                    </span>
+                    {/* One component, shared with the agent screen. */}
+                    <ActivityResultChip
+                      result={entry.result}
+                      rejectionCode={entry.rejectionCode}
+                    />
                   </td>
                   <td className="micro">{entry.oauthClientId ?? "-"}</td>
                 </tr>
@@ -109,4 +114,13 @@ export default async function ActivityPage({
       ) : null}
     </div>
   );
+}
+
+function pageNumber(value: string | string[] | undefined): number {
+  if (typeof value !== "string") return 1;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) return 1;
+  // The schema caps the offset it will accept, and a page far past the end
+  // returns nothing anyway, so the number is bounded here rather than refused.
+  return Math.min(parsed, 100_000);
 }

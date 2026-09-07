@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { LocaleSwitch } from "@/components/locale-switch";
 import { ThemeSwitch } from "@/components/theme-switch";
+import { signOut } from "@/lib/sign-out";
 import type { Theme } from "@/lib/theme";
 
 /**
@@ -53,21 +54,57 @@ export function AppNav({
   const common = useTranslations("common");
   const pathname = usePathname();
   const router = useRouter();
-  const [indexOpen, setIndexOpen] = useState(false);
 
-  // A panel that survives a navigation is a panel in the way.
-  useEffect(() => {
-    setIndexOpen(false);
-  }, [pathname]);
+  /*
+   * A panel that survives a navigation is a panel in the way, and a `Link`
+   * navigation does not pass through this component, so closing it cannot be
+   * done in a click handler.
+   *
+   * What is stored is the path the panel was opened on, and "open" is that
+   * path still being the current one. A navigation therefore closes it in the
+   * same render that changes the path. It used to be a boolean reset by
+   * `setIndexOpen(false)` inside an effect keyed on the pathname, which
+   * React's hooks lint now reports and which paints the panel once more on the
+   * new page before removing it.
+   */
+  const [openedAt, setOpenedAt] = useState<string | null>(null);
+  const indexOpen = openedAt === pathname;
 
+  const [signingOut, setSigningOut] = useState(false);
+
+  const panelRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  /*
+   * Focus goes into the panel when it opens and comes back to the block that
+   * opened it when it closes. Neither happened before: the panel appeared with
+   * focus still on the trigger and, once closed, focus was on an element that
+   * no longer existed, which drops the reader back at the top of the document.
+   *
+   * A ref for the trigger rather than `document.activeElement`, because the
+   * panel is also closed by a navigation and by Escape, and only the trigger is
+   * always the right place to return to.
+   */
   useEffect(() => {
     if (!indexOpen) return;
+    const first = panelRef.current?.querySelector<HTMLElement>(
+      'a, button, [tabindex]:not([tabindex="-1"])',
+    );
+    first?.focus();
+
     function onKey(event: KeyboardEvent): void {
-      if (event.key === "Escape") setIndexOpen(false);
+      if (event.key !== "Escape") return;
+      setOpenedAt(null);
+      triggerRef.current?.focus();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [indexOpen]);
+
+  function closePanel(): void {
+    setOpenedAt(null);
+    triggerRef.current?.focus();
+  }
 
   const primary: NavLink[] = [
     { href: weekHref, label: t("week"), match: "/semaine" },
@@ -87,19 +124,6 @@ export function AppNav({
   const isActive = (link: NavLink): boolean => pathname.startsWith(link.match);
   const settingsActive = settings.some(isActive);
 
-  async function signOut(): Promise<void> {
-    // The body and its content type are not optional: the endpoint declares the
-    // media types it accepts and answers 415 to a POST that names none, which
-    // fails silently here because nothing reads the response.
-    await fetch("/api/auth/sign-out", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: "{}",
-    });
-    router.replace("/login");
-    router.refresh();
-  }
-
   return (
     <>
       <a className="skip-link" href="#content">
@@ -115,7 +139,12 @@ export function AppNav({
           {app("name")}
         </Link>
 
-        <nav aria-label={app("name")} className="hidden lg:flex">
+        {/*
+          Named for what it holds. Both bars used to be labelled with the
+          application's name, which gives a screen reader two landmarks called
+          "Cooking App" and no way to tell them apart.
+        */}
+        <nav aria-label={t("groupPlan")} className="hidden lg:flex">
           {primary.map((link) => (
             <Link
               key={link.match}
@@ -135,9 +164,10 @@ export function AppNav({
         </span>
 
         <button
+          ref={triggerRef}
           type="button"
           aria-expanded={indexOpen}
-          onClick={() => setIndexOpen((open) => !open)}
+          onClick={() => (indexOpen ? closePanel() : setOpenedAt(pathname))}
           className={`label-text fillable ml-auto flex items-center gap-2 border-l-2 border-rule px-5 sm:ml-0 ${
             indexOpen || settingsActive ? "bg-ink text-on-ink" : ""
           }`}
@@ -159,40 +189,65 @@ export function AppNav({
           <button
             type="button"
             aria-label={common("close")}
-            onClick={() => setIndexOpen(false)}
+            onClick={closePanel}
             className="fixed inset-0 z-30 cursor-default"
           />
-          <div className="shell-panel fixed right-0 z-40 w-full max-w-xs border-b-2 border-l-2 border-rule bg-panel">
-            <ul className="stack border-t-0">
-              {settings.map((link, index) => (
-                <li key={link.match}>
-                  <Link
-                    href={link.href}
-                    aria-current={isActive(link) ? "page" : undefined}
-                    className={`fillable flex items-baseline gap-3 px-4 py-3 ${
-                      isActive(link) ? "bg-ink text-on-ink" : ""
-                    }`}
-                  >
-                    <span className="mono opacity-50">
-                      {String(index + 5).padStart(2, "0")}
-                    </span>
-                    <span className="label-text">{link.label}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+          <div
+            ref={panelRef}
+            className="shell-panel fixed right-0 z-40 w-full max-w-xs border-b-2 border-l-2 border-rule bg-panel"
+          >
+            <nav aria-label={t("groupSettings")}>
+              <ul className="stack border-t-0">
+                {settings.map((link, index) => (
+                  <li key={link.match}>
+                    <Link
+                      href={link.href}
+                      aria-current={isActive(link) ? "page" : undefined}
+                      className={`fillable flex items-baseline gap-3 px-4 py-3 ${
+                        isActive(link) ? "bg-ink text-on-ink" : ""
+                      }`}
+                    >
+                      <span className="mono opacity-50">
+                        {String(index + 5).padStart(2, "0")}
+                      </span>
+                      <span className="label-text">{link.label}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
 
             <div className="flex flex-wrap items-center gap-2 border-b-2 border-rule px-4 py-3">
               <LocaleSwitch />
               <ThemeSwitch current={theme} />
             </div>
 
+            {/*
+              One implementation, in src/lib/sign-out.ts, shared with the login
+              screen. This used to be a second copy with no pending state and
+              no error handling, so a failed request became an unhandled
+              rejection and the user stayed signed in with nothing on screen to
+              say so. It also clears the offline grocery cache, which otherwise
+              survives a sign-out on a shared device.
+            */}
             <button
               type="button"
-              onClick={signOut}
-              className="label-text fillable w-full px-4 py-3 text-left"
+              disabled={signingOut}
+              onClick={() => {
+                setSigningOut(true);
+                void signOut()
+                  .then(() => {
+                    router.replace("/login");
+                    router.refresh();
+                  })
+                  .catch((error: unknown) => {
+                    console.error("Sign out did not complete", error);
+                    setSigningOut(false);
+                  });
+              }}
+              className="label-text fillable w-full px-4 py-3 text-left disabled:opacity-50"
             >
-              {t("signOut")}
+              {signingOut ? common("saving") : t("signOut")}
             </button>
           </div>
         </>

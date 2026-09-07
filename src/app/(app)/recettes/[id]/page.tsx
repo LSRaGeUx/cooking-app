@@ -1,12 +1,11 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
-import { isDomainError } from "@/domain/errors";
 import { RecipeImage } from "@/components/recipes/recipe-image";
-import { pluralizeUnit } from "@/domain/units";
+import { RecipeLifecycle } from "@/components/recipes/recipe-lifecycle";
+import { formatQuantity } from "@/lib/form-values";
+import { loadRecipeOr404 } from "@/lib/page-data";
 import { requireUser } from "@/lib/session";
 import { sealClass } from "@/lib/recipe-seal";
-import { getRecipe, type RecipeDetail } from "@/services/recipe-service";
 
 /**
  * A recipe, split down the middle.
@@ -28,13 +27,8 @@ export default async function RecipePage({
   const { id } = await params;
   const { ctx } = await requireUser();
 
-  let detail: RecipeDetail;
-  try {
-    detail = await getRecipe(ctx, id);
-  } catch (error) {
-    if (isDomainError(error) && error.code === "RECIPE_NOT_FOUND") notFound();
-    throw error;
-  }
+  // One helper, shared with the edit page, which carried the same try/catch.
+  const detail = await loadRecipeOr404(ctx, id);
 
   const t = await getTranslations("recipes.detail");
   const common = await getTranslations("common");
@@ -45,7 +39,8 @@ export default async function RecipePage({
     { label: t("cookTime"), value: recipe.cookTimeMin },
     { label: t("activeTime"), value: recipe.activeTimeMin },
   ].filter(
-    (figure): figure is { label: string; value: number } => figure.value !== null,
+    (figure): figure is { label: string; value: number } =>
+      figure.value !== null,
   );
 
   return (
@@ -60,7 +55,10 @@ export default async function RecipePage({
           className="absolute inset-0 h-full w-full object-cover"
           fallback={
             <div className="seal-field absolute inset-0 flex items-center justify-center">
-              <span aria-hidden="true" className="numeral text-[14rem] opacity-25">
+              <span
+                aria-hidden="true"
+                className="numeral text-[14rem] opacity-25"
+              >
                 {[...recipe.title][0]?.toLocaleUpperCase() ?? "?"}
               </span>
             </div>
@@ -92,6 +90,17 @@ export default async function RecipePage({
           {recipe.description ? (
             <p className="lede mt-4">{recipe.description}</p>
           ) : null}
+          {/*
+            Delete, and undelete. The soft delete promises a 30-day window and
+            neither half of it was reachable from the interface: both server
+            actions existed with no caller.
+          */}
+          <div className="mt-4">
+            <RecipeLifecycle
+              recipeId={recipe.id}
+              deleted={recipe.deletedAt !== null}
+            />
+          </div>
         </div>
 
         {figures.length > 0 || recipe.keepsDays !== null ? (
@@ -132,12 +141,7 @@ export default async function RecipePage({
                   className="grid grid-cols-[6rem_1fr] items-baseline gap-x-4 px-5 py-3 lg:px-8"
                 >
                   <span className="label-text">
-                    {[
-                      line.quantity !== null ? formatQuantity(line.quantity) : null,
-                      pluralizeUnit(line.unit, line.quantity),
-                    ]
-                      .filter((part) => part !== null && part !== "")
-                      .join(" ")}
+                    {formatQuantity(line.quantity, line.unit)}
                   </span>
                   <span>
                     {line.rawName}
@@ -145,7 +149,10 @@ export default async function RecipePage({
                       <span className="text-muted"> ({line.note})</span>
                     ) : null}
                     {line.optional ? (
-                      <span className="text-muted"> ({common("optional")})</span>
+                      <span className="text-muted">
+                        {" "}
+                        ({common("optional")})
+                      </span>
                     ) : null}
                   </span>
                 </li>
@@ -187,11 +194,4 @@ export default async function RecipePage({
       </div>
     </article>
   );
-}
-
-/** Drops the trailing zeros a numeric column brings back: 3.000 reads as 3. */
-function formatQuantity(quantity: number): string {
-  return Number.isInteger(quantity)
-    ? String(quantity)
-    : String(Number(quantity.toFixed(2)));
 }

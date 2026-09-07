@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { signOut } from "@/lib/sign-out";
 
 /**
  * The way out for someone whose address was dropped from the allowlist.
@@ -17,23 +18,25 @@ export function SignOutLink() {
   const router = useRouter();
   const [pending, setPending] = useState(false);
 
-  async function signOut(): Promise<void> {
+  // One implementation, shared with the application navigation. It also drops
+  // the offline grocery cache, which otherwise survives a sign-out.
+  function onSignOut(): void {
     setPending(true);
-    // The body and its content type are not optional: the endpoint declares the
-    // media types it accepts and answers 415 to a POST that names none.
-    await fetch("/api/auth/sign-out", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: "{}",
-    });
-    router.replace("/login");
-    router.refresh();
+    void signOut()
+      .then(() => {
+        router.replace("/login");
+        router.refresh();
+      })
+      .catch((error: unknown) => {
+        console.error("Sign out did not complete", error);
+        setPending(false);
+      });
   }
 
   return (
     <button
       type="button"
-      onClick={signOut}
+      onClick={onSignOut}
       disabled={pending}
       className="link self-start text-sm"
     >

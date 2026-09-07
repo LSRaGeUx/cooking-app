@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { searchRecipesAction } from "@/app/actions/recipe-actions";
 
@@ -15,6 +15,13 @@ export interface PickableRecipe {
  * Assigning a recipe to a slot. Search runs server-side through the same
  * service the MCP `search_recipes` tool will call, so "what the user can find"
  * and "what an agent can find" cannot diverge.
+ *
+ * The search is driven from the change handler rather than from an effect. It
+ * used to be an effect that called `setSearching(true)` in its own body, which
+ * React's hooks lint now reports, and that did the awaiting inside a
+ * `setTimeout` callback with no `catch`: a rejected action left `searching`
+ * true forever and logged an unhandled rejection. Debouncing is a property of
+ * the input, not of the render, so it lives with the input.
  */
 export function RecipePicker({
   heading,
@@ -31,31 +38,33 @@ export function RecipePicker({
 }) {
   const t = useTranslations("recipes");
   const common = useTranslations("common");
+  const searchId = useId();
+
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<readonly PickableRecipe[]>(
-    initialRecipes,
-  );
+  const [searchResults, setSearchResults] = useState<
+    readonly PickableRecipe[] | null
+  >(null);
   const [searching, setSearching] = useState(false);
+
   const inputRef = useRef<HTMLInputElement>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Answers can arrive out of order, and the last one asked for is the only one
+  // the user is waiting on.
+  const generation = useRef(0);
 
   useEffect(() => {
     inputRef.current?.focus();
+    return () => {
+      if (timer.current !== null) clearTimeout(timer.current);
+    };
   }, []);
 
-  useEffect(() => {
-    if (query.trim().length === 0) {
-      setResults(initialRecipes);
-      return;
-    }
-
-    let cancelled = false;
-    setSearching(true);
-    const timer = setTimeout(async () => {
-      const result = await searchRecipesAction({ query, limit: 20 });
-      if (cancelled) return;
-      setSearching(false);
+  async function search(text: string, forGeneration: number): Promise<void> {
+    try {
+      const result = await searchRecipesAction({ query: text, limit: 20 });
+      if (generation.current !== forGeneration) return;
       if (result.ok) {
-        setResults(
+        setSearchResults(
           result.data.recipes.map((recipe) => ({
             id: recipe.id,
             title: recipe.title,
@@ -64,20 +73,43 @@ export function RecipePicker({
           })),
         );
       }
-    }, 250);
+    } catch (error) {
+      // A search that could not reach the server leaves the last results on
+      // screen. There is a picker open and a list in it; a banner here would
+      // cover the thing the user is trying to read.
+      console.error("Recipe search did not complete", error);
+    } finally {
+      if (generation.current === forGeneration) setSearching(false);
+    }
+  }
 
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [query, initialRecipes]);
+  function onQueryChange(value: string): void {
+    setQuery(value);
+    if (timer.current !== null) clearTimeout(timer.current);
+
+    const trimmed = value.trim();
+    generation.current += 1;
+    const forGeneration = generation.current;
+
+    if (trimmed.length === 0) {
+      setSearchResults(null);
+      setSearching(false);
+      return;
+    }
+
+    setSearching(true);
+    timer.current = setTimeout(() => {
+      void search(trimmed, forGeneration);
+    }, 250);
+  }
+
+  // An empty box shows the library the page already loaded; a query shows only
+  // what the server answered, so a stale list cannot look like a result.
+  const results =
+    query.trim().length === 0 ? initialRecipes : (searchResults ?? []);
 
   return (
-    <div
-      role="dialog"
-      aria-label={heading}
-      className="slip-float flex flex-col gap-3 p-3"
-    >
+    <div className="flex flex-col gap-3 p-3">
       <div className="flex items-baseline justify-between gap-2">
         <h3 className="eyebrow">{heading}</h3>
         <button type="button" onClick={onClose} className="link text-xs">
@@ -85,11 +117,20 @@ export function RecipePicker({
         </button>
       </div>
 
+      {/*
+        A real label, visually hidden. The input was labelled by its
+        placeholder alone, which disappears the moment anything is typed and
+        which several screen readers do not announce at all.
+      */}
+      <label htmlFor={searchId} className="sr-only">
+        {common("search")}
+      </label>
       <input
+        id={searchId}
         ref={inputRef}
         type="search"
         value={query}
-        onChange={(event) => setQuery(event.target.value)}
+        onChange={(event) => onQueryChange(event.target.value)}
         placeholder={t("searchPlaceholder")}
         className="field"
       />

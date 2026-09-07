@@ -2,9 +2,14 @@ import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import { ConstraintLists } from "@/components/profile/constraint-lists";
 import { ProfileForm } from "@/components/profile/profile-form";
+import {
+  AGENT_AUTHORITIES,
+  ALLERGEN_SEVERITIES,
+  DIETS,
+} from "@/domain/vocabulary";
+import { loadProfile } from "@/lib/page-data";
 import { requireUser } from "@/lib/session";
 import {
-  getProfile,
   listAllergens,
   listEquipment,
   listExclusions,
@@ -14,10 +19,15 @@ export default async function ProfilePage() {
   const { ctx } = await requireUser();
   const t = await getTranslations("profile");
 
-  const profile = await getProfile(ctx);
-  const allergens = await listAllergens(ctx);
-  const exclusions = await listExclusions(ctx);
-  const equipment = await listEquipment(ctx);
+  // Four independent reads, in parallel. They were awaited in sequence, so the
+  // page cost four round trips instead of one. `loadProfile` is the memoized
+  // read, so the layout's own call and this one are a single query.
+  const [profile, allergens, exclusions, equipment] = await Promise.all([
+    loadProfile(ctx),
+    listAllergens(ctx),
+    listExclusions(ctx),
+    listEquipment(ctx),
+  ]);
 
   return (
     <div className="page flex flex-col gap-8">
@@ -33,7 +43,15 @@ export default async function ProfilePage() {
 
       <ProfileForm
         profile={{
-          diet: profile.diet,
+          /*
+           * Narrowed here rather than asserted. The profile row types these
+           * two columns as `string`, the form types them as the vocabulary
+           * unions they actually are, and a value the enum does not have falls
+           * back to the vocabulary's own default so the select still shows
+           * something it offers. Tightening the row type is a service change
+           * and would make both of these redundant.
+           */
+          diet: oneOf(DIETS, profile.diet, "none"),
           dietNotes: profile.dietNotes,
           skillLevel: profile.skillLevel,
           defaultServings: profile.defaultServings,
@@ -46,7 +64,11 @@ export default async function ProfilePage() {
               ? null
               : Number(profile.weeklyBudgetAmount),
           weeklyBudgetCurrency: profile.weeklyBudgetCurrency,
-          agentAuthority: profile.agentAuthority,
+          agentAuthority: oneOf(
+            AGENT_AUTHORITIES,
+            profile.agentAuthority,
+            "proposal",
+          ),
         }}
       />
 
@@ -54,7 +76,7 @@ export default async function ProfilePage() {
         allergens={allergens.map((row) => ({
           id: row.id,
           name: row.name,
-          severity: row.severity,
+          severity: oneOf(ALLERGEN_SEVERITIES, row.severity, "strict"),
           matches: row.matches,
         }))}
         exclusions={exclusions.map((row) => ({ id: row.id, name: row.name }))}
@@ -66,4 +88,22 @@ export default async function ProfilePage() {
       />
     </div>
   );
+}
+
+/**
+ * A stored string as one of a vocabulary's values, or the fallback.
+ *
+ * Not an assertion: the columns carry a check constraint, so a value outside
+ * the list should be impossible, but a row written before the vocabulary
+ * changed is exactly the case where "should be impossible" renders a select
+ * with no selection at all.
+ */
+function oneOf<T extends string>(
+  vocabulary: readonly T[],
+  value: string,
+  fallback: T,
+): T {
+  return (vocabulary as readonly string[]).includes(value)
+    ? (value as T)
+    : fallback;
 }

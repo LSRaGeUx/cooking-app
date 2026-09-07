@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import {
   addPantryItemsAction,
   removePantryItemAction,
 } from "@/app/actions/pantry-actions";
-import { Feedback, type FeedbackState } from "@/components/feedback";
+import { Feedback } from "@/components/feedback";
+import type { PantryKind } from "@/domain/vocabulary";
+import { useActionRunner, type ActionRunner } from "@/lib/use-action-runner";
 import type { PantryItemView } from "@/services/pantry-service";
 
 /**
@@ -21,40 +22,11 @@ import type { PantryItemView } from "@/services/pantry-service";
 export function PantryLists({ items }: { items: readonly PantryItemView[] }) {
   const t = useTranslations("pantry");
   const common = useTranslations("common");
-  const router = useRouter();
-
-  const [feedback, setFeedback] = useState<FeedbackState>({});
-  const [pending, setPending] = useState(false);
-
-  async function run(
-    action: () => Promise<{
-      ok: boolean;
-      code?: string;
-      message?: string;
-      details?: Record<string, unknown>;
-    }>,
-  ): Promise<boolean> {
-    setPending(true);
-    const result = await action();
-    setPending(false);
-    if (!result.ok) {
-      setFeedback({
-        error: {
-          code: result.code ?? "INTERNAL",
-          message: result.message ?? "",
-          details: result.details,
-        },
-      });
-      return false;
-    }
-    setFeedback({});
-    router.refresh();
-    return true;
-  }
+  const runner = useActionRunner();
 
   return (
     <div className="flex flex-col gap-8">
-      <Feedback {...feedback} />
+      <Feedback error={runner.feedback} warnings={runner.warnings} />
 
       <PantrySection
         kind="use_soon"
@@ -63,8 +35,7 @@ export function PantryLists({ items }: { items: readonly PantryItemView[] }) {
         addLabel={t("addUseSoon")}
         withExpiry
         items={items.filter((item) => item.kind === "use_soon")}
-        disabled={pending}
-        onRun={run}
+        runner={runner}
       />
 
       <PantrySection
@@ -74,12 +45,11 @@ export function PantryLists({ items }: { items: readonly PantryItemView[] }) {
         addLabel={t("addStaple")}
         withExpiry={false}
         items={items.filter((item) => item.kind === "staple")}
-        disabled={pending}
-        onRun={run}
+        runner={runner}
       />
 
       <p className="sr-only" aria-live="polite">
-        {pending ? common("saving") : ""}
+        {runner.pending ? common("saving") : ""}
       </p>
     </div>
   );
@@ -92,27 +62,19 @@ function PantrySection({
   addLabel,
   withExpiry,
   items,
-  disabled,
-  onRun,
+  runner,
 }: {
-  kind: "staple" | "use_soon";
+  kind: PantryKind;
   title: string;
   help: string;
   addLabel: string;
   withExpiry: boolean;
   items: readonly PantryItemView[];
-  disabled: boolean;
-  onRun: (
-    action: () => Promise<{
-      ok: boolean;
-      code?: string;
-      message?: string;
-      details?: Record<string, unknown>;
-    }>,
-  ) => Promise<boolean>;
+  runner: ActionRunner;
 }) {
   const t = useTranslations("pantry");
   const common = useTranslations("common");
+  const format = useFormatter();
 
   const [name, setName] = useState("");
   const [quantityNote, setQuantityNote] = useState("");
@@ -142,7 +104,12 @@ function PantrySection({
               ) : null}
               {item.expiresOn ? (
                 <span className="micro text-amber-ink">
-                  {t("expires", { date: item.expiresOn })}
+                  {/*
+                    Formatted, not printed. This was showing the raw
+                    `yyyy-mm-dd` the column stores, which is the one date
+                    format nobody reads a use-by date in.
+                  */}
+                  {t("expires", { date: formatDate(format, item.expiresOn) })}
                 </span>
               ) : null}
               {item.source === "agent" ? (
@@ -150,9 +117,11 @@ function PantrySection({
               ) : null}
               <button
                 type="button"
-                disabled={disabled}
+                disabled={runner.pending}
                 aria-label={common("delete")}
-                onClick={() => void onRun(() => removePantryItemAction(item.id))}
+                onClick={() =>
+                  void runner.run(() => removePantryItemAction(item.id))
+                }
                 className="px-1.5 text-faint transition-colors hover:text-danger-ink disabled:opacity-30"
               >
                 &times;
@@ -194,33 +163,49 @@ function PantrySection({
         ) : null}
         <button
           type="button"
-          disabled={disabled || name.trim().length === 0}
-          onClick={async () => {
-            const ok = await onRun(() =>
-              addPantryItemsAction([
-                {
-                  kind,
-                  name: name.trim(),
-                  quantityNote: quantityNote.trim() || null,
-                  expiresOn: withExpiry && expiresOn ? expiresOn : null,
-                },
-              ]),
-            );
-            if (ok) {
-              setName("");
-              setQuantityNote("");
-              setExpiresOn("");
-            }
-          }}
+          disabled={runner.pending || name.trim().length === 0}
+          onClick={() =>
+            void runner
+              .run(() =>
+                addPantryItemsAction([
+                  {
+                    kind,
+                    name: name.trim(),
+                    quantityNote: quantityNote.trim() || null,
+                    expiresOn: withExpiry && expiresOn ? expiresOn : null,
+                  },
+                ]),
+              )
+              .then((result) => {
+                if (!result?.ok) return;
+                setName("");
+                setQuantityNote("");
+                setExpiresOn("");
+              })
+          }
           className="btn btn-quiet"
         >
           {addLabel}
         </button>
       </div>
 
-      {!withExpiry ? (
-        <p className="hint">{t("quantityNoteHelp")}</p>
-      ) : null}
+      {!withExpiry ? <p className="hint">{t("quantityNoteHelp")}</p> : null}
     </section>
   );
+}
+
+/**
+ * A stored `yyyy-mm-dd` as a date the reader recognises.
+ *
+ * Parsed as UTC midnight and formatted in UTC, because the column is a calendar
+ * day and not an instant: parsing it in the browser's zone puts a use-by date
+ * one day earlier for anyone west of Greenwich.
+ */
+function formatDate(
+  format: ReturnType<typeof useFormatter>,
+  isoDate: string,
+): string {
+  const parsed = new Date(`${isoDate}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return isoDate;
+  return format.dateTime(parsed, { dateStyle: "medium", timeZone: "UTC" });
 }
