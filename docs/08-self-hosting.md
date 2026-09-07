@@ -12,12 +12,12 @@ over MCP.
 
 ## 1. What you need
 
-| Requirement | Why |
-|---|---|
-| Node, version in `.nvmrc` | The application runtime |
-| PostgreSQL 18 | `uuidv7()` is used natively, and 18 is what the RLS setup is tested against |
-| Podman or Docker | Runs Postgres, and optionally the application too. `compose.yaml` is plain Compose spec and works under both |
-| A domain and TLS, for anything beyond localhost | OAuth 2.1 and the MCP resource identifier both need https off the loopback |
+| Requirement                                     | Why                                                                                                          |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Node, version in `.nvmrc`                       | The application runtime                                                                                      |
+| PostgreSQL 18                                   | `uuidv7()` is used natively, and 18 is what the RLS setup is tested against                                  |
+| Podman or Docker                                | Runs Postgres, and optionally the application too. `compose.yaml` is plain Compose spec and works under both |
+| A domain and TLS, for anything beyond localhost | OAuth 2.1 and the MCP resource identifier both need https off the loopback                                   |
 
 Roughly 300 MB of disk for the database after a year of ordinary use, plus the
 Node install. Serving it needs very little: one household generates no load
@@ -223,9 +223,42 @@ service in a file whichever profile is selected, so a required `APP_DOMAIN` in
 If the server already runs nginx, Traefik or Caddy for something else, leave the
 overlay out and proxy to `127.0.0.1:3000`, which is where the `app` service
 publishes. The two things that have to be right either way are in section 3
-under *Behind a reverse proxy*.
+under _Behind a reverse proxy_.
 
-### 2.4 Is it up
+### 2.4 Credentials as files, optional
+
+Values in `.env` reach the container through its `environment:` block, and
+anything in that block is readable by anyone who can run `docker inspect`, by
+every process in the container, and by anything that reads `/proc/1/environ`. On
+a single-operator box that is usually an acceptable trade. If it is not,
+`deploy/compose.secrets.yaml` mounts the four credentials on this stack as
+root-owned read-only files under `/run/secrets/` instead, where they appear in no
+environment at all: the Better Auth signing secret, the Google client secret and
+the two Postgres passwords, the second of which travels inside the connection
+URLs.
+
+Both halves of the stack already understand the convention. The Postgres image
+supports `POSTGRES_PASSWORD_FILE` natively, and `secret()` in `src/lib/config.ts`
+reads `<NAME>_FILE` in preference to `<NAME>` for every credential it resolves.
+
+```sh
+docker compose -f compose.yaml -f deploy/compose.secrets.yaml \
+  --profile serve up -d --no-build --wait
+```
+
+It is opt in and backwards compatible: values in `.env` keep working untouched,
+and it is a separate file for the same reason the TLS overlay is, except more
+sharply. Compose validates every secret file whichever profile is active and
+fails the whole command when one is missing, so these lines in `compose.yaml`
+would make `npm run db:up` on a laptop demand four files a laptop has no use for.
+The file itself carries the setup commands, the paths to fill into `.env`, and
+two things worth knowing before using it: the two database secrets hold the whole
+URL rather than the password, because Compose cannot percent-encode a value when
+it builds a URL out of one, and Better Auth reads its secret from the process
+environment inside the library, so the file form works only because
+`src/lib/auth.ts` passes it explicitly.
+
+### 2.5 Is it up
 
 ```sh
 curl -fsS https://your-host/api/health   # {"status":"ok"}
@@ -244,34 +277,49 @@ says nothing beyond up or not up.
 Every variable is server-side. There are no `NEXT_PUBLIC_` variables, so nothing
 here reaches a browser.
 
-| Variable | Required | What it is |
-|---|---|---|
-| `DATABASE_URL` | yes | The **owner** role. Migrations, and Better Auth's own pool. Postgres exempts a table owner from row-level security, so this must never be the runtime connection |
-| `APP_DATABASE_URL` | yes | The **runtime** role, `cooking_app`, created `NOBYPASSRLS` by `npm run db:bootstrap`. Every application query uses it. The application refuses to boot without it rather than falling back to the owner and silently losing tenancy enforcement |
-| `BETTER_AUTH_SECRET` | yes | Signing key for sessions and for the HMAC on the OAuth authorize query. Generate with `openssl rand -base64 32`. Changing it signs everyone out |
-| `BETTER_AUTH_URL` | in production | The public origin, for example `https://cuisine.example.com`. It is the OAuth issuer and the base of every redirect URI. Defaults to `http://localhost:3000`, which in production means agents get sent to a localhost that is not yours |
-| `MCP_RESOURCE` | yes | The canonical protected-resource identifier, RFC 8707 and RFC 9728. Set it to `https://<your host>/api/mcp`. It must match the address users paste into their client exactly, or token audience validation refuses every call |
-| `GOOGLE_CLIENT_ID` | for Google sign-in | The OAuth client from the Google Cloud console. Both Google variables are needed together, or neither takes effect |
-| `GOOGLE_CLIENT_SECRET` | for Google sign-in | The matching secret |
-| `ALLOWED_EMAILS` | in production | Comma-separated addresses allowed to hold an account, matched exactly after trimming and lowercasing. Empty is open in development and closed in production |
-| `AUTH_PASSWORD_LOGIN` | no | `true` opens the email and password endpoints on the auth API. Development only: it is what `npm run verify:oauth` signs in with. Nothing in the UI offers it and there is no sign-up screen. Unset in production |
-| `TEST_DATABASE_URL` | no | Development only. Where the test database lives, if not beside the development one. Defaults to `DATABASE_URL` with `_test` appended, and the name must end in `_test`: the suite truncates every table in it |
-| `TEST_APP_DATABASE_URL` | no | Development only. The runtime role's URL for that same database. It must name the same database as `TEST_DATABASE_URL` and carry the same password as `APP_DATABASE_URL`, since `cooking_app` is one cluster-wide role |
-| `VERIFY_DATABASE_URL` | no | Development only. Where the database `npm run dev:test` serves lives. Defaults to `DATABASE_URL` with `_verify` appended, and the name must end in `_verify`. Separate from the test database on purpose: that server holds sessions the suite's truncate would delete |
-| `VERIFY_APP_DATABASE_URL` | no | Development only. The runtime role's URL for that same database, under the same two rules as `TEST_APP_DATABASE_URL` |
-| `DEV_TEST_PORT` | no | Development only. Where `npm run dev:test` serves and `npm run verify:oauth` looks. Defaults to 3100, loopback only |
-| `POSTGRES_USER` | no | Containers only. The owner role Postgres initialises with. Defaults to `cooking`. Changing it after the first start changes nothing: the volume already holds an initialised cluster |
-| `POSTGRES_PASSWORD` | no | Containers only. Its password. Defaults to `cooking`, which is fine on a laptop and not on a machine with a public address. Same caveat about the first start |
-| `POSTGRES_DB` | no | Containers only. The database name. Defaults to `cooking` |
-| `APP_DB_PASSWORD` | no | Containers only. The runtime role's password. Compose builds `APP_DATABASE_URL` from it and `npm run db:bootstrap` reads it back out of that URL, so it is set here and nowhere else |
-| `APP_DOMAIN` | with the TLS overlay | The public hostname Caddy gets a certificate for, without the scheme. The same host as `BETTER_AUTH_URL` and `MCP_RESOURCE` |
-| `ACME_EMAIL` | no | Where Let's Encrypt writes about an expiry it could not renew. Empty is a valid choice |
-| `BACKUP_DIR` | no | Where `scripts/backup.sh` writes. Defaults to `./backups`, which is git-ignored |
-| `BACKUP_KEEP_DAYS` | no | How long a dump survives there. Defaults to 14 |
-| `COMPOSE_CMD` | no | What `scripts/backup.sh` calls. Defaults to `docker compose`; set `podman-compose` on a machine without Docker |
+| Variable                  | Required             | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`            | yes                  | The **owner** role. Migrations, and Better Auth's own pool. Postgres exempts a table owner from row-level security, so this must never be the runtime connection                                                                                                                                                                                                                                                                                                                                                                                     |
+| `APP_DATABASE_URL`        | yes                  | The **runtime** role, `cooking_app`, created `NOBYPASSRLS` by `npm run db:bootstrap`. Every application query uses it. The application refuses to boot without it rather than falling back to the owner and silently losing tenancy enforcement                                                                                                                                                                                                                                                                                                      |
+| `BETTER_AUTH_SECRET`      | yes                  | Signing key for sessions and for the HMAC on the OAuth authorize query. Generate with `openssl rand -base64 32`. Changing it signs everyone out                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `BETTER_AUTH_URL`         | in production        | The public origin, for example `https://cuisine.example.com`. It is the OAuth issuer, it sets the cookie attributes, it is the base of every redirect URI, and it is the base of every review link handed to an agent. `http://localhost:3000` in development, and **not** defaulted in production: the application refuses to boot without it rather than addressing a localhost that is not yours. It used to default either way, in three separate places, which is how a production instance could serve happily while sending agents dead links |
+| `MCP_RESOURCE`            | in production        | The canonical protected-resource identifier, RFC 8707 and RFC 9728. Set it to `https://<your host>/api/mcp`. It must match the address users paste into their client exactly, or token audience validation refuses every call. Deliberately not derived from `BETTER_AUTH_URL`, for that reason. Defaulted in development only, on the same rule                                                                                                                                                                                                     |
+| `GOOGLE_CLIENT_ID`        | for Google sign-in   | The OAuth client from the Google Cloud console. Both Google variables are needed together, or neither takes effect                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `GOOGLE_CLIENT_SECRET`    | for Google sign-in   | The matching secret                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `ALLOWED_EMAILS`          | in production        | Comma-separated addresses allowed to hold an account, matched exactly after trimming and lowercasing. Empty is open in development and closed in production                                                                                                                                                                                                                                                                                                                                                                                          |
+| `AUTH_PASSWORD_LOGIN`     | no                   | `true` opens the email and password endpoints on the auth API. Development only: it is what `npm run verify:oauth` signs in with. Nothing in the UI offers it and there is no sign-up screen. Unset in production                                                                                                                                                                                                                                                                                                                                    |
+| `TEST_DATABASE_URL`       | no                   | Development only. Where the test database lives, if not beside the development one. Defaults to `DATABASE_URL` with `_test` appended, and the name must end in `_test`: the suite truncates every table in it                                                                                                                                                                                                                                                                                                                                        |
+| `TEST_APP_DATABASE_URL`   | no                   | Development only. The runtime role's URL for that same database. It must name the same database as `TEST_DATABASE_URL` and carry the same password as `APP_DATABASE_URL`, since `cooking_app` is one cluster-wide role                                                                                                                                                                                                                                                                                                                               |
+| `VERIFY_DATABASE_URL`     | no                   | Development only. Where the database `npm run dev:test` serves lives. Defaults to `DATABASE_URL` with `_verify` appended, and the name must end in `_verify`. Separate from the test database on purpose: that server holds sessions the suite's truncate would delete                                                                                                                                                                                                                                                                               |
+| `VERIFY_APP_DATABASE_URL` | no                   | Development only. The runtime role's URL for that same database, under the same two rules as `TEST_APP_DATABASE_URL`                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `DEV_TEST_PORT`           | no                   | Development only. Where `npm run dev:test` serves and `npm run verify:oauth` looks. Defaults to 3100, loopback only                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `POSTGRES_USER`           | no                   | Containers only. The owner role Postgres initialises with. Defaults to `cooking`. Changing it after the first start changes nothing: the volume already holds an initialised cluster                                                                                                                                                                                                                                                                                                                                                                 |
+| `POSTGRES_PASSWORD`       | no                   | Containers only. Its password. Defaults to `cooking`, which is fine on a laptop and not on a machine with a public address. Same caveat about the first start                                                                                                                                                                                                                                                                                                                                                                                        |
+| `POSTGRES_DB`             | no                   | Containers only. The database name. Defaults to `cooking`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `APP_DB_PASSWORD`         | no                   | Containers only. The runtime role's password. Compose builds `APP_DATABASE_URL` from it and `npm run db:bootstrap` reads it back out of that URL, so it is set here and nowhere else                                                                                                                                                                                                                                                                                                                                                                 |
+| `APP_DOMAIN`              | with the TLS overlay | The public hostname Caddy gets a certificate for, without the scheme. The same host as `BETTER_AUTH_URL` and `MCP_RESOURCE`                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `ACME_EMAIL`              | no                   | Where Let's Encrypt writes about an expiry it could not renew. Empty is a valid choice                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `BACKUP_DIR`              | no                   | Where `scripts/backup.sh` writes. Defaults to `./backups`, which is git-ignored                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `BACKUP_KEEP_DAYS`        | no                   | How long a dump survives there. Defaults to 14                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `COMPOSE_CMD`             | no                   | What `scripts/backup.sh` calls. Defaults to `docker compose`; set `podman-compose` on a machine without Docker                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 Three variables exist only for `npm run verify:oauth` and are irrelevant in
 production: `VERIFY_BASE_URL`, `VERIFY_EMAIL`, `VERIFY_PASSWORD`.
+
+Five of these accept a `_FILE` form: `DATABASE_URL`, `APP_DATABASE_URL`,
+`BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_SECRET` and, through the Postgres image
+itself, `POSTGRES_PASSWORD`. Set `<NAME>_FILE` to a path and the value is read
+from that file in preference to the variable, which is what section 2.4 uses to
+keep credentials out of the container environment. Set both forms and the file
+wins, so a stale variable left behind is ignored rather than surprising you. The
+exception is `POSTGRES_PASSWORD`, where the Postgres image is stricter than this
+application and refuses to start with both set to a non-empty value, which is why
+the overlay blanks the plain form.
+
+Every variable is resolved in one module, `src/lib/config.ts`, and ESLint fails
+the build on `process.env` anywhere else in `src/`. That matters to an operator
+for one reason: a variable that is missing fails at startup with a message naming
+it, rather than being defaulted quietly somewhere in the code.
 
 ### The reference instance
 
@@ -313,7 +361,7 @@ which is why the application will not start with only `DATABASE_URL` set.
 Two separate things, and conflating them is the mistake worth avoiding.
 
 **Google decides that an address is really yours.** In the Google Cloud console,
-create a project, then an OAuth client of type *Web application*. Its authorised
+create a project, then an OAuth client of type _Web application_. Its authorised
 redirect URI is `<BETTER_AUTH_URL>/api/auth/callback/google`, spelled exactly,
 including the scheme. The only scopes used are `openid`, `email` and `profile`,
 all non-sensitive, so the consent screen needs no Google review and the app can
@@ -362,7 +410,7 @@ reads the request host.
 
 ```sh
 npm run start        # production server
-npm run verify       # dependency allowlist, typecheck, tests. Needs only Postgres
+npm run verify       # allowlist, format check, lint, typecheck, tests. Needs only Postgres
 npm run verify:oauth # the whole agent connection path, against `npm run dev:test`
 ```
 
@@ -488,6 +536,9 @@ OAuth dynamic client registration accepts unauthenticated registrations, because
 an MCP client arriving cold has no `client_id` and no way to get one otherwise.
 Registering a client grants nothing on its own. Nothing is readable until a
 signed-in user completes consent, and that user has to be on the allowlist.
+Unauthenticated is a necessity, though, and unbounded is not: registration is
+rate limited to five per minute, so the exposure is bounded rows in the OAuth
+application table rather than an open write loop.
 
 `/api/health` answers anybody, because a container healthcheck and an uptime
 monitor both run without a session. It says `ok` or `unavailable` and nothing
@@ -503,9 +554,16 @@ touch the others. Revocation is immediate, including for a token already issued,
 because the consent row is re-checked on every single call rather than trusted
 from the token.
 
-Every call passes through one guard: scopes, then the revocation check, then a
-rate limit of 120 calls per minute counted from the activity log, then the tool
-itself, then a log line either way. There is no path around it.
+Every call passes through one guard: `profile:read` at the transport door, then
+the tool's own scopes, then the revocation check, then a rate limit of 120 calls
+per minute counted from the activity log, then the tool itself, then a log line
+either way. There is no path around it. An unauthenticated call gets a 401 in the
+JSON-RPC shape the rest of the endpoint speaks, not an opaque 500.
+
+An access token lives one hour, pinned to that number rather than left to a
+library default. It matters here because it is the outer bound on how long a
+removed address keeps working through a token already issued, and the allowlist
+is re-read on every MCP call precisely so that bound is not the only control.
 
 What an agent cannot do, by construction:
 
@@ -556,20 +614,20 @@ a cached response never turns into a confusing bug.
 
 ## 7. When something is wrong
 
-| Symptom | Cause |
-|---|---|
-| `APP_DATABASE_URL must be set` at boot | The runtime role is missing. Run `npm run db:bootstrap` |
-| Every list is empty although the database has rows | A query that skipped `withUser()`. That is RLS working, not a data loss. The offending query returns zero rows |
-| An MCP client cannot find the authorization server | `MCP_RESOURCE` or `BETTER_AUTH_URL` does not match the public origin, or the proxy is swallowing `/.well-known/`. Run `npm run verify:oauth` |
-| `invalid audience` on every tool call | `MCP_RESOURCE` differs from the address the user pasted, down to the trailing path |
-| Consent page opens but the client never returns | The client's registered redirect URI does not match the one it is now using. Revoke it from the Agent screen and connect again |
-| Recipe import says the page publishes no structured recipe | It genuinely does not. This is a deliberate clean refusal rather than a guess: ask the agent to read the page and call `create_recipe` |
-| Everyone signed out after a deploy | `BETTER_AUTH_SECRET` changed |
-| `required variable X is missing a value` from `docker compose` | One of the six required variables is absent from `.env`. The message names it and says what it is for |
-| `npm run db:up` asks for `APP_DOMAIN` | The TLS overlay is loaded for a command that only wants the database. Drop it from `COMPOSE_FILE`, or pass `-f compose.yaml` alone |
-| The container is `unhealthy` although the site answers | `/api/health` reaches the application but not Postgres. `docker compose logs app` names the failure; usually `APP_DB_PASSWORD` changed without the role being altered to match |
-| `next build` dies during `--profile serve up --build` with no error | The kernel killed it for memory. 2 GB, or a gigabyte of swap, or build the image somewhere else |
-| Caddy will not get a certificate | The A record does not point here yet, or ports 80 and 443 are not reachable, or something else on the machine already holds them. `docker compose logs proxy` says which |
+| Symptom                                                             | Cause                                                                                                                                                                          |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `APP_DATABASE_URL must be set` at boot                              | The runtime role is missing. Run `npm run db:bootstrap`                                                                                                                        |
+| Every list is empty although the database has rows                  | A query that skipped `withUser()`. That is RLS working, not a data loss. The offending query returns zero rows                                                                 |
+| An MCP client cannot find the authorization server                  | `MCP_RESOURCE` or `BETTER_AUTH_URL` does not match the public origin, or the proxy is swallowing `/.well-known/`. Run `npm run verify:oauth`                                   |
+| `invalid audience` on every tool call                               | `MCP_RESOURCE` differs from the address the user pasted, down to the trailing path                                                                                             |
+| Consent page opens but the client never returns                     | The client's registered redirect URI does not match the one it is now using. Revoke it from the Agent screen and connect again                                                 |
+| Recipe import says the page publishes no structured recipe          | It genuinely does not. This is a deliberate clean refusal rather than a guess: ask the agent to read the page and call `create_recipe`                                         |
+| Everyone signed out after a deploy                                  | `BETTER_AUTH_SECRET` changed                                                                                                                                                   |
+| `required variable X is missing a value` from `docker compose`      | One of the six required variables is absent from `.env`. The message names it and says what it is for                                                                          |
+| `npm run db:up` asks for `APP_DOMAIN`                               | The TLS overlay is loaded for a command that only wants the database. Drop it from `COMPOSE_FILE`, or pass `-f compose.yaml` alone                                             |
+| The container is `unhealthy` although the site answers              | `/api/health` reaches the application but not Postgres. `docker compose logs app` names the failure; usually `APP_DB_PASSWORD` changed without the role being altered to match |
+| `next build` dies during `--profile serve up --build` with no error | The kernel killed it for memory. 2 GB, or a gigabyte of swap, or build the image somewhere else                                                                                |
+| Caddy will not get a certificate                                    | The A record does not point here yet, or ports 80 and 443 are not reachable, or something else on the machine already holds them. `docker compose logs proxy` says which       |
 
 The Agent screen carries an activity log of every read and write an agent has
 made, with the tool, the client, the result and the time. It is the first place

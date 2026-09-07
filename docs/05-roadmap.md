@@ -1,7 +1,7 @@
 # 05 - Roadmap
 
 Status: draft v1
-Last updated: 2026-08-31
+Last updated: 2026-09-07
 
 Budget is unspecified, so this is phased by dependency and by value. Every phase
 ends in something usable. You can stop after any of them and still own a working
@@ -20,7 +20,7 @@ Two sequencing rules drove the order:
 
 ---
 
-## Phase 0 - Foundation and risk spike  [DONE 2026-08-31]
+## Phase 0 - Foundation and risk spike [DONE 2026-08-31]
 
 Goal: prove the hard part works, and stand up the skeleton.
 
@@ -51,7 +51,7 @@ running server and passes.
 
 ---
 
-## Phase 1 - The manual core loop  [DONE 2026-08-31]
+## Phase 1 - The manual core loop [DONE 2026-08-31]
 
 Goal: a person with no agent can plan a week.
 
@@ -87,7 +87,7 @@ Built as specified, with four things worth recording:
 
 ---
 
-## Phase 2 - Grocery list  [DONE 2026-08-31]
+## Phase 2 - Grocery list [DONE 2026-08-31]
 
 Goal: the feature with the highest perceived value per unit of work.
 
@@ -150,7 +150,7 @@ allergen matcher, which is the direction a strict allergen wants to err in.
 
 ---
 
-## Phase 3 - Profile and facts  [DONE 2026-08-31]
+## Phase 3 - Profile and facts [DONE 2026-08-31]
 
 Goal: build the moat, and populate it by hand before an agent touches it.
 
@@ -203,7 +203,7 @@ useful.
 
 ---
 
-## Phase 4 - Agent read access  [DONE 2026-08-31]
+## Phase 4 - Agent read access [DONE 2026-08-31]
 
 Goal: first real agent value, and validation of the connect flow.
 
@@ -252,7 +252,7 @@ now pins both behaviours down.
 
 ---
 
-## Phase 5 - Agent write access  [DONE 2026-09-01]
+## Phase 5 - Agent write access [DONE 2026-09-01]
 
 Goal: the actual pitch, delivered.
 
@@ -303,7 +303,7 @@ strict allergen leaves no orphaned recipes behind, which
 
 ---
 
-## Phase 6 - Feedback loop  [DONE 2026-09-01]
+## Phase 6 - Feedback loop [DONE 2026-09-01]
 
 Goal: make week 20 better than week 1.
 
@@ -347,7 +347,7 @@ rating is not a good one.
 
 ---
 
-## Phase 7 - Pantry  [DONE 2026-09-01]
+## Phase 7 - Pantry [DONE 2026-09-01]
 
 Goal: less waste, better context, minimum friction.
 
@@ -375,7 +375,7 @@ be declared rather than rendered as silence.
 
 ---
 
-## Phase 8 - Prep and batch planning  [DONE 2026-09-01]
+## Phase 8 - Prep and batch planning [DONE 2026-09-01]
 
 Goal: turn the time budget data into something that pays off.
 
@@ -404,7 +404,7 @@ four portions across five meals is merely optimistic and only flagged.
 
 ---
 
-## Phase 9 - Recipe URL import  [DONE 2026-09-01]
+## Phase 9 - Recipe URL import [DONE 2026-09-01]
 
 Goal: solve the cold-start library problem with recipes the user already likes.
 
@@ -599,7 +599,7 @@ no reason to touch its toolbars.
   tall, and a body with nothing in it has nothing to scroll.
 - **`viewport-fit=cover` was missing, so every safe-area inset resolved to
   zero.** The phone tab strip had carried `padding-bottom:
-  env(safe-area-inset-bottom)` since it was written and it had never done
+env(safe-area-inset-bottom)` since it was written and it had never done
   anything. Each bar now pads its own content out of the notch and the home
   indicator, and the shell paints underneath both, so ink reaches the edge of
   the screen and text does not sit under the clock.
@@ -667,12 +667,79 @@ width.
 
 ---
 
+## Code quality audit [7 September 2026]
+
+**Not a phase.** Every phase above is shipped, so this is what a full read of the
+codebase found once there was a whole product to read rather than a phase to
+finish.
+
+Most of what it turned up was hygiene, and the hygiene is recorded where it
+belongs rather than here: the environment variable module, the secret file
+convention, the runtime connection role for Better Auth, ESLint and Prettier
+gating `verify`, the split of `plan-service.ts` and the report-only content
+security policy are decisions 24 to 31 in `04-tech-spec.md`. The schema work,
+composite foreign keys tying a child row to its parent's owner, foreign key
+indexes, the two purge functions and the retirement of `recipe.allergen_ids`, is
+in `02-data-model.md`. The agent surface changes, uniform snake_case parameters,
+one serializer per entity, four new error codes and the reversible pantry
+removal, are in `03-agent-interface.md`. What was identified and deliberately not
+done is `06-open-questions.md`, gaps G1 to G6.
+
+Three findings were different in kind. They were not hygiene, not latent, and not
+theoretical: they were user-visible bugs in shipped behaviour.
+
+1. **The strict allergen matcher had three false negatives.** This is the one
+   function constraint 2 depends on, the absolute block with no override path,
+   and it failed to match in three ways. A hyphen was not folded, so a user who
+   typed `fruits à coque` was not protected against an ingredient written
+   `fruits-à-coque`, which matters because the regulated French allergen names
+   are hyphenated compounds and a paste from a web page rarely uses the plain
+   hyphen-minus. The plural was handled on one side only, so a user who typed
+   `oeufs` was unprotected against `1 oeuf`. And a whitespace-only allergen name
+   passed validation and could be stored as a strict block, which is a block that
+   can never match anything: the user sees a strict allergen listed on their
+   profile and has no protection at all. Every one of the three fails in the
+   direction that lets a meal through.
+2. **A French decimal comma destroyed the quantity.** `1,5 kg de farine` parsed
+   to no quantity, no unit, and a bogus note. The parser treated the first comma
+   as the start of a note, which is right for `2 oignons, émincés` and wrong for
+   every half-kilo in a French recipe. A comma with a digit on either side is a
+   decimal point, never a clause break.
+3. **Any agent proposal carrying a prep link was always refused.** The link
+   resolver looked its entries up through the active version, and a pending
+   proposal's entries are by definition not in the active version, so the whole
+   batch-cooking half of `propose_week` could not be used at all. The fix is
+   `linkPrepInVersion`, which trusts the entries the write just produced rather
+   than re-reading the week.
+
+**All three were found by reading, not by the suite.** That is the part worth
+keeping. The suite was green throughout, and it was green on the third one for a
+specific and instructive reason: the test that was supposed to cover prep links
+in a proposal passed an empty link array. It asserted a proposal succeeds, which
+was true whether or not linking worked, so it would have gone on passing for as
+long as the feature stayed broken. A test that cannot fail is worse than a
+missing one, because a missing test is visibly missing. The durable lesson is to
+check what an assertion would catch, not only that it passes, and the honest
+prompt for it is to ask what would have to break for this test to go red.
+
+---
+
 ## Deferred, in the order they would be reconsidered
 
 1. **Household with multiple eaters.** The largest v2 feature and the most
    requested one, if this ever meets other users. The schema is already shaped
-   for it: see `02-data-model.md` section 10.
+   for it: see `02-data-model.md` section 11.
 2. Local stdio MCP wrapper.
-3. Cost estimates per recipe and per week, once ingredients carry prices.
-4. Seasonality awareness driven by a static ingredient calendar, no LLM needed.
-5. Nutrition, only on real demand, and only with a licensing answer.
+3. **A grocery tool on the agent surface.** The interface spec listed a
+   `generate_grocery_list` write tool for a while and no such tool was ever
+   built, so it has been removed from `03-agent-interface.md`: a spec is not the
+   place to record an intention as though it shipped. The intention itself is
+   reasonable and lands here instead. Generation is a request-time read model
+   today (`02-data-model.md` section 9) and the web screen is the only thing that
+   triggers it. Before building the tool, settle what an agent gains over
+   `cooking://plan/*` plus its own reading of the recipes, because the merge
+   behaviour that makes the list survive a plan change is the interesting part and
+   it is not obviously something an agent should drive.
+4. Cost estimates per recipe and per week, once ingredients carry prices.
+5. Seasonality awareness driven by a static ingredient calendar, no LLM needed.
+6. Nutrition, only on real demand, and only with a licensing answer.

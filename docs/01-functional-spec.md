@@ -1,27 +1,27 @@
 # 01 - Functional Specification
 
 Status: draft v1
-Last updated: 2026-08-31
+Last updated: 2026-09-07
 Depends on: `00-vision.md`
 
 ## 1. Domain vocabulary
 
 Fixed terms. Used identically in UI copy, database, and MCP tool names.
 
-| Term | Meaning |
-|---|---|
-| **User** | One authenticated account. In v1, one eater. |
-| **Profile** | The structured, enforced part of what we know: allergies, diet, skill, equipment, budget, time budgets, slot config. |
-| **Fact** | One atomic, categorized, free-text statement about the user, with source, confidence, and timestamp. Agent-writable. |
-| **Slot** | One plannable position: a (day, meal) pair, for example Tuesday dinner. Which slots exist is per-user config. |
-| **Recipe** | A reusable dish definition: ingredients, steps, times, tags. Owned by the user. |
-| **Plan** | One week of assignments of recipes to slots. Versioned. |
-| **Plan version** | An immutable snapshot of a plan. A proposal is a version in `pending` state. |
-| **Entry** | One recipe assigned to one slot inside a plan version, plus servings and notes. |
-| **Prep link** | A relation stating that entry A's cooking session produces food consumed by entry B. |
-| **Grocery list** | A derived, then user-editable, aggregation of a plan version's ingredients minus pantry coverage. |
-| **Pantry item** | Something the user has: a staple (always present) or a use-soon item (expiring). |
-| **Feedback** | Per-entry outcome after the fact: cooked, skipped, or swapped, plus optional rating and note. |
+| Term             | Meaning                                                                                                              |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------- |
+| **User**         | One authenticated account. In v1, one eater.                                                                         |
+| **Profile**      | The structured, enforced part of what we know: allergies, diet, skill, equipment, budget, time budgets, slot config. |
+| **Fact**         | One atomic, categorized, free-text statement about the user, with source, confidence, and timestamp. Agent-writable. |
+| **Slot**         | One plannable position: a (day, meal) pair, for example Tuesday dinner. Which slots exist is per-user config.        |
+| **Recipe**       | A reusable dish definition: ingredients, steps, times, tags. Owned by the user.                                      |
+| **Plan**         | One week of assignments of recipes to slots. Versioned.                                                              |
+| **Plan version** | An immutable snapshot of a plan. A proposal is a version in `pending` state.                                         |
+| **Entry**        | One recipe assigned to one slot inside a plan version, plus servings and notes.                                      |
+| **Prep link**    | A relation stating that entry A's cooking session produces food consumed by entry B.                                 |
+| **Grocery list** | A derived, then user-editable, aggregation of a plan version's ingredients minus pantry coverage.                    |
+| **Pantry item**  | Something the user has: a staple (always present) or a use-soon item (expiring).                                     |
+| **Feedback**     | Per-entry outcome after the fact: cooked, skipped, or swapped, plus optional rating and note.                        |
 
 ## 2. Core loop
 
@@ -78,24 +78,37 @@ Rules:
 
 Enforced fields, because these need validation, filtering, or hard blocking:
 
-| Field | Type | Enforcement |
-|---|---|---|
-| Allergies and intolerances | list of allergens, each with severity (avoid / strict) | **Strict is a hard block.** A recipe containing a strict allergen cannot be assigned to a slot, by UI or by agent. Server rejects. |
-| Diet | one of none, vegetarian, vegan, pescatarian, halal, kosher, plus free-text extras | Hard filter on recipe assignment, overridable per entry with an explicit confirmation |
-| Hard exclusions | list of ingredients the user refuses | Warning on assignment, not a block |
-| Skill level | 1 to 5 | Advisory, surfaced to the agent |
-| Equipment | list from a controlled vocabulary, extensible | Advisory. Recipes declare required equipment, mismatch raises a warning |
-| Weekly budget | amount plus currency, optional | Advisory. Enables cost estimates when recipe ingredients carry prices |
-| Default servings | integer | Default for new entries |
-| Default time budget | minutes | Fallback when a slot has none |
-| Variety preference | 1 to 5, from "I like repetition" to "never repeat" | Advisory, drives agent repetition behavior |
-| Shopping day | one ISO weekday, optional | Defines the shopping cycle, which is what a grocery list covers. See section 8 |
-| Locale and units | language, unit system | Formatting |
+| Field                      | Type                                                                              | Enforcement                                                                                                                        |
+| -------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Allergies and intolerances | list of allergens, each with severity (avoid / strict)                            | **Strict is a hard block.** A recipe containing a strict allergen cannot be assigned to a slot, by UI or by agent. Server rejects. |
+| Diet                       | one of none, vegetarian, vegan, pescatarian, halal, kosher, plus free-text extras | Hard filter on recipe assignment, overridable per entry with an explicit confirmation                                              |
+| Hard exclusions            | list of ingredients the user refuses                                              | Warning on assignment, not a block                                                                                                 |
+| Skill level                | 1 to 5                                                                            | Advisory, surfaced to the agent                                                                                                    |
+| Equipment                  | list from a controlled vocabulary, extensible                                     | Advisory. Recipes declare required equipment, mismatch raises a warning                                                            |
+| Weekly budget              | amount plus currency, optional                                                    | Advisory. Enables cost estimates when recipe ingredients carry prices                                                              |
+| Default servings           | integer                                                                           | Default for new entries                                                                                                            |
+| Default time budget        | minutes                                                                           | Fallback when a slot has none                                                                                                      |
+| Variety preference         | 1 to 5, from "I like repetition" to "never repeat"                                | Advisory, drives agent repetition behavior                                                                                         |
+| Shopping day               | one ISO weekday, optional                                                         | Defines the shopping cycle, which is what a grocery list covers. See section 8                                                     |
+| Locale and units           | language, unit system                                                             | Formatting                                                                                                                         |
 
 Allergen handling is the only place in the whole system with a hard,
 non-overridable block. Everything else is a warning the user can accept. That
 asymmetry is deliberate: a warning the user can click through is safe for a
 disliked ingredient and unacceptable for a severe allergy.
+
+Which makes the matching rules a functional requirement rather than an
+implementation detail, because the block is only as absolute as the comparison
+under it, and every way a comparison can fail here fails by letting a meal
+through. An allergen name and an ingredient name are compared after folding
+case, accents, the ligatures `œ` and `æ`, apostrophes and every dash Unicode
+offers, and the comparison is symmetric on the French plural. So `fruits à coque`
+matches `fruits-à-coque`, `boeuf` matches `bœuf`, and a user who typed `oeufs`
+is protected against `1 oeuf` and the reverse. An allergen name is also trimmed
+before it is accepted, because a name that is only whitespace can never match
+anything and would sit on the profile as a strict block giving no protection at
+all. All four of those were real gaps, found in the September 2026 audit and
+recorded in `05-roadmap.md`.
 
 ## 5. Facts (open part)
 
@@ -103,16 +116,16 @@ The learning surface. One fact is one statement.
 
 Fields:
 
-| Field | Notes |
-|---|---|
-| Category | taste, organization, pantry habit, social, health, equipment, technique, other |
-| Statement | Short free text, one assertion. "Dislikes coriander", not a paragraph |
-| Polarity | positive, negative, neutral. Lets the agent filter fast |
-| Confidence | low, medium, high |
-| Source | user, agent, inferred-from-feedback |
-| Status | unconfirmed, confirmed, retired |
-| Timestamps | created, last referenced |
-| Optional evidence | references to entries or feedback that support it |
+| Field             | Notes                                                                          |
+| ----------------- | ------------------------------------------------------------------------------ |
+| Category          | taste, organization, pantry habit, social, health, equipment, technique, other |
+| Statement         | Short free text, one assertion. "Dislikes coriander", not a paragraph          |
+| Polarity          | positive, negative, neutral. Lets the agent filter fast                        |
+| Confidence        | low, medium, high                                                              |
+| Source            | user, agent, inferred-from-feedback                                            |
+| Status            | unconfirmed, confirmed, retired                                                |
+| Timestamps        | created, last referenced                                                       |
+| Optional evidence | references to entries or feedback that support it                              |
 
 Rules:
 
@@ -152,7 +165,16 @@ staying diffable, reviewable, and attributable.
 - Steps: ordered list of text.
 - Tags: free-form plus derived (cuisine, main protein, season, difficulty).
 - Required equipment: list.
-- Allergens: derived from ingredients where possible, user-overridable.
+- Allergens: derived from the linked ingredients, at read time, every time. Not
+  overridable on the recipe and no longer cached on it. The cache existed and was
+  removed in the September 2026 audit, because it was refreshed only when the
+  recipe itself was written: adding an allergen to the profile left every
+  existing recipe's copy stale, so a listing could show a recipe as clean while
+  the assignment path, which always re-derived, correctly refused it. A safety
+  derivation with two answers is worse than a slower one. The override that used
+  to live here has no replacement: correcting an allergen means correcting the
+  ingredient it comes from, which fixes every recipe using it at once.
+  `02-data-model.md` records why the column is kept rather than dropped.
 - Batch friendliness: does this scale and keep well. Feeds prep planning.
 
 ### 6.2 Creation paths
@@ -171,6 +193,13 @@ staying diffable, reviewable, and attributable.
      it, and POST a structured recipe. This is the pattern that replaces
      server-side AI throughout the app: when parsing gets hard, hand the job to
      the agent that is already in the loop.
+   - "Could not parse" and "could not reach" are two different answers, and the
+     agent surface names them separately as `PARSE_FAILED` and
+     `UPSTREAM_FAILED`. The first means the page was fetched and holds no
+     recipe, so tier 2 is the way forward and rewriting the address changes
+     nothing. The second means the remote server refused or failed, so the same
+     call later is the right move and there is nothing to read yet. Collapsing
+     them tells an agent to hunt for a typo in an address that was correct.
 
 ### 6.3 Normalized ingredients
 
@@ -224,6 +253,7 @@ Two authority modes, a user setting, defaulting to proposal:
 **Proposal mode (default).** The agent writes a new version in `pending` state.
 The UI shows a review screen with a slot-by-slot diff against the active
 version: unchanged, changed, added, removed. The user can:
+
 - Accept the whole version, which activates it.
 - Accept per slot, which builds a new version from the chosen entries.
 - Reject with an optional reason. The reason is recorded and offered to the agent
@@ -233,6 +263,7 @@ version: unchanged, changed, added, removed. The user can:
 kept and one-click revert restores the previous version.
 
 Additional rules:
+
 - Only one pending version at a time per plan week. A new proposal supersedes any
   earlier pending one.
 - The agent must state a **rationale per entry**: which profile fields, facts,
@@ -244,6 +275,12 @@ Additional rules:
   places a strict-allergen recipe, exceeds a slot time budget by more than a
   configurable tolerance, or references a nonexistent recipe. Rejection returns
   a structured error the agent can act on, not a generic 400.
+- "Fills a skipped slot" means the entry this write is placing, and only that
+  one. An entry already sitting in a slot that has since been skipped or hidden
+  is carried forward with a `SLOT_NO_LONGER_PLANNED` warning, per the rule above
+  that such an entry survives. Refusing it instead is a real bug this once had:
+  every later edit of the week failed, naming a slot the caller had not touched,
+  so changing Tuesday was refused because of something done to Saturday.
 
 ### 7.4 Prep links and batch cooking
 
@@ -347,8 +384,13 @@ Explicitly not in v1: quantities decremented on cooking, barcode scanning,
 expiry notifications, full inventory. Those are what kill inventory features.
 The user's job here is 30 seconds of typing, not bookkeeping.
 
-Agents can read both lists and can add use-soon items (for example after the
-user mentions leftovers in chat).
+Agents can read both lists, add use-soon items (for example after the user
+mentions leftovers in chat), and remove an item. A removal is not a delete: the
+item leaves both lists and stops covering grocery lines, and `restore_pantry_item`
+brings it back with its original name, quantity note and expiry date, which
+re-adding it would not preserve. It is soft for 30 days and then purged. This was
+the one agent-reachable write with no way back, which is the rule that nothing an
+agent does is irreversible, and it was corrected in the September 2026 audit.
 
 ## 10. Feedback loop
 
@@ -363,6 +405,7 @@ Surfacing: a light prompt on the plan screen for past slots, never a modal, neve
 blocking. Batch-fillable for a whole past week in one screen.
 
 Derived signals available to the agent:
+
 - Cook rate per recipe and per slot position.
 - Recipes never cooked despite being planned more than once, which is a strong
   negative signal that a rating never captures.
@@ -376,20 +419,20 @@ the fact store honest about provenance.
 
 ## 11. Screens
 
-| Screen | Purpose | Notes |
-|---|---|---|
-| **Week** (home) | The grid. Plan, review proposals, record feedback | The one screen that matters. Deep-linkable per week |
-| **Proposal review** | Slot-by-slot diff of a pending version, with rationale per entry | Accept all, accept per slot, reject with reason |
-| **Recipe library** | Search, filter by tag, time, protein, rotation age | Filters must include "not cooked in N weeks" |
-| **Recipe detail and edit** | View and edit, see plan history for this recipe | Shows aggregate feedback |
-| **Grocery list** | Shop from it | One shopping cycle per list, mobile-first, offline-tolerant |
-| **Pantry** | Staples and use-soon | Two short lists |
-| **Profile** | Structured fields | Grouped: dietary, kitchen, organization, preferences |
-| **Facts** | Review, confirm, edit, retire, filter by category and status | Unconfirmed agent facts shown first. This screen is the trust surface of the product |
-| **Slot configuration** | Define the weekly grid and time budgets | Visual week editor, not a form |
-| **Agent connection** | Get the MCP URL, connect, test, see recent agent activity | Treated as a first-class feature, see below |
-| **Agent activity log** | Chronological list of every agent read and write | Essential for trust and for debugging bad proposals |
-| **Account** | Auth, sessions, connected clients, export, delete | Includes revoking an agent client |
+| Screen                     | Purpose                                                          | Notes                                                                                |
+| -------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| **Week** (home)            | The grid. Plan, review proposals, record feedback                | The one screen that matters. Deep-linkable per week                                  |
+| **Proposal review**        | Slot-by-slot diff of a pending version, with rationale per entry | Accept all, accept per slot, reject with reason                                      |
+| **Recipe library**         | Search, filter by tag, time, protein, rotation age               | Filters must include "not cooked in N weeks"                                         |
+| **Recipe detail and edit** | View and edit, see plan history for this recipe                  | Shows aggregate feedback                                                             |
+| **Grocery list**           | Shop from it                                                     | One shopping cycle per list, mobile-first, offline-tolerant                          |
+| **Pantry**                 | Staples and use-soon                                             | Two short lists                                                                      |
+| **Profile**                | Structured fields                                                | Grouped: dietary, kitchen, organization, preferences                                 |
+| **Facts**                  | Review, confirm, edit, retire, filter by category and status     | Unconfirmed agent facts shown first. This screen is the trust surface of the product |
+| **Slot configuration**     | Define the weekly grid and time budgets                          | Visual week editor, not a form                                                       |
+| **Agent connection**       | Get the MCP URL, connect, test, see recent agent activity        | Treated as a first-class feature, see below                                          |
+| **Agent activity log**     | Chronological list of every agent read and write                 | Essential for trust and for debugging bad proposals                                  |
+| **Account**                | Auth, sessions, connected clients, export, delete                | Includes revoking an agent client                                                    |
 
 ### 11.1 Agent connection screen
 
@@ -423,18 +466,18 @@ explicitly:
 
 ## 13. Edge cases worth deciding now
 
-| Case | Decision |
-|---|---|
-| Recipe deleted while used in past plans | Soft delete. Past entries keep a denormalized title snapshot so history stays readable |
-| Recipe edited after being cooked | Entries store the recipe reference plus a snapshot of servings and ingredient list used at plan time. Grocery lists already generated are untouched |
-| Agent proposes a recipe that does not exist yet | Allowed and expected: the tool contract lets a single call create recipes and assign them atomically, in one transaction |
-| Two agents connected at once | Allowed. Optimistic concurrency on plan versions via an expected-version token. Second writer gets a conflict error with the current state |
-| User changes slot config mid-week | Active plan version untouched. Orphaned entries strip appears |
-| Week with no plan | Grid renders empty and plannable. No implicit plan creation until first assignment |
-| Plan spanning a year boundary | ISO week numbering with an explicit year, never a bare week number |
-| Same recipe twice in one week | Allowed, no warning below a variety preference of 4, warning at 4 or 5 |
-| Prep link source gets cleared | Dependent entries are flagged as unsourced, not deleted, and the plan shows an unresolved-prep banner |
-| Grocery list for a pending version | Allowed, clearly labelled as a draft for an unapproved proposal |
-| Unit conversion impossible (2 onions plus 300g onions) | List both lines under the same ingredient heading rather than fabricating a conversion |
-| Fact contradicts a profile field | Profile field wins for enforcement. The contradiction is surfaced on the facts screen for the user to resolve |
-| Agent hits the fact cap | Write is rejected with a structured error naming the cap and suggesting retirement of specific stale facts |
+| Case                                                   | Decision                                                                                                                                            |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Recipe deleted while used in past plans                | Soft delete. Past entries keep a denormalized title snapshot so history stays readable                                                              |
+| Recipe edited after being cooked                       | Entries store the recipe reference plus a snapshot of servings and ingredient list used at plan time. Grocery lists already generated are untouched |
+| Agent proposes a recipe that does not exist yet        | Allowed and expected: the tool contract lets a single call create recipes and assign them atomically, in one transaction                            |
+| Two agents connected at once                           | Allowed. Optimistic concurrency on plan versions via an expected-version token. Second writer gets a conflict error with the current state          |
+| User changes slot config mid-week                      | Active plan version untouched. Orphaned entries strip appears                                                                                       |
+| Week with no plan                                      | Grid renders empty and plannable. No implicit plan creation until first assignment                                                                  |
+| Plan spanning a year boundary                          | ISO week numbering with an explicit year, never a bare week number                                                                                  |
+| Same recipe twice in one week                          | Allowed, no warning below a variety preference of 4, warning at 4 or 5                                                                              |
+| Prep link source gets cleared                          | Dependent entries are flagged as unsourced, not deleted, and the plan shows an unresolved-prep banner                                               |
+| Grocery list for a pending version                     | Allowed, clearly labelled as a draft for an unapproved proposal                                                                                     |
+| Unit conversion impossible (2 onions plus 300g onions) | List both lines under the same ingredient heading rather than fabricating a conversion                                                              |
+| Fact contradicts a profile field                       | Profile field wins for enforcement. The contradiction is surfaced on the facts screen for the user to resolve                                       |
+| Agent hits the fact cap                                | Write is rejected with a structured error naming the cap and suggesting retirement of specific stale facts                                          |

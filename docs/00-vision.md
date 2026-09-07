@@ -103,15 +103,15 @@ with honest data before an agent ever touches it.
 
 ## 8. Out of scope for v1 (named, so they stay out)
 
-| Deferred | Why | Revisit when |
-|---|---|---|
-| Household with multiple eaters | Conflict reconciliation across eaters is a large data model and UX problem on its own | v2, and the schema is shaped for it now |
-| Nutrition and macro tracking | Requires a nutrition database, adds licensing cost and a whole new correctness burden | Only on real demand |
-| External recipe APIs (Spoonacular, Edamam) | Cost, rate limits, dependency, and generic results, which is the opposite of the pitch | Probably never |
-| Native mobile apps | Responsive web plus PWA covers the in-store grocery use case | Post product-market fit |
-| Social features, sharing, public recipes | Distraction from the single-user core loop | Post v1 |
-| Server-side AI features | Violates the zero-cost constraint | Never, by design |
-| Grocery delivery integrations | Partner-dependent, country-specific | Post v1 |
+| Deferred                                   | Why                                                                                    | Revisit when                            |
+| ------------------------------------------ | -------------------------------------------------------------------------------------- | --------------------------------------- |
+| Household with multiple eaters             | Conflict reconciliation across eaters is a large data model and UX problem on its own  | v2, and the schema is shaped for it now |
+| Nutrition and macro tracking               | Requires a nutrition database, adds licensing cost and a whole new correctness burden  | Only on real demand                     |
+| External recipe APIs (Spoonacular, Edamam) | Cost, rate limits, dependency, and generic results, which is the opposite of the pitch | Probably never                          |
+| Native mobile apps                         | Responsive web plus PWA covers the in-store grocery use case                           | Post product-market fit                 |
+| Social features, sharing, public recipes   | Distraction from the single-user core loop                                             | Post v1                                 |
+| Server-side AI features                    | Violates the zero-cost constraint                                                      | Never, by design                        |
+| Grocery delivery integrations              | Partner-dependent, country-specific                                                    | Post v1                                 |
 
 ## 9. Deployment posture
 
@@ -141,11 +141,11 @@ Functional, not vanity:
 
 ## 11. Key risks
 
-| Risk | Impact | Mitigation |
-|---|---|---|
-| Pantry friction kills adoption | High | Pantry stays dumb and optional in v1: staples plus use-soon, no quantities required |
-| Agent writes garbage facts into the profile | High, it poisons the moat | Every fact carries source, confidence, and timestamp. A review UI lets the user confirm or delete. Agent-written facts start unconfirmed |
-| MCP OAuth setup defeats the user | High, it is the entire on-ramp | Treat connect flow as a first-class feature: one URL, guided screen, connection test tool |
-| Agent output quality varies by client and model | Medium | Tool descriptions and published prompt templates do the steering. Validate agent writes server-side, reject impossible plans |
-| Scope creep from the four v1 side features | Medium | Phased roadmap, each phase shippable alone. See `05-roadmap.md` |
-| URL recipe import breaks on many sites | Low | Prefer schema.org Recipe JSON-LD, fall back to letting the user's agent parse the page and POST the result |
+| Risk                                            | Impact                         | Mitigation                                                                                                                               |
+| ----------------------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Pantry friction kills adoption                  | High                           | Pantry stays dumb and optional in v1: staples plus use-soon, no quantities required                                                      |
+| Agent writes garbage facts into the profile     | High, it poisons the moat      | Every fact carries source, confidence, and timestamp. A review UI lets the user confirm or delete. Agent-written facts start unconfirmed |
+| MCP OAuth setup defeats the user                | High, it is the entire on-ramp | Treat connect flow as a first-class feature: one URL, guided screen, connection test tool                                                |
+| Agent output quality varies by client and model | Medium                         | Tool descriptions and published prompt templates do the steering. Validate agent writes server-side, reject impossible plans             |
+| Scope creep from the four v1 side features      | Medium                         | Phased roadmap, each phase shippable alone. See `05-roadmap.md`                                                                          |
+| URL recipe import breaks on many sites          | Low                            | Prefer schema.org Recipe JSON-LD, fall back to letting the user's agent parse the page and POST the result                               |
