@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  foreignKey,
   index,
   pgTable,
   smallint,
@@ -36,9 +37,7 @@ export const entryFeedback = pgTable(
   {
     id: primaryId(),
     userId: ownerId(),
-    planEntryId: uuid("plan_entry_id")
-      .notNull()
-      .references(() => planEntry.id, { onDelete: "cascade" }),
+    planEntryId: uuid("plan_entry_id").notNull(),
     outcome: text("outcome").notNull(),
     /** What was eaten instead. Often more useful than a rating. */
     swappedFor: text("swapped_for"),
@@ -53,6 +52,13 @@ export const entryFeedback = pgTable(
     // One verdict per meal. Recording again updates rather than appends.
     uniqueIndex("entry_feedback_entry_key").on(t.planEntryId),
     index("entry_feedback_user_idx").on(t.userId, t.createdAt.desc()),
+    // Composite, so the denormalized `user_id` cannot disagree with the
+    // parent's. See the note on `recipe_ingredient` in ./recipes.ts.
+    foreignKey({
+      columns: [t.planEntryId, t.userId],
+      foreignColumns: [planEntry.id, planEntry.userId],
+      name: "entry_feedback_plan_entry_user_fk",
+    }).onDelete("cascade"),
     check(
       "entry_feedback_outcome_known",
       sql`${t.outcome} in ${sql.raw(sqlInList(FEEDBACK_OUTCOMES))}`,

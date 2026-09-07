@@ -25,6 +25,7 @@ export const AGENT_AUTHORITIES = ["proposal", "direct"] as const;
 export type AgentAuthority = (typeof AGENT_AUTHORITIES)[number];
 
 export const SLOT_STATES = ["planned", "skipped", "hidden"] as const;
+export type SlotState = (typeof SLOT_STATES)[number];
 
 /** The starter grid every new user is seeded with. Extensible per user. */
 export const STARTER_MEAL_TYPES = [
@@ -64,25 +65,31 @@ export type PlanAuthor = (typeof PLAN_AUTHORS)[number];
  * requirement that is comparable across users, and extensible because no list
  * survives contact with a real kitchen: anything the user adds is stored with
  * its own key and its own label.
+ *
+ * Keys only. These used to carry a French display label, which the profile
+ * screen rendered as-is, so the English UI showed French. A label is UI copy
+ * and belongs in next-intl under `profile.equipment.<key>`; the domain owns the
+ * key, which is the part that has to be comparable and stable.
  */
-export const EQUIPMENT_VOCABULARY = [
-  { key: "oven", label: "Four" },
-  { key: "hob", label: "Plaques de cuisson" },
-  { key: "microwave", label: "Micro-ondes" },
-  { key: "freezer", label: "Congélateur" },
-  { key: "blender", label: "Blender" },
-  { key: "food_processor", label: "Robot ménager" },
-  { key: "stand_mixer", label: "Robot pâtissier" },
-  { key: "pressure_cooker", label: "Cocotte-minute" },
-  { key: "slow_cooker", label: "Mijoteuse" },
-  { key: "air_fryer", label: "Friteuse à air" },
-  { key: "wok", label: "Wok" },
-  { key: "cast_iron", label: "Cocotte en fonte" },
-  { key: "grill", label: "Gril" },
-  { key: "steamer", label: "Cuit-vapeur" },
-  { key: "scale", label: "Balance de cuisine" },
-  { key: "thermometer", label: "Thermomètre de cuisson" },
+export const EQUIPMENT_KEYS = [
+  "oven",
+  "hob",
+  "microwave",
+  "freezer",
+  "blender",
+  "food_processor",
+  "stand_mixer",
+  "pressure_cooker",
+  "slow_cooker",
+  "air_fryer",
+  "wok",
+  "cast_iron",
+  "grill",
+  "steamer",
+  "scale",
+  "thermometer",
 ] as const;
+export type EquipmentKey = (typeof EQUIPMENT_KEYS)[number];
 
 export const FACT_CATEGORIES = [
   "taste",
@@ -151,7 +158,69 @@ export const PANTRY_SOURCES = ["user", "agent"] as const;
 export const GROCERY_LINE_ORIGINS = ["derived", "manual"] as const;
 export type GroceryLineOrigin = (typeof GROCERY_LINE_ORIGINS)[number];
 
-/** Renders a readonly string tuple as a SQL `in` list literal. */
-export function sqlInList(values: readonly string[]): string {
+/**
+ * The audit log's two enum-like columns, and the values `src/lib/activity-log.ts`
+ * and `src/mcp/tool-runner.ts` already write. They were free text with no check
+ * constraint, unlike every other column of this shape in the schema, so a typo
+ * in a service was storable and the only symptom was a hole in the log.
+ *
+ * `direction` says whether the call could change anything, which is the
+ * distinction that matters when reading the log back: a `write` is what the
+ * user needs to be able to review and undo.
+ */
+export const ACTIVITY_DIRECTIONS = ["read", "write"] as const;
+export type ActivityDirection = (typeof ACTIVITY_DIRECTIONS)[number];
+
+export const ACTIVITY_RESULTS = ["ok", "rejected", "error"] as const;
+export type ActivityResult = (typeof ACTIVITY_RESULTS)[number];
+
+/**
+ * Every controlled vocabulary in this file, as a union. It is the parameter type
+ * of `sqlInList`, and that is the whole point of it: see below.
+ */
+type VocabularyValue =
+  | Diet
+  | AllergenSeverityValue
+  | AgentAuthority
+  | SlotState
+  | IngredientCategory
+  | RecipeSource
+  | PlanVersionState
+  | PlanAuthor
+  | EquipmentKey
+  | FactCategory
+  | FactPolarity
+  | FactConfidence
+  | FactSource
+  | FactStatus
+  | GroceryListState
+  | FeedbackOutcome
+  | PortionIssue
+  | PantryKind
+  | (typeof PANTRY_SOURCES)[number]
+  | GroceryLineOrigin
+  | ActivityDirection
+  | ActivityResult;
+
+/**
+ * Renders a readonly vocabulary tuple as a SQL `in` list literal, for the check
+ * constraints in src/db/schema. Nine schema files pass the result through
+ * `sql.raw`, so the escaping below is the only thing between these strings and
+ * the DDL.
+ *
+ * It stays a raw literal rather than a parameterised `sql.join` fragment
+ * because drizzle-kit serializes a check constraint by rendering its fragment
+ * into the migration file, and a bound parameter renders as `$1`: a probe
+ * produced `CHECK ("plan_version"."state" in ($1, $2, $3, $4))`, which is not
+ * valid DDL. Parameters have nowhere to bind in a DDL statement, so there is no
+ * version of this that is both parameterised and generatable.
+ *
+ * What guards it instead is the parameter type. `VocabularyValue` admits only
+ * the literals declared in this file, so a caller cannot hand this function a
+ * runtime string, and every value it can ever see is a compile-time constant
+ * that this file spells out. The quote doubling is kept as a second line, for
+ * the day someone adds a vocabulary entry containing an apostrophe.
+ */
+export function sqlInList(values: readonly VocabularyValue[]): string {
   return `(${values.map((value) => `'${value.replace(/'/g, "''")}'`).join(", ")})`;
 }

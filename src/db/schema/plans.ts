@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -12,6 +13,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { SlotSnapshot } from "@/domain/schemas";
 import {
   PLAN_AUTHORS,
   PLAN_VERSION_STATES,
@@ -36,6 +38,10 @@ export const plan = pgTable(
   },
   (t) => [
     unique("plan_user_week_key").on(t.userId, t.isoYear, t.isoWeek),
+    // Reference target for plan_version's composite foreign key. See the note
+    // on `recipe_ingredient` in ./recipes.ts for why the child tables tie their
+    // denormalized `user_id` to the parent's structurally.
+    unique("plan_id_user_key").on(t.id, t.userId),
     check("plan_week_range", sql`${t.isoWeek} between 1 and 53`),
     ownerPolicy("plan_owner", t.userId),
   ],
@@ -53,9 +59,7 @@ export const planVersion = pgTable(
   {
     id: primaryId(),
     userId: ownerId(),
-    planId: uuid("plan_id")
-      .notNull()
-      .references(() => plan.id, { onDelete: "cascade" }),
+    planId: uuid("plan_id").notNull(),
     versionNumber: integer("version_number").notNull(),
     state: text("state").notNull().default("pending"),
     createdBy: text("created_by").notNull().default("user"),
@@ -63,8 +67,12 @@ export const planVersion = pgTable(
     // The agent's one-paragraph explanation of the week.
     summary: text("summary"),
     // The grid as configured when this version was created, so later slot
-    // config changes never rewrite history.
-    slotSnapshot: jsonb("slot_snapshot").notNull(),
+    // config changes never rewrite history. `slotSnapshotSchema` in
+    // src/domain/schemas.ts is the shape, and `$type` here is what stops every
+    // read site casting the column out of `unknown` by hand. It is a claim, not
+    // a check: parse with the schema wherever a snapshot written by an older
+    // build could be read.
+    slotSnapshot: jsonb("slot_snapshot").$type<SlotSnapshot>().notNull(),
     // Captured on reject. High-value signal, and offered back to the agent.
     rejectionReason: text("rejection_reason"),
     createdAt: createdAt(),
@@ -79,6 +87,13 @@ export const planVersion = pgTable(
       .on(t.planId)
       .where(sql`state = 'pending'`),
     index("plan_version_plan_idx").on(t.planId, t.versionNumber.desc()),
+    // Reference target for plan_entry and grocery_list_version.
+    unique("plan_version_id_user_key").on(t.id, t.userId),
+    foreignKey({
+      columns: [t.planId, t.userId],
+      foreignColumns: [plan.id, plan.userId],
+      name: "plan_version_plan_user_fk",
+    }).onDelete("cascade"),
     check(
       "plan_version_state_known",
       sql`${t.state} in ${sql.raw(sqlInList(PLAN_VERSION_STATES))}`,
@@ -105,13 +120,13 @@ export const planEntry = pgTable(
   {
     id: primaryId(),
     userId: ownerId(),
-    planVersionId: uuid("plan_version_id")
-      .notNull()
-      .references(() => planVersion.id, { onDelete: "cascade" }),
+    planVersionId: uuid("plan_version_id").notNull(),
     dayOfWeek: smallint("day_of_week").notNull(),
-    mealTypeId: uuid("meal_type_id")
-      .notNull()
-      .references(() => mealType.id, { onDelete: "restrict" }),
+    mealTypeId: uuid("meal_type_id").notNull(),
+    // Nullable, and single-column on purpose: a composite key would be
+    // `on delete set null` across both columns, and `user_id` is not null, so
+    // soft-deleting a recipe would fail rather than unlink the entry. See the
+    // matching note on `recipe_ingredient.ingredient_id` in ./recipes.ts.
     recipeId: uuid("recipe_id").references(() => recipe.id, {
       onDelete: "set null",
     }),
@@ -120,13 +135,40 @@ export const planEntry = pgTable(
     servings: smallint("servings").notNull(),
     note: text("note"),
     rationale: text("rationale"),
-    // Fact ids, feedback ids and pantry item ids the agent cited.
-    rationaleRefs: jsonb("rationale_refs"),
+    // Fact ids, feedback ids and pantry item ids the agent cited. Not null with
+    // an empty-array default, so a reader gets `[]` and never has to tell "no
+    // references" apart from "column never written": both meant the same thing
+    // and only one of them was expressible.
+    rationaleRefs: jsonb("rationale_refs")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     // For several dishes in one slot.
     position: smallint("position").notNull().default(0),
   },
   (t) => [
     index("plan_entry_version_idx").on(t.planVersionId, t.dayOfWeek),
+    // Postgres indexes a primary key and a unique constraint, and nothing else:
+    // a foreign key column gets no index of its own. Both of these are looked
+    // up constantly. `recipe_id` answers "which weeks used this recipe", which
+    // the history filters and the `notPlannedInWeeks` search read, and it is
+    // also what an `on delete set null` has to scan when a recipe is deleted.
+    // `meal_type_id` carries `on delete restrict`, so deleting a meal type
+    // scans this table to prove no entry uses it.
+    index("plan_entry_recipe_idx").on(t.recipeId),
+    index("plan_entry_meal_type_idx").on(t.mealTypeId),
+    // Reference target for entry_feedback and prep_link.
+    unique("plan_entry_id_user_key").on(t.id, t.userId),
+    foreignKey({
+      columns: [t.planVersionId, t.userId],
+      foreignColumns: [planVersion.id, planVersion.userId],
+      name: "plan_entry_plan_version_user_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [t.mealTypeId, t.userId],
+      foreignColumns: [mealType.id, mealType.userId],
+      name: "plan_entry_meal_type_user_fk",
+    }).onDelete("restrict"),
     check("plan_entry_day_range", sql`${t.dayOfWeek} between 1 and 7`),
     check("plan_entry_servings_positive", sql`${t.servings} > 0`),
     ownerPolicy("plan_entry_owner", t.userId),

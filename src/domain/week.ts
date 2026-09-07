@@ -13,7 +13,13 @@ export interface IsoWeek {
   readonly week: number;
 }
 
-const DAY_MS = 86_400_000;
+/**
+ * Exported because src/domain/shopping.ts does the same UTC-midnight
+ * arithmetic. It used to keep its own copy of this constant and of
+ * `utcFromLocalDate`, which is two places for one decision about how dates are
+ * handled, and the kind of pair that drifts silently.
+ */
+export const DAY_MS = 86_400_000;
 
 /** ISO weekdays, 1 = Monday through 7 = Sunday. */
 export const ISO_DAYS = [1, 2, 3, 4, 5, 6, 7] as const;
@@ -23,7 +29,13 @@ export function isIsoDay(value: number): value is IsoDay {
   return Number.isInteger(value) && value >= 1 && value <= 7;
 }
 
-function utcFromLocalDate(date: Date): Date {
+/**
+ * The local calendar day of `date`, as a UTC midnight. Reading the local
+ * fields is deliberate: "today" for a cook is a local notion, and everything
+ * downstream works in UTC so an offset can never shift a date across a
+ * boundary.
+ */
+export function utcFromLocalDate(date: Date): Date {
   return new Date(
     Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()),
   );

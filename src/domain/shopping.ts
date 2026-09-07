@@ -17,14 +17,15 @@
  */
 
 import {
+  DAY_MS,
   isIsoDay,
+  isoWeekDate,
   isoWeekOf,
   isoWeekStart,
+  utcFromLocalDate,
   type IsoDay,
   type IsoWeek,
 } from "./week";
-
-const DAY_MS = 86_400_000;
 
 /** Seven days, one shop a week. A second weekly shop is not in v1. */
 export const CYCLE_LENGTH_DAYS = 7;
@@ -32,14 +33,13 @@ export const CYCLE_LENGTH_DAYS = 7;
 export interface ShoppingCycle {
   /** UTC midnight of the first day covered, which is the shopping day. */
   readonly startsOn: Date;
-  /** UTC midnight of the last day covered. */
+  /**
+   * UTC midnight of the last day covered, and that day is inside the cycle.
+   * Compare against it with `isWithinCycle`, which compares calendar days:
+   * comparing instants would put every timestamp after midnight on the last day
+   * outside its own cycle.
+   */
   readonly endsOn: Date;
-}
-
-function utcFromLocalDate(date: Date): Date {
-  return new Date(
-    Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()),
-  );
 }
 
 function isoDayOfUtc(date: Date): IsoDay {
@@ -88,18 +88,29 @@ export function cycleContaining(
 }
 
 /** Moves whole cycles, so the previous and next shop are one call away. */
-export function shiftCycle(
-  cycle: ShoppingCycle,
-  delta: number,
-): ShoppingCycle {
+export function shiftCycle(cycle: ShoppingCycle, delta: number): ShoppingCycle {
   return cycleFromStart(
     new Date(cycle.startsOn.getTime() + delta * CYCLE_LENGTH_DAYS * DAY_MS),
   );
 }
 
+/**
+ * Whether `date` falls on one of the cycle's seven days.
+ *
+ * The comparison is on whole days, not on instants. `endsOn` is the UTC
+ * midnight of the last day covered, so comparing instants excluded every
+ * timestamp on that day after 00:00Z: a list generated at nine in the morning
+ * on the last day of its own cycle read as out of cycle, and the seven-day
+ * cycle behaved as six days and a minute. Truncating both sides to their UTC
+ * calendar day is what makes the last day inclusive, as `endsOn` says it is.
+ */
 export function isWithinCycle(cycle: ShoppingCycle, date: Date): boolean {
-  const time = date.getTime();
-  return time >= cycle.startsOn.getTime() && time <= cycle.endsOn.getTime();
+  const day = Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+  );
+  return day >= cycle.startsOn.getTime() && day <= cycle.endsOn.getTime();
 }
 
 /**
@@ -116,7 +127,11 @@ export function isoWeeksInCycle(cycle: ShoppingCycle): IsoWeek[] {
     const week = isoWeekOf(
       new Date(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate()),
     );
-    if (weeks.some((known) => known.year === week.year && known.week === week.week)) {
+    if (
+      weeks.some(
+        (known) => known.year === week.year && known.week === week.week,
+      )
+    ) {
       continue;
     }
     weeks.push(week);
@@ -124,9 +139,14 @@ export function isoWeeksInCycle(cycle: ShoppingCycle): IsoWeek[] {
   return weeks;
 }
 
-/** The date a plan entry falls on. */
+/**
+ * The date a plan entry falls on. A thin door onto `isoWeekDate` that takes the
+ * day as a plain number, because that is how it comes back from the database;
+ * the check constraint keeps it in range, and anything out of range is read as
+ * Monday rather than pointing at a date outside the week.
+ */
 export function dateOfEntry(week: IsoWeek, dayOfWeek: number): Date {
-  return new Date(isoWeekStart(week).getTime() + (dayOfWeek - 1) * DAY_MS);
+  return isoWeekDate(week, isIsoDay(dayOfWeek) ? dayOfWeek : 1);
 }
 
 /** `2026-09-05`, used in URLs so a cycle is deep-linkable. */
@@ -155,8 +175,4 @@ export function parseCycleStart(value: string): Date | null {
     return null;
   }
   return date;
-}
-
-export function isShoppingDay(value: unknown): value is IsoDay {
-  return typeof value === "number" && isIsoDay(value);
 }

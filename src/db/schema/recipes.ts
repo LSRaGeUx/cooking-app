@@ -3,6 +3,7 @@ import {
   boolean,
   check,
   customType,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -27,7 +28,6 @@ import {
   updatedAt,
 } from "./_shared";
 
-
 /** Drizzle has no built-in tsvector, and the search column must be one. */
 const tsvector = customType<{ data: string; driverData: string }>({
   dataType: () => "tsvector",
@@ -48,13 +48,19 @@ export const ingredient = pgTable(
     id: primaryId(),
     userId: ownerId(),
     canonicalName: text("canonical_name").notNull(),
-    aliases: text("aliases").array().notNull().default(sql`'{}'::text[]`),
+    aliases: text("aliases")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     category: text("category").notNull().default("other"),
     aisle: text("aisle"),
     defaultUnit: text("default_unit"),
     // Enables volume to mass conversion during grocery merging (phase 2).
     densityGPerMl: numeric("density_g_per_ml", { precision: 10, scale: 4 }),
-    allergenIds: uuid("allergen_ids").array().notNull().default(sql`'{}'::uuid[]`),
+    allergenIds: uuid("allergen_ids")
+      .array()
+      .notNull()
+      .default(sql`'{}'::uuid[]`),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -97,13 +103,36 @@ export const recipe = pgTable(
     activeTimeMin: smallint("active_time_min"),
     batchFriendly: boolean("batch_friendly").notNull().default(false),
     keepsDays: smallint("keeps_days"),
-    tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
+    tags: text("tags")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     cuisine: text("cuisine"),
     mainProtein: text("main_protein"),
     difficulty: text("difficulty"),
-    equipmentKeys: text("equipment_keys").array().notNull().default(sql`'{}'::text[]`),
-    // Derived from the linked ingredients, user-overridable.
-    allergenIds: uuid("allergen_ids").array().notNull().default(sql`'{}'::uuid[]`),
+    equipmentKeys: text("equipment_keys")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    /**
+     * **No longer maintained. Do not read it.**
+     *
+     * This was a cache of the allergens derived from the linked ingredients,
+     * refreshed only when the recipe itself was created or updated. Adding or
+     * removing an allergen left every recipe's copy stale, so a listing showed a
+     * recipe as clean while assignment correctly blocked it, which is the worst
+     * shape a safety-relevant cache can take. Allergens are now derived at read
+     * time, and no code writes or reads this column.
+     *
+     * It is kept rather than dropped because a deploy rolls back by re-running an
+     * earlier `sha-<commit>` image, and those images still select it. Dropping
+     * the column would turn a rollback into an outage. Drop it once no image in
+     * play still names it.
+     */
+    allergenIds: uuid("allergen_ids")
+      .array()
+      .notNull()
+      .default(sql`'{}'::uuid[]`),
     revision: integer("revision").notNull().default(1),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -113,12 +142,32 @@ export const recipe = pgTable(
     // Tags are deliberately not in the vector: array_to_string is STABLE, not
     // IMMUTABLE, so Postgres refuses it in a generated column. Tags are a set
     // filter rather than free text anyway, and get their own GIN index below.
+    //
+    // **It covers the title and the description, and nothing else.** Searching
+    // for an ingredient word finds nothing: ingredient names live in
+    // recipe_ingredient, another table, and a generated column can only read
+    // the row it belongs to. Getting them in would mean a trigger maintaining a
+    // denormalized column, or a materialized view, and neither is worth it
+    // before someone asks. What it does mean is that the recipe search tool's
+    // description must say so, because an agent that searches "poulet" and gets
+    // nothing back concludes the library has no chicken recipes rather than
+    // that it searched the wrong field. See src/mcp/tools/search-recipes.ts.
     searchVector: tsvector("search_vector").generatedAlwaysAs(
       sql`to_tsvector('french', coalesce(title, '') || ' ' || coalesce(description, ''))`,
     ),
   },
   (t) => [
-    index("recipe_user_idx").on(t.userId),
+    // Partial on the live rows. Every listing, search and count filters
+    // `deleted_at is null`, so the deleted rows were index entries nothing ever
+    // looked at, and excluding them keeps the index the size of the library
+    // rather than the size of its whole history.
+    index("recipe_user_idx")
+      .on(t.userId)
+      .where(sql`deleted_at is null`),
+    // The target of the child tables' composite foreign keys. See the note on
+    // `recipe_ingredient` below: `id` alone is already unique, and this exists
+    // so that `(recipe_id, user_id)` has something to reference.
+    unique("recipe_id_user_key").on(t.id, t.userId),
     index("recipe_search_idx").using("gin", t.searchVector),
     index("recipe_tags_idx").using("gin", t.tags),
     check(
@@ -135,21 +184,37 @@ export const recipe = pgTable(
  * and still cooks, it only loses merging. Blocking a recipe save on perfect
  * linking would make creation slow, and creation speed is what fills the
  * library.
+ *
+ * **`user_id` is tied to the parent's by a composite foreign key.** It is
+ * denormalized so the RLS policy is a column comparison rather than a subquery
+ * on every row, and for a while nothing connected the two: the foreign key
+ * named `recipe_id` alone, so a row could carry one tenant's `user_id` and
+ * another tenant's `recipe_id` and satisfy every constraint. Nothing writes
+ * that today, because every parent id is resolved under `withUser` before a
+ * child row is written, but foreign key checks run as the table owner and
+ * bypass row-level security, so RLS is not what was stopping it either: the
+ * only guard was that the services happen to be careful.
+ *
+ * `(recipe_id, user_id) references recipe(id, user_id)` makes it structural.
+ * The cost is the `recipe_id_user_key` unique constraint on the parent, which
+ * is redundant as a uniqueness claim and exists purely as the reference target.
  */
 export const recipeIngredient = pgTable(
   "recipe_ingredient",
   {
     id: primaryId(),
-    // Denormalized from the parent recipe so the RLS policy is a column
-    // comparison rather than a subquery on every row.
     userId: ownerId(),
-    recipeId: uuid("recipe_id")
-      .notNull()
-      .references(() => recipe.id, { onDelete: "cascade" }),
+    recipeId: uuid("recipe_id").notNull(),
     position: smallint("position").notNull().default(0),
     quantity: numeric("quantity", { precision: 12, scale: 3 }),
     unit: text("unit"),
     rawName: text("raw_name").notNull(),
+    // Nullable, and left as a single-column reference on purpose. A composite
+    // key here would have to be `on delete set null`, and Postgres sets every
+    // referencing column, which would mean nulling `user_id` on a row where it
+    // is `not null`: deleting an ingredient would fail instead of unlinking it.
+    // An `ingredient` row is reachable only under `withUser` in the first
+    // place, so the same convention that used to cover `recipe_id` covers this.
     ingredientId: uuid("ingredient_id").references(() => ingredient.id, {
       onDelete: "set null",
     }),
@@ -158,6 +223,15 @@ export const recipeIngredient = pgTable(
   },
   (t) => [
     index("recipe_ingredient_recipe_idx").on(t.recipeId, t.position),
+    // The pantry match and the grocery aggregation both group by this column,
+    // and the `on delete set null` above scans it whenever a vocabulary entry
+    // is removed. Postgres does not index a foreign key column for you.
+    index("recipe_ingredient_ingredient_idx").on(t.ingredientId),
+    foreignKey({
+      columns: [t.recipeId, t.userId],
+      foreignColumns: [recipe.id, recipe.userId],
+      name: "recipe_ingredient_recipe_user_fk",
+    }).onDelete("cascade"),
     ownerPolicy("recipe_ingredient_owner", t.userId),
   ],
 ).enableRLS();
@@ -167,9 +241,7 @@ export const recipeStep = pgTable(
   {
     id: primaryId(),
     userId: ownerId(),
-    recipeId: uuid("recipe_id")
-      .notNull()
-      .references(() => recipe.id, { onDelete: "cascade" }),
+    recipeId: uuid("recipe_id").notNull(),
     position: smallint("position").notNull().default(0),
     text: text("text").notNull(),
     durationMin: smallint("duration_min"),
@@ -178,6 +250,12 @@ export const recipeStep = pgTable(
   },
   (t) => [
     index("recipe_step_recipe_idx").on(t.recipeId, t.position),
+    // Composite, for the reason spelled out on `recipe_ingredient`.
+    foreignKey({
+      columns: [t.recipeId, t.userId],
+      foreignColumns: [recipe.id, recipe.userId],
+      name: "recipe_step_recipe_user_fk",
+    }).onDelete("cascade"),
     ownerPolicy("recipe_step_owner", t.userId),
   ],
 ).enableRLS();
@@ -191,15 +269,23 @@ export const recipeRevision = pgTable(
   {
     id: primaryId(),
     userId: ownerId(),
-    recipeId: uuid("recipe_id")
-      .notNull()
-      .references(() => recipe.id, { onDelete: "cascade" }),
+    recipeId: uuid("recipe_id").notNull(),
     revision: integer("revision").notNull(),
+    // Left deliberately loose. Unlike the other jsonb columns, this one holds
+    // whatever a recipe looked like at the time, including under a schema this
+    // build no longer has a type for, and claiming otherwise would be a lie the
+    // compiler believes.
     snapshot: jsonb("snapshot").notNull(),
     createdAt: createdAt(),
   },
   (t) => [
     unique("recipe_revision_recipe_revision_key").on(t.recipeId, t.revision),
+    // Composite, for the reason spelled out on `recipe_ingredient`.
+    foreignKey({
+      columns: [t.recipeId, t.userId],
+      foreignColumns: [recipe.id, recipe.userId],
+      name: "recipe_revision_recipe_user_fk",
+    }).onDelete("cascade"),
     ownerPolicy("recipe_revision_owner", t.userId),
   ],
 ).enableRLS();

@@ -1,5 +1,7 @@
 import { parseHTML } from "linkedom";
+import type { z } from "zod";
 import { parseIngredientLine } from "./ingredient-parser";
+import { recipeInputSchema } from "./schemas";
 
 /**
  * Reading a recipe out of a web page, with no model involved.
@@ -18,37 +20,36 @@ import { parseIngredientLine } from "./ingredient-parser";
  * database.
  */
 
-export interface ImportedRecipe {
-  readonly title: string;
-  readonly description: string | null;
-  readonly imageUrl: string | null;
-  readonly servings: number;
-  readonly prepTimeMin: number | null;
-  readonly cookTimeMin: number | null;
-  readonly activeTimeMin: number | null;
-  readonly tags: string[];
-  readonly cuisine: string | null;
-  readonly ingredients: Array<{
-    quantity: number | null;
-    unit: string | null;
-    rawName: string;
-    note: string | null;
-    optional: boolean;
-    ingredientId: null;
-  }>;
-  readonly steps: Array<{
-    text: string;
-    durationMin: null;
-    unattended: false;
-  }>;
-}
+/**
+ * What an import produces, typed from the schema that validates a recipe on
+ * every other path (rule 9).
+ *
+ * This used to be a hand-written interface restating the recipe, ingredient and
+ * step shapes, and `normalize` never ran through the schema at all, so an
+ * import could produce an empty title or an empty `rawName`: both violate the
+ * schema's `min(1)`, and the failure surfaced at the insert rather than at the
+ * import. Deriving the type means the two can no longer disagree, and the parse
+ * at the end of `normalize` means the import path cannot bypass the rules.
+ *
+ * One deliberate difference from `recipeInputSchema`: `title` may be null. A
+ * page that publishes a Recipe with no name is rare and real, and the domain
+ * has no business inventing a French placeholder for it. The screen supplies
+ * one through next-intl instead.
+ */
+const importedRecipeSchema = recipeInputSchema.extend({
+  title: recipeInputSchema.shape.title.nullable(),
+});
+
+export type ImportedRecipe = z.infer<typeof importedRecipeSchema>;
 
 export interface ImportFailure {
   readonly ok: false;
   readonly reason: "no-recipe-found" | "not-html" | "empty";
 }
 
-export type ImportOutcome = { ok: true; recipe: ImportedRecipe } | ImportFailure;
+export type ImportOutcome =
+  | { ok: true; recipe: ImportedRecipe }
+  | ImportFailure;
 
 export function extractRecipe(
   html: string,
@@ -61,11 +62,18 @@ export function extractRecipe(
 
   const { document } = parseHTML(html);
 
+  // Each source is tried, and a source whose markup does not survive the schema
+  // is treated as not having been found: that is what lets a page with a broken
+  // JSON-LD block still import from its microdata. A page with neither reports
+  // `no-recipe-found`, which is the clean failure the two-tier strategy needs,
+  // rather than a validation error the user cannot act on.
   const fromJsonLd = findJsonLdRecipe(document);
-  if (fromJsonLd) return { ok: true, recipe: normalize(fromJsonLd) };
+  const jsonLdRecipe = fromJsonLd ? normalize(fromJsonLd) : null;
+  if (jsonLdRecipe) return { ok: true, recipe: jsonLdRecipe };
 
   const fromMicrodata = findMicrodataRecipe(document);
-  if (fromMicrodata) return { ok: true, recipe: normalize(fromMicrodata) };
+  const microdataRecipe = fromMicrodata ? normalize(fromMicrodata) : null;
+  if (microdataRecipe) return { ok: true, recipe: microdataRecipe };
 
   return { ok: false, reason: "no-recipe-found" };
 }
@@ -126,7 +134,7 @@ function searchForRecipe(node: unknown, depth: number): RawRecipe | null {
   const record = node as Record<string, unknown>;
   const type = record["@type"];
   const types = Array.isArray(type) ? type : [type];
-  if (types.some((value) => typeof value === "string" && value === "Recipe")) {
+  if (types.some(isRecipeType)) {
     return record as RawRecipe;
   }
 
@@ -138,18 +146,54 @@ function searchForRecipe(node: unknown, depth: number): RawRecipe | null {
   return null;
 }
 
+/**
+ * Whether an `@type` names schema.org's Recipe.
+ *
+ * All three of `Recipe`, `https://schema.org/Recipe` and `schema:Recipe` are
+ * common in the wild, and only the bare form used to be recognized, so an
+ * otherwise perfectly marked-up page reported `no-recipe-found`. Comparing the
+ * last path segment covers the fully qualified form, the compact IRI, and the
+ * `http` spelling, without accepting something merely ending in the word.
+ */
+function isRecipeType(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const segments = value.trim().split(/[/#:]/);
+  return segments[segments.length - 1] === "Recipe";
+}
+
 function findMicrodataRecipe(document: Document): RawRecipe | null {
   const scope = document.querySelector('[itemtype$="schema.org/Recipe"]');
   if (!scope) return null;
 
+  /**
+   * Whether an `itemprop` belongs to the recipe itself rather than to something
+   * nested inside it.
+   *
+   * Microdata nests: an author, a nutrition block and a rating are each their
+   * own `itemscope` inside the recipe, and each has its own `name`. Taking the
+   * first `[itemprop="name"]` in document order therefore imported the author's
+   * name as the recipe title on a great many real pages. The nearest enclosing
+   * `itemscope` of a property that belongs to the recipe is the recipe scope,
+   * and for a nested item it is that item, so the comparison is the whole rule.
+   */
+  const ownProperty = (element: Element): boolean =>
+    element.closest("[itemscope]") === scope;
+
   const prop = (name: string): string | null => {
-    const element = scope.querySelector(`[itemprop="${name}"]`);
+    const element = [...scope.querySelectorAll(`[itemprop="${name}"]`)].find(
+      ownProperty,
+    );
     if (!element) return null;
     return (
       element.getAttribute("content") ?? element.textContent?.trim() ?? null
     );
   };
 
+  // Deliberately unscoped, unlike `prop`. Instructions are routinely published
+  // as nested HowToStep items, each its own itemscope, so requiring the recipe
+  // to be the nearest scope would drop exactly the pages that mark up their
+  // steps properly. Both of these properties are lists of text in every real
+  // shape, and neither collides with a name a nested item would carry.
   const all = (name: string): string[] =>
     [...scope.querySelectorAll(`[itemprop="${name}"]`)]
       .map(
@@ -168,37 +212,53 @@ function findMicrodataRecipe(document: Document): RawRecipe | null {
     recipeYield: prop("recipeYield"),
     prepTime: prop("prepTime"),
     cookTime: prop("cookTime"),
+    totalTime: prop("totalTime"),
+    recipeCategory: prop("recipeCategory"),
     recipeCuisine: prop("recipeCuisine"),
+    keywords: prop("keywords"),
     recipeIngredient: ingredients,
     recipeInstructions: instructions,
   };
 }
 
-function normalize(raw: RawRecipe): ImportedRecipe {
-  const ingredientLines = toStringArray(
-    raw.recipeIngredient ?? raw.ingredients,
-  ).slice(0, 100);
+/**
+ * The parsed page as a recipe, or null when nothing survives validation.
+ *
+ * Null rather than a thrown error: a page can carry a Recipe block that says
+ * almost nothing, and the caller's answer to that is to fall through to the
+ * next source and then to the clean `no-recipe-found` failure that invites the
+ * user's agent to try instead. See `extractRecipe`.
+ */
+function normalize(raw: RawRecipe): ImportedRecipe | null {
+  const ingredientLines = toStringArray(raw.recipeIngredient ?? raw.ingredients)
+    // A blank line would parse to an empty `rawName`, which the schema refuses,
+    // and one such line would otherwise cost the whole import.
+    .filter((line) => line.trim().length > 0)
+    .slice(0, 100);
 
   const prep = parseIsoDuration(raw.prepTime);
   const cook = parseIsoDuration(raw.cookTime);
   const total = parseIsoDuration(raw.totalTime);
 
-  return {
-    title: cap(firstString(raw.name) ?? "Recette importée", 200),
+  // Computed once, in place. This used to be set here and then overridden by a
+  // conditional spread at the end of the object literal, which reads as a
+  // mistake even when it is not, and hides the rule. The rule: a page that
+  // publishes only a total time has told us how long the dish takes but not
+  // how that splits, and total time is closer to cook time than to prep.
+  const cookTimeMin = cook ?? (prep === null ? total : null);
+
+  const draft = {
+    title: capOrNull(firstString(raw.name), 200),
     description: capOrNull(firstString(raw.description), 4000),
     imageUrl: pickImage(raw.image),
     servings: parseYield(raw.recipeYield),
     prepTimeMin: prep,
-    cookTimeMin: cook,
+    cookTimeMin,
     // Attended time is never published, so it is left unset rather than
     // guessed: it is the field the slot budget compares against, and a wrong
     // value there quietly breaks planning.
     activeTimeMin: null,
-    tags: toStringArray(raw.keywords)
-      .flatMap((value) => value.split(","))
-      .map((value) => value.trim())
-      .filter((value) => value.length > 0 && value.length <= 40)
-      .slice(0, 10),
+    tags: parseTags(raw.keywords, raw.recipeCategory),
     cuisine: capOrNull(firstString(raw.recipeCuisine), 60),
     ingredients: ingredientLines.map((line) => {
       const parsed = parseIngredientLine(cap(line, 200));
@@ -218,10 +278,50 @@ function normalize(raw: RawRecipe): ImportedRecipe {
         durationMin: null,
         unattended: false,
       })),
-    ...(total !== null && prep === null && cook === null
-      ? { cookTimeMin: total }
-      : {}),
   };
+
+  const parsed = importedRecipeSchema.safeParse(draft);
+  if (parsed.success) return parsed.data;
+
+  // One field is not worth losing a whole recipe over, and the image is the
+  // field most likely to fail: `pickImage` checks the scheme and the length,
+  // and the schema also insists on a parseable URL. Everything else that can
+  // fail here is structural.
+  const withoutImage = importedRecipeSchema.safeParse({
+    ...draft,
+    imageUrl: null,
+  });
+  return withoutImage.success ? withoutImage.data : null;
+}
+
+/**
+ * `keywords` plus `recipeCategory`, deduplicated.
+ *
+ * The category was read off the page and then never used, which is a field of
+ * free signal thrown away: "Dessert" or "Plat principal" is exactly the sort of
+ * tag the library filters on. The cap is 30, matching
+ * `recipeInputSchema.tags`; it used to be 10 here, so a well-tagged page lost
+ * two thirds of its tags to a limit that was not the real one.
+ */
+function parseTags(keywords: unknown, category: unknown): string[] {
+  const seen = new Set<string>();
+  const tags: string[] = [];
+
+  for (const source of [keywords, category]) {
+    for (const value of toStringArray(source).flatMap((entry) =>
+      entry.split(","),
+    )) {
+      const tag = value.trim();
+      if (tag.length === 0 || tag.length > 40) continue;
+      const key = tag.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      tags.push(tag);
+      if (tags.length === 30) return tags;
+    }
+  }
+
+  return tags;
 }
 
 /**
@@ -275,28 +375,66 @@ function extractInstructions(value: unknown): string[] {
     .filter((text) => text.length > 0);
 }
 
-/** `PT1H30M` is the only duration format schema.org uses. */
+/**
+ * `PT1H30M`, in minutes.
+ *
+ * **The `T` is not optional**, and treating it as optional was the bug: `M`
+ * means months in the date part of an ISO-8601 duration and minutes only after
+ * the `T`, so `P1M`, which a handful of sites emit as a placeholder, was read
+ * as one minute and published as a one-minute cooking time. Requiring the `T`
+ * makes a date-only duration return null, which is the honest answer: we do not
+ * know the cooking time, so nothing is stored.
+ *
+ * Fractional counts are accepted, because `PT1.5H` is valid ISO-8601 and used
+ * to return null. The result is rounded to whole minutes, which is what the
+ * column holds.
+ */
 export function parseIsoDuration(value: unknown): number | null {
   const text = firstString(value);
   if (!text) return null;
 
-  const match = /^P(?:\d+D)?T?(?:(\d+)H)?(?:(\d+)M)?/i.exec(text.trim());
+  const match =
+    /^P(?:\d+(?:[.,]\d+)?[YMWD])*(?:T(?:(\d+(?:[.,]\d+)?)H)?(?:(\d+(?:[.,]\d+)?)M)?(?:(\d+(?:[.,]\d+)?)S)?)?$/i.exec(
+      text.trim(),
+    );
   if (!match) return null;
 
-  const hours = Number(match[1] ?? 0);
-  const minutes = Number(match[2] ?? 0);
-  const total = hours * 60 + minutes;
+  const hours = decimalOf(match[1]);
+  const minutes = decimalOf(match[2]);
+  const seconds = decimalOf(match[3]);
+  const total = Math.round(hours * 60 + minutes + seconds / 60);
   return total > 0 && total <= 1440 ? total : null;
 }
 
-/** `recipeYield` is "4", "4 servings", "Pour 4 personnes", or an array. */
+function decimalOf(value: string | undefined): number {
+  if (value === undefined) return 0;
+  const parsed = Number(value.replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** What a recipe with no usable yield is assumed to serve. */
+const DEFAULT_SERVINGS = 2;
+
+/**
+ * `recipeYield` is "4", "4 servings", "Pour 4 personnes", "4-6 servings", or an
+ * array of those.
+ *
+ * A range takes its upper bound, which is what the ingredient parser does with
+ * "2 à 3 oignons" and is the same reasoning: cooking for four when six are
+ * coming is the failure that cannot be fixed at the table. This took the first
+ * number instead, so the two halves of the same import disagreed about what a
+ * range means.
+ */
 export function parseYield(value: unknown): number {
   const text = firstString(value);
-  if (!text) return 2;
-  const match = /\d+/.exec(text);
-  if (!match) return 2;
-  const parsed = Number(match[0]);
-  return parsed >= 1 && parsed <= 50 ? parsed : 2;
+  if (!text) return DEFAULT_SERVINGS;
+
+  const range = /(\d+)\s*(?:-|–|to|a|à)\s*(\d+)/i.exec(text);
+  const match = range ? range[2] : /\d+/.exec(text)?.[0];
+  if (match === undefined) return DEFAULT_SERVINGS;
+
+  const parsed = Number(match);
+  return parsed >= 1 && parsed <= 50 ? parsed : DEFAULT_SERVINGS;
 }
 
 function firstString(value: unknown): string | null {

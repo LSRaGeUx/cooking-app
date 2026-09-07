@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   index,
   pgTable,
   smallint,
@@ -28,12 +29,15 @@ export const prepLink = pgTable(
   {
     id: primaryId(),
     userId: ownerId(),
+    // Single-column on purpose. A composite key would have to be
+    // `on delete set null` across both columns, and `user_id` is not null, so
+    // clearing the Sunday session would fail instead of leaving the link
+    // unsourced, which is the whole point of the column being nullable. See the
+    // matching note on `recipe_ingredient.ingredient_id` in ./recipes.ts.
     sourceEntryId: uuid("source_entry_id").references(() => planEntry.id, {
       onDelete: "set null",
     }),
-    dependentEntryId: uuid("dependent_entry_id")
-      .notNull()
-      .references(() => planEntry.id, { onDelete: "cascade" }),
+    dependentEntryId: uuid("dependent_entry_id").notNull(),
     servingsDrawn: smallint("servings_drawn").notNull().default(1),
     note: text("note"),
     createdAt: createdAt(),
@@ -43,6 +47,13 @@ export const prepLink = pgTable(
     // make the shortfall arithmetic ambiguous and the screen unreadable.
     uniqueIndex("prep_link_dependent_key").on(t.dependentEntryId),
     index("prep_link_source_idx").on(t.sourceEntryId),
+    // Composite, so the denormalized `user_id` cannot disagree with the
+    // dependent entry's. See the note on `recipe_ingredient` in ./recipes.ts.
+    foreignKey({
+      columns: [t.dependentEntryId, t.userId],
+      foreignColumns: [planEntry.id, planEntry.userId],
+      name: "prep_link_dependent_entry_user_fk",
+    }).onDelete("cascade"),
     check("prep_link_servings_positive", sql`${t.servingsDrawn} > 0`),
     check(
       "prep_link_not_self",

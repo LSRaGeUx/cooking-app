@@ -1,3 +1,5 @@
+import type { DomainErrorDetails } from "./errors";
+
 /**
  * The derived signals, and the thresholds that decide when one is worth
  * mentioning.
@@ -37,9 +39,16 @@ export interface UnresolvedSignal {
   readonly code:
     | "NEVER_COOKED_THOUGH_PLANNED"
     | "SLOT_OVERRUNS"
-    | "LOW_RATED_STILL_PLANNED";
+    // Was LOW_RATED_STILL_PLANNED, which named a condition it never checked:
+    // it reads a rating and a cook count and knows nothing about whether the
+    // recipe is in any current plan. Renamed rather than given the planned
+    // check, because "it is still in your library" is the honest observation
+    // available from these statistics, and inventing the other one would need
+    // the active weeks this type does not carry.
+    | "LOW_RATED_STILL_IN_LIBRARY";
   readonly message: string;
-  readonly details: Record<string, unknown>;
+  /** The shared details bag, as every other error and warning in the domain. */
+  readonly details: DomainErrorDetails;
 }
 
 export interface BudgetSuggestion {
@@ -52,21 +61,25 @@ export interface BudgetSuggestion {
   readonly observedCount: number;
 }
 
+/**
+ * The thresholds and the intermediate predicates are private. They were all
+ * exported and none of them had a caller outside this file, which reads as a
+ * public surface other code is expected to compose with, and there is nothing
+ * to compose: `unresolvedSignals` and `budgetSuggestions` are the whole
+ * interface. `cookRate` is gone entirely, having had no caller at all.
+ */
+
 /** Planned at least this often before an absence of cooking means anything. */
-export const NEVER_COOKED_MIN_PLANNED = 2;
+const NEVER_COOKED_MIN_PLANNED = 2;
 
 /** Enough meals in a slot before an overrun rate is more than noise. */
-export const OVERRUN_MIN_OBSERVATIONS = 3;
+const OVERRUN_MIN_OBSERVATIONS = 3;
 
 /** Above this share of overruns, the budget is probably wrong, not the cook. */
-export const OVERRUN_RATE_THRESHOLD = 0.5;
+const OVERRUN_RATE_THRESHOLD = 0.5;
 
-export function cookRate(stats: RecipeStats): number | null {
-  if (stats.planned === 0) return null;
-  return stats.cooked / stats.planned;
-}
-
-export function overrunRate(slot: SlotStats): number | null {
+/** Cooked meals in a slot that ran over, as a share of the ones with feedback. */
+function overrunRate(slot: SlotStats): number | null {
   if (slot.withFeedback === 0) return null;
   return slot.tookLonger / slot.withFeedback;
 }
@@ -76,7 +89,7 @@ export function overrunRate(slot: SlotStats): number | null {
  * negative signal in the system, and one a rating never captures because the
  * meal that never happened never gets rated.
  */
-export function neverCookedThoughPlanned(
+function neverCookedThoughPlanned(
   stats: readonly RecipeStats[],
 ): RecipeStats[] {
   return stats.filter(
@@ -157,7 +170,7 @@ export function unresolvedSignals(
     if (recipe.averageRating === null) continue;
     if (recipe.averageRating > 2 || recipe.cooked < 2) continue;
     signals.push({
-      code: "LOW_RATED_STILL_PLANNED",
+      code: "LOW_RATED_STILL_IN_LIBRARY",
       message: `« ${recipe.title} » est notée ${recipe.averageRating.toFixed(1)} sur 5 en moyenne sur ${recipe.cooked} repas, et reste dans la bibliothèque.`,
       details: {
         recipeId: recipe.recipeId,

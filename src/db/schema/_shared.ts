@@ -39,8 +39,22 @@ export const ownerId = () => text("user_id").notNull();
 export const createdAt = () =>
   timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 
+/**
+ * `$onUpdate` is what makes this column mean what its name says. `defaultNow()`
+ * fires on insert only, so nothing moved it afterwards and every service had to
+ * remember to set it by hand; the ones that forgot left a row whose
+ * `updated_at` equalled its `created_at` forever. Drizzle now writes the value
+ * into every update statement it builds, so no caller has to think about it.
+ *
+ * It is applied by the ORM rather than by a trigger on purpose: a trigger would
+ * also fire for the migrator and for a manual `psql` correction, and "when did
+ * the application last change this row" is the question the column answers.
+ */
 export const updatedAt = () =>
-  timestamp("updated_at", { withTimezone: true }).notNull().defaultNow();
+  timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date());
 
 /**
  * The second line of defence behind withUser(). Policy names are per-table in

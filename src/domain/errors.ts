@@ -37,19 +37,64 @@ export const BLOCKING_CODES = [
   // nothing for this one, and an agent that cannot tell them apart will loop
   // through the authorization dance forever.
   "ACCESS_REVOKED",
+  // The three below all used to be reported as VALIDATION, and that was the
+  // defect: VALIDATION means "your arguments were wrong, fix them and retry",
+  // so an agent reads it as an instruction to edit its own call. For a server
+  // bug it edits a correct call forever; for a page with no recipe in it, it
+  // rewrites a perfectly good URL; for a remote server that is down, it goes
+  // looking for a typo in an address that was right.
+  //
+  // The server failed, the call did not. `details.retryable` says whether
+  // sending the identical call again is worth anything.
+  "INTERNAL",
+  // The address was reachable and returned something, but no recipe could be
+  // read out of it. The argument was fine, the page was not.
+  "PARSE_FAILED",
+  // The remote server refused or failed: a 5xx, a connection reset, a timeout.
+  // Nothing about the request needs changing.
+  "UPSTREAM_FAILED",
 ] as const;
 
 export type BlockingCode = (typeof BLOCKING_CODES)[number];
 
+/**
+ * Two of these are declared and not yet emitted, and that is on purpose rather
+ * than an oversight: `DIET_MISMATCH` and `BUDGET_EXCEEDED` are in the published
+ * taxonomy (docs/03-agent-interface.md section 6), so an agent may already be
+ * written to expect them, and removing them from the list would be a breaking
+ * change to a documented interface for no gain.
+ *
+ * Nothing raises them because the two checks behind them do not exist yet.
+ * Diet is stored as a preference and never compared against a recipe's
+ * ingredients, and no price data enters the model, so there is nothing to
+ * compare a weekly budget against. **Neither has a next-intl template, and
+ * neither should get one until something emits it**: a template written against
+ * guessed `details` renders a sentence with the wrong numbers in it, which is
+ * worse than falling back to the server's own message. See the note at the
+ * `default` branch of src/domain/error-params.ts.
+ */
 export const WARNING_CODES = [
+  // Not emitted. See the note above before wiring a template for it.
   "DIET_MISMATCH",
   "EXCLUDED_INGREDIENT",
   "EQUIPMENT_MISSING",
   "REPEAT_RECIPE_THIS_WEEK",
   "SERVINGS_SHORTFALL",
   "NOT_BATCH_FRIENDLY",
+  // Not emitted. See the note above before wiring a template for it.
   "BUDGET_EXCEEDED",
   "TIME_BUDGET_TIGHT",
+  /**
+   * A slot that still holds a meal has stopped being plannable, because it was
+   * set to skipped or hidden after the meal was assigned.
+   *
+   * This used to be a blocking `SLOT_NOT_PLANNED` raised on every later edit of
+   * the week, about a slot the caller had not touched, so changing Tuesday
+   * failed because of something done to Saturday. The entry is carried forward
+   * now and the week stays editable. The warning is what keeps that from being
+   * silent: the meal is still there and the grid will not show it.
+   */
+  "SLOT_NO_LONGER_PLANNED",
 ] as const;
 
 export type WarningCode = (typeof WARNING_CODES)[number];

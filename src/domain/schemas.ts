@@ -15,6 +15,7 @@ import {
   SLOT_STATES,
 } from "./vocabulary";
 import { CANONICAL_UNITS } from "./ingredient-parser";
+import { isValidIsoWeek, isoWeeksInYear } from "./week";
 
 /**
  * One set of Zod schemas behind everything: HTTP and server action validation,
@@ -26,22 +27,46 @@ import { CANONICAL_UNITS } from "./ingredient-parser";
  * we do not run, so they are reviewed as product copy.
  */
 
-const UNIT_VALUES = Object.values(CANONICAL_UNITS) as [string, ...string[]];
+// A plain array. It was cast to `[string, ...string[]]`, a tuple type that
+// exists so a value can be handed to `z.enum`, and the only thing done with it
+// here is `.join`, which any array does.
+const UNIT_VALUES = Object.values(CANONICAL_UNITS);
 
-export const isoWeekSchema = z.object({
-  year: z
-    .number()
-    .int()
-    .min(1970)
-    .max(9999)
-    .describe("Année de numérotation ISO, jamais l'année civile supposée."),
-  week: z
-    .number()
-    .int()
-    .min(1)
-    .max(53)
-    .describe("Numéro de semaine ISO, de 1 à 52 ou 53 selon l'année."),
-});
+/**
+ * An ISO week that the year actually has.
+ *
+ * `week` is bounded at 53 by the field, and most years have 52, so a bare range
+ * check accepted 2026-W53 and let a plan row be written for a week that does
+ * not exist, through MCP and through the server actions alike. `isValidIsoWeek`
+ * knew the answer and was called from nowhere. The refinement names the last
+ * valid week of the year the caller asked about, because an agent told
+ * "semaine invalide" retries the same number and an agent told the year ends at
+ * 52 corrects itself.
+ */
+export const isoWeekSchema = z
+  .object({
+    year: z
+      .number()
+      .int()
+      .min(1970)
+      .max(9999)
+      .describe("Année de numérotation ISO, jamais l'année civile supposée."),
+    week: z
+      .number()
+      .int()
+      .min(1)
+      .max(53)
+      .describe("Numéro de semaine ISO, de 1 à 52 ou 53 selon l'année."),
+  })
+  .superRefine((value, ctx) => {
+    if (isValidIsoWeek(value)) return;
+    const last = isoWeeksInYear(value.year);
+    ctx.addIssue({
+      code: "custom",
+      path: ["week"],
+      message: `L'année ${value.year} compte ${last} semaines ISO, donc la semaine ${value.week} n'existe pas. La dernière semaine de ${value.year} est la semaine ${last}.`,
+    });
+  });
 
 export type IsoWeekInput = z.infer<typeof isoWeekSchema>;
 
@@ -54,7 +79,9 @@ export const slotRefSchema = z.object({
     .describe("Jour ISO : 1 = lundi, 7 = dimanche."),
   mealTypeId: z
     .uuid()
-    .describe("Identifiant du type de repas, tel que renvoyé par la ressource des créneaux."),
+    .describe(
+      "Identifiant du type de repas, tel que renvoyé par la ressource des créneaux.",
+    ),
 });
 
 export type SlotRefInput = z.infer<typeof slotRefSchema>;
@@ -62,11 +89,17 @@ export type SlotRefInput = z.infer<typeof slotRefSchema>;
 export const mealTypeInputSchema = z.object({
   key: z
     .string()
+    .trim()
     .min(1)
     .max(40)
     .regex(/^[a-z0-9_]+$/, "Clé en minuscules, chiffres et tirets bas.")
     .describe("Clé stable du type de repas, par exemple `dinner`."),
-  label: z.string().min(1).max(60).describe("Libellé affiché à l'utilisateur."),
+  label: z
+    .string()
+    .trim()
+    .min(1)
+    .max(60)
+    .describe("Libellé affiché à l'utilisateur."),
   sortOrder: z.number().int().min(0).max(100).default(0),
 });
 
@@ -96,7 +129,13 @@ export const profileInputSchema = z.object({
   dietNotes: z.string().max(2000).nullable().default(null),
   skillLevel: z.number().int().min(1).max(5).default(3),
   defaultServings: z.number().int().min(1).max(50).default(2),
-  defaultTimeBudgetMin: z.number().int().min(0).max(600).nullable().default(null),
+  defaultTimeBudgetMin: z
+    .number()
+    .int()
+    .min(0)
+    .max(600)
+    .nullable()
+    .default(null),
   varietyPreference: z
     .number()
     .int()
@@ -115,22 +154,37 @@ export const profileInputSchema = z.object({
       "Jour de courses hebdomadaire, 1 = lundi à 7 = dimanche. Définit le cycle que couvre une liste de courses : sept jours à partir de ce jour, ce jour inclus. Null si la personne n'a rien indiqué.",
     ),
   weeklyBudgetAmount: z.number().min(0).max(100000).nullable().default(null),
-  weeklyBudgetCurrency: z.string().length(3).nullable().default(null),
+  weeklyBudgetCurrency: z
+    .string()
+    .regex(/^[A-Z]{3}$/, "Code ISO 4217 en trois lettres majuscules, « EUR ».")
+    .nullable()
+    .default(null)
+    .describe(
+      "Code de devise ISO 4217, en majuscules : `EUR`, `CHF`, `CAD`. Une longueur de trois caractères ne suffisait pas, elle acceptait `eur` et `1$!`.",
+    ),
   agentAuthority: z.enum(AGENT_AUTHORITIES).default("proposal"),
   timeBudgetToleranceMin: z.number().int().min(0).max(120).default(10),
 });
 
 export type ProfileInput = z.infer<typeof profileInputSchema>;
 
+/**
+ * Every term is trimmed before its length is checked, which matters more here
+ * than anywhere else in this file. Untrimmed, `min(1)` accepted `"   "`, so a
+ * strict allergen could be stored whose only term was whitespace: it passed
+ * validation, it appeared in the profile as an absolute block, and it could
+ * never match an ingredient. A rule the user believes protects them and does
+ * not is the worst outcome the allergen feature has.
+ */
 export const allergenInputSchema = z.object({
-  name: z.string().min(1).max(80),
+  name: z.string().trim().min(1).max(80),
   severity: z
     .enum(ALLERGEN_SEVERITIES)
     .describe(
       "`strict` est un blocage absolu : aucune recette contenant cet allergène ne peut être placée dans un créneau. `avoid` produit un avertissement.",
     ),
   matches: z
-    .array(z.string().min(1).max(80))
+    .array(z.string().trim().min(1).max(80))
     .max(100)
     .default([])
     .describe(
@@ -139,9 +193,9 @@ export const allergenInputSchema = z.object({
 });
 
 export const exclusionInputSchema = z.object({
-  name: z.string().min(1).max(80),
+  name: z.string().trim().min(1).max(80),
   matches: z
-    .array(z.string().min(1).max(80))
+    .array(z.string().trim().min(1).max(80))
     .max(100)
     .default([])
     .describe(
@@ -152,20 +206,22 @@ export const exclusionInputSchema = z.object({
 export const equipmentInputSchema = z.object({
   key: z
     .string()
+    .trim()
     .min(1)
     .max(40)
     .regex(/^[a-z0-9_]+$/, "Clé en minuscules, chiffres et tirets bas."),
-  label: z.string().min(1).max(60).nullable().default(null),
+  label: z.string().trim().min(1).max(60).nullable().default(null),
 });
 
 export const factInputSchema = z.object({
   category: z
     .enum(FACT_CATEGORIES)
     .describe(
-      "Catégorie du fait. `taste` pour les goûts, `organization` pour le rythme et les habitudes de la semaine, `pantry_habit` pour les placards, `social` pour les repas partagés, `health` pour les contraintes de santé non allergiques, `equipment` et `technique` pour la cuisine elle-même.",
+      "Catégorie du fait. `taste` pour les goûts, `organization` pour le rythme et les habitudes de la semaine, `pantry_habit` pour les placards, `social` pour les repas partagés, `health` pour les contraintes de santé non allergiques, `equipment` et `technique` pour la cuisine elle-même, `other` quand aucune ne convient. `other` est aussi la valeur par défaut, mais un fait bien classé est un fait qui ressort dans la bonne section du profil : préférez une catégorie précise.",
     ),
   statement: z
     .string()
+    .trim()
     .min(1)
     .max(FACT_STATEMENT_MAX_LENGTH)
     .describe(
@@ -218,7 +274,7 @@ export type FactFilter = z.infer<typeof factFilterSchema>;
  * that demands a rating and a note is a prompt people stop answering, and an
  * unanswered prompt teaches nothing.
  */
-export const feedbackInputSchema = z.object({
+const feedbackFieldsSchema = z.object({
   outcome: z
     .enum(FEEDBACK_OUTCOMES)
     .describe(
@@ -247,7 +303,85 @@ export const feedbackInputSchema = z.object({
     .describe("`too_much` ou `too_little` si les quantités étaient à côté."),
 });
 
+/**
+ * The fields that only make sense for one outcome, cross-checked.
+ *
+ * Nothing enforced this, so `{ outcome: "cooked", swappedFor: "pizza" }` and
+ * `{ outcome: "skipped", rating: 5 }` were both storable, and each is a record
+ * that contradicts itself. That matters beyond tidiness: these rows are the
+ * evidence the signals in src/domain/signals.ts are derived from, and a rating
+ * on a meal nobody ate is a rating of nothing.
+ *
+ * `swapped` without a `swappedFor` is allowed on purpose. What was eaten
+ * instead is the single most useful field in the table, and it is also the one
+ * people leave blank, so demanding it would cost the outcome as well.
+ */
+export const feedbackInputSchema = feedbackFieldsSchema.superRefine(
+  (value, ctx) => {
+    if (value.swappedFor !== null && value.outcome !== "swapped") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["swappedFor"],
+        message: `« ${value.swappedFor} » a été indiqué comme mangé à la place, mais le résultat est « ${value.outcome} ». Utilisez outcome = "swapped" pour un plat remplacé, ou laissez swappedFor à null.`,
+      });
+    }
+
+    if (value.rating !== null && value.outcome !== "cooked") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["rating"],
+        message: `Une note ne s'applique qu'à un plat cuisiné, et le résultat est « ${value.outcome} ». Retirez la note, ou indiquez outcome = "cooked" si le plat a bien été cuisiné.`,
+      });
+    }
+
+    if (value.portionIssue !== null && value.outcome !== "cooked") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["portionIssue"],
+        message: `Un problème de quantité ne s'observe qu'à table, et le résultat est « ${value.outcome} ». Retirez portionIssue, ou indiquez outcome = "cooked".`,
+      });
+    }
+
+    if (value.tookLonger && value.outcome !== "cooked") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["tookLonger"],
+        message: `Un plat qui n'a pas été cuisiné n'a pas pris plus de temps que prévu, et le résultat est « ${value.outcome} ». Laissez tookLonger à false.`,
+      });
+    }
+  },
+);
+
 export type FeedbackInput = z.infer<typeof feedbackInputSchema>;
+
+/**
+ * A calendar date, `AAAA-MM-JJ`, that exists.
+ *
+ * The regex alone accepted `2026-13-45`, which the `date` column then refused
+ * with a Postgres error rather than a validation message. The refinement
+ * round-trips through `Date.UTC` and compares the parts back, which is the same
+ * check `parseCycleStart` in src/domain/shopping.ts already does, and rejects
+ * both an impossible month and a day the month does not have: `2026-02-30`
+ * would otherwise roll silently into March.
+ */
+export const isoDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date au format AAAA-MM-JJ.")
+  .refine(
+    (value) => {
+      const [year, month, day] = value.split("-").map(Number);
+      if (year === undefined || month === undefined || day === undefined) {
+        return false;
+      }
+      const date = new Date(Date.UTC(year, month - 1, day));
+      return (
+        date.getUTCFullYear() === year &&
+        date.getUTCMonth() === month - 1 &&
+        date.getUTCDate() === day
+      );
+    },
+    { message: "Cette date n'existe pas dans le calendrier." },
+  );
 
 export const pantryItemInputSchema = z.object({
   kind: z
@@ -255,7 +389,7 @@ export const pantryItemInputSchema = z.object({
     .describe(
       "`staple` pour ce qui est toujours là et n'a pas besoin d'être acheté, `use_soon` pour ce qu'il faut manger avant que ça ne se perde.",
     ),
-  name: z.string().min(1).max(120),
+  name: z.string().trim().min(1).max(120),
   quantityNote: z
     .string()
     .max(120)
@@ -264,18 +398,20 @@ export const pantryItemInputSchema = z.object({
     .describe(
       "Quantité en texte libre, « un demi-paquet », « il en reste peu ». Volontairement pas un nombre : compter mène à une comptabilité que personne ne tient.",
     ),
-  expiresOn: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
+  expiresOn: isoDateSchema
     .nullable()
     .default(null)
-    .describe("Date limite, au format AAAA-MM-JJ. Surtout utile pour `use_soon`."),
+    .describe(
+      "Date limite, au format AAAA-MM-JJ. Surtout utile pour `use_soon`.",
+    ),
 });
 
 export type PantryItemInput = z.infer<typeof pantryItemInputSchema>;
 
+export type IsoDateInput = z.infer<typeof isoDateSchema>;
+
 export const ingredientInputSchema = z.object({
-  canonicalName: z.string().min(1).max(120),
+  canonicalName: z.string().trim().min(1).max(120),
   aliases: z.array(z.string().min(1).max(120)).max(50).default([]),
   category: z.enum(INGREDIENT_CATEGORIES).default("other"),
   aisle: z.string().max(60).nullable().default(null),
@@ -294,6 +430,7 @@ export const recipeIngredientInputSchema = z.object({
     ),
   rawName: z
     .string()
+    .trim()
     .min(1)
     .max(200)
     .describe("Nom de l'ingrédient tel qu'il est écrit dans la recette."),
@@ -301,7 +438,9 @@ export const recipeIngredientInputSchema = z.object({
   optional: z
     .boolean()
     .default(false)
-    .describe("Un ingrédient optionnel est exclu de la liste de courses par défaut."),
+    .describe(
+      "Un ingrédient optionnel est exclu de la liste de courses par défaut.",
+    ),
   ingredientId: z
     .uuid()
     .nullable()
@@ -314,7 +453,7 @@ export const recipeIngredientInputSchema = z.object({
 export type RecipeIngredientInput = z.infer<typeof recipeIngredientInputSchema>;
 
 export const recipeStepInputSchema = z.object({
-  text: z.string().min(1).max(4000),
+  text: z.string().trim().min(1).max(4000),
   durationMin: z.number().int().min(0).max(1440).nullable().default(null),
   unattended: z
     .boolean()
@@ -325,7 +464,7 @@ export const recipeStepInputSchema = z.object({
 });
 
 export const recipeInputSchema = z.object({
-  title: z.string().min(1).max(200),
+  title: z.string().trim().min(1).max(200),
   description: z.string().max(4000).nullable().default(null),
   imageUrl: z
     .url()
@@ -360,7 +499,9 @@ export const recipeInputSchema = z.object({
   batchFriendly: z
     .boolean()
     .default(false)
-    .describe("La recette se double et se conserve, donc elle peut servir de session de batch."),
+    .describe(
+      "La recette se double et se conserve, donc elle peut servir de session de batch.",
+    ),
   keepsDays: z.number().int().min(0).max(30).nullable().default(null),
   tags: z.array(z.string().min(1).max(40)).max(30).default([]),
   cuisine: z.string().max(60).nullable().default(null),
@@ -440,6 +581,7 @@ export const proposedEntrySchema = z.object({
     .describe("Jour ISO : 1 = lundi, 7 = dimanche."),
   mealType: z
     .string()
+    .trim()
     .min(1)
     .max(40)
     .describe(
@@ -447,6 +589,7 @@ export const proposedEntrySchema = z.object({
     ),
   recipeRef: z
     .string()
+    .trim()
     .min(1)
     .max(100)
     .describe(
@@ -454,6 +597,21 @@ export const proposedEntrySchema = z.object({
     ),
   servings: z.number().int().min(1).max(50).nullable().default(null),
   note: z.string().max(500).nullable().default(null),
+  /**
+   * Deliberately **not** `.trim().min(1)`, unlike every other required string
+   * in this file.
+   *
+   * A blank rationale is caught by `validateWeek`, which raises
+   * `MISSING_RATIONALE`: a documented code carrying the slot, the recipe title
+   * and a sentence explaining what a justification is for. Trimming here
+   * intercepts the same input one layer earlier and answers `VALIDATION`
+   * "expected string to have >=1 characters" instead, which is true, generic,
+   * and useless to the one reader who cannot ask a follow-up question.
+   *
+   * The rule is also conditional in a way a schema cannot express: it applies
+   * to an entry an agent is introducing, not to one a user typed by hand and
+   * not to one inherited from a previous version. So it belongs in the writer.
+   */
   rationale: z
     .string()
     .min(1)
@@ -475,6 +633,7 @@ export type ProposedEntryInput = z.infer<typeof proposedEntrySchema>;
 export const newRecipeSchema = recipeInputSchema.extend({
   tempId: z
     .string()
+    .trim()
     .min(1)
     .max(100)
     .describe(
@@ -482,9 +641,13 @@ export const newRecipeSchema = recipeInputSchema.extend({
     ),
 });
 
-export const proposeWeekSchema = z.object({
-  year: z.number().int().min(1970).max(9999),
-  week: z.number().int().min(1).max(53),
+/**
+ * Built by extending `isoWeekSchema` rather than redeclaring `year` and `week`,
+ * so the week-53 refinement applies here too. It used to spell both fields out
+ * again, which meant the one schema that agents actually write weeks through
+ * was the one without the validity check.
+ */
+export const proposeWeekSchema = isoWeekSchema.extend({
   expectedBaseVersion: z
     .number()
     .int()
@@ -522,7 +685,9 @@ export const proposeWeekSchema = z.object({
           .number()
           .int()
           .min(0)
-          .describe("Position dans `entries` du repas qui n'est qu'un réchauffage."),
+          .describe(
+            "Position dans `entries` du repas qui n'est qu'un réchauffage.",
+          ),
         servingsDrawn: z.number().int().min(1).max(50).nullable().default(null),
         note: z.string().max(500).nullable().default(null),
       }),
@@ -539,6 +704,12 @@ export type ProposeWeekInput = z.infer<typeof proposeWeekSchema>;
 /**
  * The grid as it was when a version was created, stored on the version so that
  * changing slot configuration later never rewrites history.
+ *
+ * This is also the `$type` of the `plan_version.slot_snapshot` jsonb column, so
+ * the shape a reader gets back and the shape a writer is validated against are
+ * one declaration. Parse a snapshot on read rather than trusting the column
+ * type: `$type` is a compile-time claim about a jsonb value, and a row written
+ * before a shape change would satisfy the type and not the schema.
  */
 export const slotSnapshotSchema = z.array(
   z.object({
@@ -553,3 +724,146 @@ export const slotSnapshotSchema = z.array(
 );
 
 export type SlotSnapshot = z.infer<typeof slotSnapshotSchema>;
+
+/**
+ * A line the user typed on the grocery list themselves, rather than one derived
+ * from the plan. It shops exactly as written and merges with nothing: a name a
+ * person typed is not evidence about any ingredient in the vocabulary.
+ */
+export const manualLineInputSchema = z.object({
+  displayName: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .describe(
+      "Le produit à acheter, tel qu'il doit apparaître sur la liste. C'est le nom du produit, pas celui d'un ingrédient du vocabulaire : « sacs poubelle » et « coulis de tomate » sont l'un et l'autre valides.",
+    ),
+  quantity: z
+    .number()
+    .positive()
+    .max(100000)
+    .nullable()
+    .default(null)
+    .describe(
+      "Quantité, strictement positive, ou null quand il n'y a rien à compter. Une quantité de zéro n'a pas de sens sur une liste de courses : pour ne pas acheter quelque chose, n'ajoutez pas la ligne.",
+    ),
+  unit: z
+    .string()
+    .trim()
+    .max(20)
+    .nullable()
+    .default(null)
+    .describe(
+      `Unité de la quantité. Unités canoniques : ${UNIT_VALUES.join(", ")}. Une unité inconnue est conservée telle quelle.`,
+    ),
+  aisle: z
+    .string()
+    .trim()
+    .max(60)
+    .nullable()
+    .default(null)
+    .describe(
+      "Rayon, qui décide de l'ordre de la liste. Reprenez un rayon déjà utilisé par les autres lignes plutôt que d'en inventer un, sans quoi la ligne se retrouve seule en fin de liste.",
+    ),
+  note: z
+    .string()
+    .trim()
+    .max(200)
+    .nullable()
+    .default(null)
+    .describe("Précision libre : une marque, un format, « le grand paquet »."),
+});
+
+export type ManualLineInput = z.infer<typeof manualLineInputSchema>;
+
+/**
+ * One cooking session feeding one later meal. The two entries are named by id
+ * rather than by slot, because a slot can hold several dishes.
+ */
+export const prepLinkInputSchema = z.object({
+  sourceEntryId: z
+    .uuid()
+    .describe(
+      "Identifiant de l'entrée réellement cuisinée, celle où le temps de cuisine est passé. Elle doit tomber le même jour que le repas dépendant ou avant : on ne mange pas mardi ce qu'on cuisine jeudi.",
+    ),
+  dependentEntryId: z
+    .uuid()
+    .describe(
+      "Identifiant de l'entrée qui n'est qu'un réchauffage. C'est ce qui rend tenable un créneau au budget de temps très serré.",
+    ),
+  servingsDrawn: z
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .nullable()
+    .default(null)
+    .describe(
+      "Portions prélevées sur la session pour ce repas. Elles s'ajoutent aux portions de la session : la liste de courses achète les ingrédients de la somme des deux. `null` pour reprendre les portions du repas dépendant.",
+    ),
+  note: z
+    .string()
+    .trim()
+    .max(500)
+    .nullable()
+    .default(null)
+    .describe(
+      "Précision sur la conservation ou le réchauffage, « au four 20 min », « à congeler ».",
+    ),
+});
+
+export type PrepLinkInput = z.infer<typeof prepLinkInputSchema>;
+
+/**
+ * The two fields of a planned meal that can change without changing which dish
+ * is in the slot. Anything else is a new entry, and a new plan version with it.
+ *
+ * At least one key is required: an empty patch would create a plan version that
+ * differs from its parent in nothing, and versions are immutable, so the
+ * history would fill with rows recording that nothing happened.
+ */
+export const planEntryPatchSchema = z
+  .object({
+    servings: z
+      .number()
+      .int()
+      .min(1)
+      .max(50)
+      .describe("Nouveau nombre de portions pour ce repas."),
+    note: z
+      .string()
+      .trim()
+      .max(500)
+      .describe(
+        "Nouvelle note libre sur ce repas. Une chaîne vide l'effacerait.",
+      ),
+  })
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, {
+    message:
+      "Indiquez au moins `servings` ou `note`. Une modification vide créerait une version de plan identique à la précédente.",
+  });
+
+export type PlanEntryPatch = z.infer<typeof planEntryPatchSchema>;
+
+/** Paging over the agent activity log, which is append-only and can be long. */
+export const activityQuerySchema = z.object({
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .default(50)
+    .describe("Nombre d'entrées à renvoyer, de 1 à 100. 50 par défaut."),
+  offset: z
+    .number()
+    .int()
+    .min(0)
+    .default(0)
+    .describe(
+      "Nombre d'entrées à sauter, les plus récentes d'abord. Le journal est en ajout seul, donc une page reste stable sauf pour les entrées écrites entre deux appels.",
+    ),
+});
+
+export type ActivityQuery = z.infer<typeof activityQuerySchema>;
