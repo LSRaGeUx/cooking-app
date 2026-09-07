@@ -42,12 +42,17 @@ export interface AllergenHit {
   readonly matchedTerm: string;
 }
 
-/** Lowercase, strip accents, collapse whitespace. */
+/** Lowercase, fold ligatures, strip accents, collapse whitespace. */
 export function normalizeTerm(value: string): string {
   return value
+    .toLowerCase()
+    // NFD leaves \u0153 and \u00e6 alone, they are letters rather than accented ones, and
+    // French kitchens spell them both ways: "boeuf hach\u00e9" and "b\u0153uf hach\u00e9" are
+    // the same word, and an allergen term typed either way must still fire.
+    .replace(/\u0153/g, "oe")
+    .replace(/\u00e6/g, "ae")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
     // Apostrophes separate words in French elision ("d'ail"), so they become
     // boundaries rather than disappearing.
     .replace(/[\u2019']/g, " ")

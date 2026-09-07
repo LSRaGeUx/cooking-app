@@ -124,6 +124,30 @@ Pantry subtraction from `01-functional-spec.md` section 8 is not here: the
 pantry lands in phase 7. `grocery_line.covered_by_pantry` already exists so that
 phase is a service change rather than a migration.
 
+**Corrected 2026-09-07: a line was named after the vocabulary, not after the
+product.** Merging keyed on the linked ingredient and displayed its canonical
+name, so every recipe line that resolved to a broader entry was renamed on the
+list: "coulis de tomate" shopped as "Tomate", "spaghetti" as "Pâtes", and "pain
+de mie" and "pain à burger" collapsed into one "Pain". The vocabulary earns the
+merge, the aisle and the allergens; it does not get to rename the shopping.
+
+The split that fixes it is between linking and naming. A written name that is
+the ingredient's own name, whatever its case, accents, ligatures or plural,
+still reads back canonical and still adds up. Every other written name keeps
+itself, and merges only with the same written name, so two coulis make one line
+of 500 ml. Aliases are read for linking and for nothing else, which is what lets
+them stay as loose as matching needs: "thym" can resolve to `Herbes de Provence`
+for its aisle and its allergens without the list ever saying the wrong word. The
+cost is that two names that both differ from the canonical one no longer add up,
+"patate" beside "pomme de terre", which buys a duplicate at worst where the old
+behaviour bought the wrong thing.
+
+`grocery_line.product_variant` records which of the two a line was, because the
+pantry is re-evaluated on every read and tomatoes in the cupboard cover no
+coulis. `normalizeTerm` also folds œ and æ now, so "boeuf haché" and "bœuf
+haché" are one word to the grocery merge, to ingredient linking and to the
+allergen matcher, which is the direction a strict allergen wants to err in.
+
 ---
 
 ## Phase 3 - Profile and facts  [DONE 2026-08-31]

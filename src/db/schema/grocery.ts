@@ -100,8 +100,12 @@ export const groceryListVersion = pgTable(
  *
  * `source_entry_ids` is what makes a line explicable: dropping a line, the user
  * can be told which meals stop working. `unmergeable_group` holds together the
- * lines of one ingredient whose units cannot be converted, so "2 oignons" and
+ * lines of one product whose units cannot be converted, so "2 oignons" and
  * "300 g d'oignons" sit under one heading instead of pretending to be a sum.
+ *
+ * `display_name` is the product to buy, not the vocabulary entry it resolved
+ * to: a recipe asking for "coulis de tomate" shops for a coulis, and a line
+ * reading "Tomate" sends the cook to the wrong shelf.
  */
 export const groceryLine = pgTable(
   "grocery_line",
@@ -130,6 +134,11 @@ export const groceryLine = pgTable(
     // The line is shopped from its own section rather than hidden, which is
     // why the flag is stored rather than recomputed from the recipes.
     optional: boolean("optional").notNull().default(false),
+    // The name written in the recipe is a narrower product than the ingredient
+    // it links to: a coulis that resolved to Tomate. Stored because the pantry
+    // is re-evaluated on every read, and having the ingredient is not having
+    // this: tomatoes in the cupboard cover no coulis.
+    productVariant: boolean("product_variant").notNull().default(false),
     checked: boolean("checked").notNull().default(false),
     unmergeableGroup: text("unmergeable_group"),
   },

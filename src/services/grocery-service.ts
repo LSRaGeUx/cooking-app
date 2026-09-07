@@ -444,7 +444,8 @@ async function aggregateForCycle(
       sourceLines.push({
         entryId: entry.id,
         ingredientId: line.ingredientId,
-        displayName: line.displayName,
+        rawName: line.rawName,
+        canonicalName: line.canonicalName,
         aisle: line.aisle,
         quantity: scaleQuantity(line.quantity, basket.servings, servings),
         unit: line.unit,
@@ -588,28 +589,48 @@ function derivedValues(
     coveredByPantry: isCovered(line, coverage),
     unmergeableGroup: line.unmergeableGroup,
     optional: line.optional,
+    productVariant: line.productVariant,
   };
 }
 
 /**
  * A line is covered when the pantry says so, by linked ingredient or by name.
  * Matching on the name too is what makes an unlinked staple still useful.
+ *
+ * The ingredient half is skipped for a product variant: flour in the cupboard
+ * does not cover the puff pastry that resolved to it, and a line silently
+ * dropped is a dinner that does not happen.
  */
 function isCovered(
-  line: AggregatedGroceryLine,
+  line: Pick<
+    AggregatedGroceryLine,
+    "ingredientId" | "displayName" | "productVariant"
+  >,
   coverage: PantryCoverage,
 ): boolean {
-  if (line.ingredientId && coverage.stapleIngredientIds.has(line.ingredientId)) {
+  if (
+    line.ingredientId &&
+    !line.productVariant &&
+    coverage.stapleIngredientIds.has(line.ingredientId)
+  ) {
     return true;
   }
   return coverage.stapleNames.has(line.displayName.trim().toLowerCase());
 }
 
 function isUseSoon(
-  line: { ingredientId: string | null; displayName: string },
+  line: {
+    ingredientId: string | null;
+    displayName: string;
+    productVariant: boolean;
+  },
   coverage: PantryCoverage,
 ): boolean {
-  if (line.ingredientId && coverage.useSoonIngredientIds.has(line.ingredientId)) {
+  if (
+    line.ingredientId &&
+    !line.productVariant &&
+    coverage.useSoonIngredientIds.has(line.ingredientId)
+  ) {
     return true;
   }
   return coverage.useSoonNames.has(line.displayName.trim().toLowerCase());

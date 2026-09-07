@@ -1,0 +1,1 @@
+ALTER TABLE "grocery_line" ADD COLUMN "product_variant" boolean DEFAULT false NOT NULL;

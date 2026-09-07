@@ -178,11 +178,26 @@ A separate, shared-by-that-user ingredient table with canonical names, aliases,
 default unit, category (produce, dairy, dry goods, and so on), and aisle. Two
 things depend on it and neither works without it:
 
-- Grocery list merging: "2 onions" plus "1 oignon jaune" must add up.
+- Grocery list linking: a line inherits the aisle it is shopped from, and two
+  recipes asking for the same thing add up into one line.
 - Allergen derivation.
 
 Linking is best-effort: an unlinked ingredient still works, it just does not
 merge.
+
+An ingredient is a vocabulary entry, not a shelf, and the two roles must not be
+confused. An alias means "this text resolves to that ingredient", which is all
+that linking, the aisle and the allergen derivation need. It is not a claim that
+the two are the same thing to buy, and usually they are not: "spaghetti"
+resolves to `Pâtes`, "thym" to `Herbes de Provence`, "coulis de tomate" to
+`Tomate`. So the grocery list reads back only the ingredient's own name, however
+it was spelled, and keeps every other written name as the recipe wrote it. See
+section 8.2.
+
+The trade-off, taken deliberately: two written names that both differ from the
+canonical one do not add up, so "patate" and "pomme de terre" make two lines.
+Nobody buys the wrong thing from that, and the alternative is a list naming a
+product no recipe asked for.
 
 ## 7. Plans and versioning
 
@@ -288,9 +303,16 @@ of control that earns its place only once the automatic answer annoys someone.
 - Generated from the plan on demand, then persisted and editable. It is a
   snapshot, not a live view, because the user shops with it while the plan may
   still change.
-- Aggregation: sum quantities per normalized ingredient, converting compatible
-  units. Non-convertible or unlinked items are listed separately rather than
-  guessed.
+- Aggregation: sum quantities per product, converting compatible units.
+  Non-convertible or unlinked items are listed separately rather than guessed.
+- A line names the product to buy, not the vocabulary entry it resolved to. A
+  written name that is the ingredient's canonical name, whatever its case,
+  accents or plural, reads back as that name and adds up with every other
+  writing of it. Any other written name is kept as the recipe wrote it and
+  merges only with the same written name: two recipes writing "coulis de
+  tomate" give one line of 500 ml, while "pain de mie" and "pain à burger" stay
+  two lines even though both resolve to `Pain`. The link is still what gives
+  either line its aisle and its allergens. See section 6.3.
 - Pantry subtraction: items marked as staples are excluded by default and shown
   in a collapsed "you should already have" section. Use-soon items are called
   out with a "use this" marker.

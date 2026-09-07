@@ -494,8 +494,14 @@ function weeksSince(
 
 export interface RecipeBasketLine {
   readonly ingredientId: string | null;
-  /** Canonical name when the line is linked, otherwise the name as written. */
-  readonly displayName: string;
+  /** The name as written in the recipe. */
+  readonly rawName: string;
+  /**
+   * The linked ingredient's canonical name. The grocery list needs it next to
+   * the raw name to tell the ingredient itself from a narrower product that
+   * merely resolved to it.
+   */
+  readonly canonicalName: string | null;
   readonly aisle: string | null;
   readonly densityGPerMl: number | null;
   readonly quantity: number | null;
@@ -560,7 +566,8 @@ export async function loadRecipeBaskets(
       if (!basket) continue;
       basket.lines.push({
         ingredientId: line.ingredientId,
-        displayName: line.canonicalName ?? line.rawName,
+        rawName: line.rawName,
+        canonicalName: line.canonicalName,
         aisle: line.aisle,
         densityGPerMl:
           line.densityGPerMl === null ? null : Number(line.densityGPerMl),

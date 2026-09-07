@@ -3,10 +3,20 @@ import type { IngredientCategory } from "@/domain/vocabulary";
 /**
  * The seeded starter set. Its only job is to make grocery merging and allergen
  * derivation work on day one, before the user has curated anything: an
- * ingredient typed as "oignon jaune" links to "oignon" and adds up with it.
+ * ingredient typed as "spaghetti" links to `Pâtes` and inherits its aisle and
+ * its allergens.
  *
  * Deliberately short. A long list is a curation chore, and the parser links
  * best-effort anyway, so an unknown ingredient costs nothing but a merge.
+ *
+ * An alias means "this text resolves to that ingredient", and nothing more. It
+ * is read for linking, for the aisle and for the allergens, and never as a
+ * claim that the two are the same thing to buy: most of these are not, from
+ * "spaghetti" under `Pâtes` to "thym" under `Herbes de Provence`. The grocery
+ * list therefore names a line after what the recipe wrote unless the written
+ * name is the canonical one, so an alias here can be as loose as linking needs
+ * without putting the wrong word on the list. See `productOf` in
+ * src/domain/grocery.ts.
  */
 export interface StarterIngredient {
   readonly canonicalName: string;

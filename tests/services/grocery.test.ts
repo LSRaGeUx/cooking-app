@@ -12,6 +12,7 @@ import {
   type GroceryListView,
 } from "@/services/grocery-service";
 import { ensureUserSetup } from "@/services/onboarding-service";
+import { addPantryItems, removePantryItem } from "@/services/pantry-service";
 import { assignRecipe, clearEntry, getWeekView } from "@/services/plan-service";
 import { createRecipe } from "@/services/recipe-service";
 import { listMealTypes } from "@/services/slot-service";
@@ -239,6 +240,111 @@ describe("editing the list by hand", () => {
     const { list: regenerated } = await generateGroceryList(ctx, cycleOf(week));
     expect(regenerated.id).not.toBe(list.id);
     expect(regenerated.state).toBe("active");
+  });
+});
+
+/**
+ * What a line is called. The vocabulary exists to merge and to derive
+ * allergens, not to rename the shopping: "coulis de tomate" resolves to the
+ * seeded `Tomate` for its aisle, and a list that says "Tomate" sends the cook
+ * to the wrong shelf. Week 40 of 2026, so nothing here touches the merge tests
+ * above.
+ */
+describe("naming the product to buy", () => {
+  const namingWeek = { year: 2026, week: 40 };
+
+  it("shops for what the recipe wrote, and still adds two of them up", async () => {
+    const sauce = (
+      await createRecipe(ctx, {
+        title: "Pâtes à la sauce tomate",
+        servings: 2,
+        activeTimeMin: 15,
+        ingredients: [
+          { rawName: "coulis de tomate", quantity: 250, unit: "ml" },
+          { rawName: "pain de mie", quantity: 2 },
+        ],
+      })
+    ).recipe.id;
+
+    const burgers = (
+      await createRecipe(ctx, {
+        title: "Burgers maison",
+        servings: 2,
+        activeTimeMin: 25,
+        ingredients: [
+          { rawName: "coulis de tomate", quantity: 250, unit: "ml" },
+          { rawName: "pain à burger", quantity: 4 },
+        ],
+      })
+    ).recipe.id;
+
+    await assignRecipe(ctx, namingWeek, {
+      dayOfWeek: 1,
+      mealTypeId: dinnerId,
+      recipeId: sauce,
+    });
+    await assignRecipe(ctx, namingWeek, {
+      dayOfWeek: 4,
+      mealTypeId: dinnerId,
+      recipeId: burgers,
+    });
+
+    const { list } = await generateGroceryList(ctx, cycleOf(namingWeek));
+
+    // Both meals asked for a coulis, so one line of 500 ml, under the name a
+    // shop would recognise.
+    expect(lineNamed(list, "coulis de tomate")).toMatchObject({
+      quantity: 500,
+      unit: "ml",
+    });
+    expect(lineNamed(list, "Tomate")).toBeUndefined();
+
+    // Two breads that both resolve to `Pain` are two different purchases.
+    expect(lineNamed(list, "pain de mie")).toMatchObject({ quantity: 2 });
+    expect(lineNamed(list, "pain à burger")).toMatchObject({ quantity: 4 });
+    expect(lineNamed(list, "Pain")).toBeUndefined();
+  });
+
+  it("names an alias-linked line after the recipe, and still shelves it", async () => {
+    // "spaghetti" is a seeded alias of `Pâtes`. The alias is what gives the
+    // line an aisle and an allergen set; it does not make the line pasta in
+    // general, so the list says spaghetti.
+    const carbonara = (
+      await createRecipe(ctx, {
+        title: "Carbonara",
+        servings: 2,
+        activeTimeMin: 20,
+        ingredients: [{ rawName: "spaghetti", quantity: 250, unit: "g" }],
+      })
+    ).recipe.id;
+
+    await assignRecipe(ctx, namingWeek, {
+      dayOfWeek: 6,
+      mealTypeId: dinnerId,
+      recipeId: carbonara,
+    });
+
+    const { list } = await generateGroceryList(ctx, cycleOf(namingWeek));
+
+    expect(lineNamed(list, "spaghetti")).toMatchObject({
+      quantity: 250,
+      unit: "g",
+      aisle: "Épicerie salée",
+    });
+    expect(lineNamed(list, "Pâtes")).toBeUndefined();
+  });
+
+  it("does not let a staple cover a narrower product that resolved to it", async () => {
+    const [staple] = await addPantryItems(ctx, [
+      { kind: "staple", name: "tomates" },
+    ]);
+
+    const { list } = await generateGroceryList(ctx, cycleOf(namingWeek));
+    expect(lineNamed(list, "coulis de tomate")).toMatchObject({
+      coveredByPantry: false,
+    });
+
+    await removePantryItem(ctx, staple!.id);
   });
 });
 

@@ -43,6 +43,13 @@ describe("allergen term matching", () => {
   it("treats elision as a word boundary", () => {
     expect(termMatches("ail", "2 gousses d'ail")).toBe(true);
   });
+
+  it("folds the œ ligature, which French kitchens spell both ways", () => {
+    expect(termMatches("oeuf", "2 œufs")).toBe(true);
+    expect(termMatches("œuf", "2 oeufs")).toBe(true);
+    // The word boundary still holds: beef is not egg.
+    expect(termMatches("oeuf", "300 g de bœuf haché")).toBe(false);
+  });
 });
 
 describe("strict allergen block", () => {

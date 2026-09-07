@@ -230,7 +230,7 @@ state as it was, via a snapshot, so later config changes never rewrite history.
 | id | uuid | PK |
 | user_id | uuid | FK |
 | canonical_name | text | |
-| aliases | text[] | drives matching on import and on grocery merge |
+| aliases | text[] | text that resolves to this ingredient. Drives matching on import, and with it the aisle and the derived allergens. Read for linking only: the grocery list never renames a line to the canonical name because of an alias |
 | category | text | `produce`, `dairy`, `meat`, `fish`, `dry_goods`, `spice`, `frozen`, `other` |
 | aisle | text | nullable, drives grocery grouping |
 | default_unit | text | nullable |
@@ -436,7 +436,7 @@ row here points at a version that is no longer `active`. A single
 | id | uuid | PK |
 | grocery_list_id | uuid | FK, cascade |
 | ingredient_id | uuid | nullable FK |
-| display_name | text | |
+| display_name | text | the product to buy: the written name, unless it is the linked ingredient's own name |
 | quantity | numeric | nullable |
 | unit | text | nullable |
 | aisle | text | nullable |
@@ -445,7 +445,8 @@ row here points at a version that is no longer `active`. A single
 | covered_by_pantry | boolean | |
 | optional | boolean | every recipe that asked for this line called it optional |
 | checked | boolean | |
-| unmergeable_group | text | nullable, groups lines for the same ingredient in incompatible units |
+| product_variant | boolean | the written name is a narrower product than the ingredient it links to |
+| unmergeable_group | text | nullable, groups lines for the same product in incompatible units |
 
 Notes from the implementation:
 
@@ -458,6 +459,18 @@ Notes from the implementation:
   sections, and summing them would inflate what the cook has to buy.
 - Only lines with an `ingredient_id` ever merge. Two unlinked names that look
   alike are not evidence that they are the same thing, so each keeps its line.
+- What merges is the product, not the ingredient. A written name that is the
+  ingredient's canonical name reads back as that name and adds up with every
+  other writing of it; case, accents, the œ ligature and a French plural are
+  the same name. Any other written name is a narrower product: it keeps its own
+  name, merges only with the same written name, and carries `product_variant`.
+  Aliases are deliberately not consulted for this, only for linking: an alias
+  such as "spaghetti" under `Pâtes` earns the aisle and the allergens without
+  earning the right to rename the line.
+- `product_variant` is stored rather than recomputed because the pantry is
+  re-evaluated on every read, and having the ingredient is not having this
+  product: tomatoes in the cupboard cover no coulis, so a variant line ignores
+  the pantry's ingredient match and only a name match can cover it.
 
 ## 8. Pantry
 
