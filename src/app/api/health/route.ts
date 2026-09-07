@@ -26,6 +26,9 @@ export async function GET() {
     return Response.json({ status: "ok" }, { headers: noStore });
   } catch (error) {
     console.error("health: the database is unreachable", error);
-    return Response.json({ status: "unavailable" }, { status: 503, headers: noStore });
+    return Response.json(
+      { status: "unavailable" },
+      { status: 503, headers: noStore },
+    );
   }
 }

@@ -63,10 +63,13 @@ export function checkAccess(
   // Normalized here rather than only on the way out of the environment, so a
   // list handed in by a caller or a test behaves the same as a configured one.
   const list = (options.list ?? allowedEmails()).map(normalize).filter(Boolean);
-  const requireList = options.requireList ?? process.env.NODE_ENV === "production";
+  const requireList =
+    options.requireList ?? process.env.NODE_ENV === "production";
 
   if (list.length === 0) {
-    return requireList ? { allowed: false, code: NOT_CONFIGURED } : { allowed: true };
+    return requireList
+      ? { allowed: false, code: NOT_CONFIGURED }
+      : { allowed: true };
   }
 
   const candidate = normalize(email);

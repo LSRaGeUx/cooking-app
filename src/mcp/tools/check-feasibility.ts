@@ -1,7 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { proposeWeekSchema } from "@/domain/schemas";
+import { formatIsoWeek } from "@/domain/week";
 import { checkFeasibility } from "@/services/plan-service";
+import { proposeWeekParamsSchema, toProposeWeekInput } from "../schemas";
 import type { McpCallerContext } from "../server";
+import { serializeWarning, toolJson } from "../serializers";
 import { runTool } from "../tool-runner";
 
 /**
@@ -11,6 +14,10 @@ import { runTool } from "../tool-runner";
  * `propose_week`, no side effect, and every problem returned at once instead of
  * the first one. Built before the write tool on purpose, so the validation path
  * was exercised by something read-only first.
+ *
+ * It takes the same parameters as `propose_week`, spelled the same way, which is
+ * the whole point of a dry run: an agent that has to rewrite its payload between
+ * the check and the write is checking something else.
  */
 export function registerCheckFeasibility(
   server: McpServer,
@@ -27,10 +34,10 @@ export function registerCheckFeasibility(
         "Utilisez-le avant chaque proposition. Il coûte un appel et vous évite " +
         "une série de refus : allergènes stricts, créneaux sautés, budgets de " +
         "temps dépassés, justifications manquantes, recettes introuvables. Les " +
-        "recettes que vous décrivez dans `newRecipes` sont vérifiées elles " +
+        "recettes que vous décrivez dans `new_recipes` sont vérifiées elles " +
         "aussi, avant d'exister.\n\n" +
         "`errors` bloque, `warnings` passe mais sera signalé à l'utilisateur.",
-      inputSchema: proposeWeekSchema.shape,
+      inputSchema: proposeWeekParamsSchema.shape,
     },
     async (args) =>
       runTool(
@@ -42,28 +49,27 @@ export function registerCheckFeasibility(
           // scope. An agent allowed to look should be allowed to check.
           requiredScopes: ["plan:read"],
           payloadSummary: {
-            week: `${args.year}-W${args.week}`,
-            entries: args.entries.length,
+            week: formatIsoWeek({ year: args.year, week: args.week }),
+            entries: args.entries,
           },
         },
         async (ctx) => {
-          const report = await checkFeasibility(ctx, args);
-          return JSON.stringify(
-            {
-              feasible: report.errors.length === 0,
-              errors: report.errors.map((error) => ({
-                code: error.code,
-                message: error.message,
-                details: error.details,
-              })),
-              warnings: report.warnings.map((warning) => ({
-                code: warning.code,
-                message: warning.message,
-              })),
-            },
-            null,
-            2,
+          // Through the domain schema, so the week-53 refinement the SDK drops
+          // when it rebuilds an object from `.shape` runs here. A dry run that
+          // accepts what the write refuses is worse than no dry run.
+          const input = proposeWeekSchema.parse(
+            toProposeWeekInput(proposeWeekParamsSchema.parse(args)),
           );
+          const report = await checkFeasibility(ctx, input);
+          return toolJson({
+            feasible: report.errors.length === 0,
+            errors: report.errors.map((error) => ({
+              code: error.code,
+              message: error.message,
+              details: error.details,
+            })),
+            warnings: report.warnings.map(serializeWarning),
+          });
         },
       ),
   );

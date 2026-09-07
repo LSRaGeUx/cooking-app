@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getRecipe } from "@/services/recipe-service";
 import type { McpCallerContext } from "../server";
+import { serializeRecipe, toolJson } from "../serializers";
 import { runTool } from "../tool-runner";
 
 export function registerGetRecipe(
@@ -31,45 +32,10 @@ export function registerGetRecipe(
           requiredScopes: ["recipes:read"],
           payloadSummary: { recipeId: recipe_id },
         },
-        async (ctx) => {
-          const detail = await getRecipe(ctx, recipe_id);
-          return JSON.stringify(
-            {
-              id: detail.recipe.id,
-              title: detail.recipe.title,
-              description: detail.recipe.description,
-              servings: detail.recipe.servings,
-              prep_time_min: detail.recipe.prepTimeMin,
-              cook_time_min: detail.recipe.cookTimeMin,
-              active_time_min: detail.recipe.activeTimeMin,
-              batch_friendly: detail.recipe.batchFriendly,
-              keeps_days: detail.recipe.keepsDays,
-              tags: detail.recipe.tags,
-              cuisine: detail.recipe.cuisine,
-              main_protein: detail.recipe.mainProtein,
-              equipment_keys: detail.recipe.equipmentKeys,
-              revision: detail.recipe.revision,
-              // A soft-deleted recipe is still readable so history stays
-              // explicable, but it must not be proposed.
-              deleted: detail.recipe.deletedAt !== null,
-              ingredients: detail.ingredients.map((line) => ({
-                quantity: line.quantity,
-                unit: line.unit,
-                name: line.rawName,
-                normalized_name: line.canonicalName,
-                note: line.note,
-                optional: line.optional,
-              })),
-              steps: detail.steps.map((step) => ({
-                text: step.text,
-                duration_min: step.durationMin,
-                unattended: step.unattended,
-              })),
-            },
-            null,
-            2,
-          );
-        },
+        async (ctx) =>
+          // The same serializer `cooking://recipes/{id}` uses, so the tool and
+          // the resource answer with one shape.
+          toolJson(serializeRecipe(await getRecipe(ctx, recipe_id))),
       ),
   );
 }

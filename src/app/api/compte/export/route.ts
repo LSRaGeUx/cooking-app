@@ -19,6 +19,10 @@ export async function GET(): Promise<Response> {
       "content-disposition": `attachment; filename="cooking-app-${stamp}.json"`,
       // Never cached: it is a snapshot of everything the account holds.
       "cache-control": "no-store",
+      // The body is whatever the user typed, served from our own origin. Without
+      // this a browser is free to sniff it as HTML and run any script inside a
+      // recipe title or a fact, on this origin, with this session.
+      "x-content-type-options": "nosniff",
     },
   });
 }

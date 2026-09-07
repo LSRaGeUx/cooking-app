@@ -1,6 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { McpCallerContext } from "../server";
 
 /**
  * Server-provided prompts.
@@ -23,10 +22,12 @@ const HOUSE_RULES = `Règles de la maison, valables pour tout ce que vous faites
 5. Vérifiez avant d'écrire. \`check_feasibility\` renvoie tous les problèmes d'un coup ; une proposition refusée coûte un aller-retour de plus.
 6. Terminez toujours par le lien \`review_url\`. C'est par là que l'utilisateur voit ce que vous avez fait.`;
 
-export function registerPrompts(
-  server: McpServer,
-  _caller: McpCallerContext,
-): void {
+/**
+ * No caller parameter. Every prompt here is static text, so neither handler ever
+ * had a use for one, and a parameter taken to satisfy a symmetry with the tools
+ * is a signature that says the wrong thing about what a prompt can read.
+ */
+export function registerPrompts(server: McpServer): void {
   server.registerPrompt(
     "plan_my_week",
     {
@@ -38,11 +39,15 @@ export function registerPrompts(
         week: z
           .string()
           .optional()
-          .describe("Semaine ISO visée, par exemple 2026-W36. Par défaut la semaine en cours."),
+          .describe(
+            "Semaine ISO visée, par exemple 2026-W36. Par défaut la semaine en cours.",
+          ),
         notes: z
           .string()
           .optional()
-          .describe("Contraintes particulières pour cette semaine : invités, absence, envie."),
+          .describe(
+            "Contraintes particulières pour cette semaine : invités, absence, envie.",
+          ),
       },
     },
     ({ week, notes }) => ({

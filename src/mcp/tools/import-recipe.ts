@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { importRecipeFromUrl } from "@/services/import-service";
 import type { McpCallerContext } from "../server";
+import { toolJson } from "../serializers";
 import { runTool } from "../tool-runner";
 
 /**
@@ -31,7 +32,13 @@ export function registerImportRecipe(
         "remplace ici l'intelligence côté serveur.\n\n" +
         "Seules les adresses http et https publiques sont lues.",
       inputSchema: {
-        url: z.string().min(1).max(2000).describe("Adresse complète de la recette."),
+        // `z.url()` rather than a bare string: the format lands in the JSON
+        // Schema an agent reads, and a malformed address is refused at the edge
+        // instead of travelling into the fetch layer to be rejected there.
+        url: z
+          .url()
+          .max(2000)
+          .describe("Adresse complète de la recette, en http ou https."),
       },
     },
     async (args) =>
@@ -42,21 +49,21 @@ export function registerImportRecipe(
           direction: "write",
           requiredScopes: ["recipes:write"],
           payloadSummary: { url: args.url },
+          // It fetches a third-party page before it writes. Wrapping that in the
+          // audit transaction would hold a database transaction open across the
+          // fetch, so this one tool logs after the commit. See ToolOptions.
+          transactional: false,
         },
         async (ctx) => {
           const created = await importRecipeFromUrl(ctx, args.url);
-          return JSON.stringify(
-            {
-              id: created.recipe.id,
-              title: created.recipe.title,
-              source_url: created.recipe.sourceUrl,
-              ingredients: created.ingredients.length,
-              steps: created.steps.length,
-              note: "Le temps de cuisine active n'est jamais publié par les sites : demandez-le à l'utilisateur ou laissez-le vide plutôt que de l'inventer, c'est lui que contraignent les budgets de créneau.",
-            },
-            null,
-            2,
-          );
+          return toolJson({
+            id: created.recipe.id,
+            title: created.recipe.title,
+            source_url: created.recipe.sourceUrl,
+            ingredients: created.ingredients.length,
+            steps: created.steps.length,
+            note: "Le temps de cuisine active n'est jamais publié par les sites : demandez-le à l'utilisateur ou laissez-le vide plutôt que de l'inventer, c'est lui que contraignent les budgets de créneau.",
+          });
         },
       ),
   );
