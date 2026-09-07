@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 import { formatCycleStart } from "@/domain/shopping";
 import { isoWeekStart } from "@/domain/week";
-import { DomainError } from "@/domain/errors";
 import {
   addManualLine,
   archiveGroceryList,
@@ -11,21 +11,11 @@ import {
   setLineChecked,
   type GroceryListView,
 } from "@/services/grocery-service";
-import { ensureUserSetup } from "@/services/onboarding-service";
 import { addPantryItems, removePantryItem } from "@/services/pantry-service";
 import { assignRecipe, clearEntry, getWeekView } from "@/services/plan-service";
 import { createRecipe } from "@/services/recipe-service";
-import { listMealTypes } from "@/services/slot-service";
-import { cleanupUser, testUser } from "../helpers/fixtures";
-
-/**
- * Grocery lists cover a shopping cycle, not a week. These tests plan by week,
- * so they shop on the Monday cycle of that week, which is exactly the fallback
- * an account with no shopping day set gets.
- */
-function cycleOf(week: { year: number; week: number }): string {
-  return formatCycleStart(isoWeekStart(week));
-}
+import type { ServiceContext } from "@/services/context";
+import { cycleOf, expectDomainError, setupTestUser } from "../helpers";
 
 /**
  * The behaviour that matters here is the merge. A user standing in a shop with
@@ -33,7 +23,8 @@ function cycleOf(week: { year: number; week: number }): string {
  * so these tests are mostly about what survives a regeneration.
  */
 
-const ctx = testUser();
+let user: Awaited<ReturnType<typeof setupTestUser>>;
+let ctx: ServiceContext;
 const week = { year: 2026, week: 20 };
 
 let dinnerId = "";
@@ -45,8 +36,9 @@ function lineNamed(list: GroceryListView, name: string) {
 }
 
 beforeAll(async () => {
-  await ensureUserSetup(ctx);
-  dinnerId = (await listMealTypes(ctx)).find((type) => type.key === "dinner")!.id;
+  user = await setupTestUser();
+  ctx = user.ctx;
+  dinnerId = user.dinnerId;
 
   tarteId = (
     await createRecipe(ctx, {
@@ -75,18 +67,21 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await cleanupUser(ctx);
+  await user.cleanup();
 });
 
 describe("generating a list", () => {
   it("refuses when the week has no active plan", async () => {
-    await expect(
+    await expectDomainError(
       generateGroceryList(ctx, cycleOf({ year: 2026, week: 21 })),
-    ).rejects.toBeInstanceOf(DomainError);
+      "NOT_FOUND",
+    );
   });
 
   it("returns nothing for a week that was never generated", async () => {
-    expect(await getGroceryList(ctx, cycleOf({ year: 2026, week: 21 }))).toBeNull();
+    expect(
+      await getGroceryList(ctx, cycleOf({ year: 2026, week: 21 })),
+    ).toBeNull();
   });
 
   it("builds a list from the week's active version", async () => {
@@ -107,7 +102,10 @@ describe("generating a list", () => {
       origin: "derived",
       checked: false,
     });
-    expect(lineNamed(list, "Oignon")).toMatchObject({ quantity: 2, unit: null });
+    expect(lineNamed(list, "Oignon")).toMatchObject({
+      quantity: 2,
+      unit: null,
+    });
     // The optional pepper is on the list, flagged: the screen shops it from a
     // section of its own rather than hiding it or mixing it into an aisle.
     expect(lineNamed(list, "Poivre")).toMatchObject({ optional: true });
@@ -176,7 +174,10 @@ describe("regenerating after the plan changes", () => {
 
     expect(lineNamed(list, "Lait")).toBeUndefined();
     expect(diff.removed).toBe(1);
-    expect(lineNamed(list, "Farine")).toMatchObject({ quantity: 200, checked: true });
+    expect(lineNamed(list, "Farine")).toMatchObject({
+      quantity: 200,
+      checked: true,
+    });
     expect(lineNamed(list, "Café")).toBeDefined();
   });
 
@@ -211,20 +212,40 @@ describe("editing the list by hand", () => {
     });
 
     await setLineChecked(ctx, added.id, true);
-    expect(lineNamed((await getGroceryList(ctx, cycleOf(week)))!, "Liquide vaisselle")).
-      toMatchObject({ checked: true });
+    expect(
+      lineNamed(
+        (await getGroceryList(ctx, cycleOf(week)))!,
+        "Liquide vaisselle",
+      ),
+    ).toMatchObject({ checked: true });
 
     await deleteLine(ctx, added.id);
     expect(
-      lineNamed((await getGroceryList(ctx, cycleOf(week)))!, "Liquide vaisselle"),
+      lineNamed(
+        (await getGroceryList(ctx, cycleOf(week)))!,
+        "Liquide vaisselle",
+      ),
     ).toBeUndefined();
   });
 
   it("refuses an empty manual line", async () => {
     const list = (await getGroceryList(ctx, cycleOf(week)))!;
+
+    // A `ZodError`, not a `DomainError`, and that is the intended shape here.
+    // The service validates with `manualLineInputSchema`, which is what makes
+    // the schema the single source of truth rather than a second opinion beside
+    // a hand-rolled check. Both entry points turn it into a `VALIDATION` with
+    // the field path: `runAction` in src/app/actions/result.ts, and `runTool`
+    // in src/mcp/tool-runner.ts. Those mappings are what the caller sees, and
+    // they are tested where they live.
     await expect(
       addManualLine(ctx, list.id, { displayName: "   " }),
-    ).rejects.toBeInstanceOf(DomainError);
+    ).rejects.toThrow(ZodError);
+
+    // The refusal is what matters: nothing was written.
+    expect(
+      lineNamed((await getGroceryList(ctx, cycleOf(week)))!, "   "),
+    ).toBeUndefined();
   });
 
   it("archives a list, and the cycle then starts a fresh one", async () => {
@@ -411,11 +432,10 @@ describe("shopping cycles", () => {
   });
 
   it("refuses a cycle start that is not a date", async () => {
-    await expect(generateGroceryList(ctx, "2026-W30")).rejects.toBeInstanceOf(
-      DomainError,
-    );
-    await expect(generateGroceryList(ctx, "2026-02-30")).rejects.toBeInstanceOf(
-      DomainError,
+    await expectDomainError(generateGroceryList(ctx, "2026-W30"), "VALIDATION");
+    await expectDomainError(
+      generateGroceryList(ctx, "2026-02-30"),
+      "VALIDATION",
     );
   });
 });

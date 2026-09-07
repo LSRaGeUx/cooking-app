@@ -1,6 +1,7 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { filesUnder } from "./helpers/files";
 
 /**
  * What the deployment files have to say, pinned down here because none of it
@@ -95,10 +96,55 @@ describe("compose.yaml, the environment the containers get", () => {
     expect(compose).toContain(`${name}: \${${name}`);
   });
 
-  it.each([...AUTH_VARS, ...APP_ONLY_VARS])("refuses to start without %s", (name) => {
-    // `:?` rather than `:-`: every one of these fails quietly if it is wrong, so
-    // the deployment should not come up at all rather than come up broken.
+  /**
+   * The two credentials a deployment may mount as a file instead of a variable.
+   *
+   * `deploy/compose.secrets.yaml` supplies them as `<NAME>_FILE`, and Compose
+   * interpolates every file it is handed whichever profile is active, so a `:?`
+   * guard in `compose.yaml` would refuse the overlay before it could supply the
+   * value. The guard therefore lives in `secret()` in `src/lib/config.ts`,
+   * which the next test pins.
+   */
+  const FILE_BACKED = new Set(["BETTER_AUTH_SECRET", "GOOGLE_CLIENT_SECRET"]);
+
+  it.each(
+    [...AUTH_VARS, ...APP_ONLY_VARS].filter((name) => !FILE_BACKED.has(name)),
+  )("refuses to start without %s", (name) => {
+    // `:?` rather than `:-`: every one of these fails quietly if it is wrong,
+    // so the deployment should not come up at all rather than come up broken.
     expect(compose).toMatch(new RegExp(`${name}: \\$\\{${name}:\\?`));
+  });
+
+  it.each([...FILE_BACKED])(
+    "lets the secrets overlay supply %s as a file",
+    (name) => {
+      // Spelled `:-` on purpose, so the overlay can reach it. A `:?` here would
+      // refuse the overlay before it could mount the file.
+      expect(compose).toMatch(new RegExp(`${name}: \\$\\{${name}:-`));
+
+      // And the file form is actually wired, in the overlay and in the reader.
+      const overlay = readFileSync(
+        join(root, "deploy", "compose.secrets.yaml"),
+        "utf8",
+      );
+      expect(overlay).toContain(`${name}_FILE`);
+
+      const config = readFileSync(
+        join(root, "src", "lib", "config.ts"),
+        "utf8",
+      );
+      expect(config).toContain("_FILE");
+    },
+  );
+
+  it("still refuses to start without BETTER_AUTH_SECRET, in the application", () => {
+    // The guarantee the `:?` used to give, relocated rather than dropped.
+    // `secret()` throws naming both spellings, and it is evaluated in the
+    // `betterAuth({...})` literal at module top level. The migrator imports
+    // that module and runs before the application, so a deployment missing the
+    // secret fails before anything serves a request.
+    const auth = readFileSync(join(root, "src", "lib", "auth.ts"), "utf8");
+    expect(auth).toContain('secret("BETTER_AUTH_SECRET")');
   });
 
   it.each(DB_VARS)("builds %s from the container credentials", (name) => {
@@ -118,7 +164,9 @@ describe("compose.yaml, the environment the containers get", () => {
 
   it("gives the allowlist to the app and not to the migrator", () => {
     expect(serviceBlock("app")).toContain("ALLOWED_EMAILS");
-    expect(settingsOnly(serviceBlock("migrate"))).not.toContain("ALLOWED_EMAILS");
+    expect(settingsOnly(serviceBlock("migrate"))).not.toContain(
+      "ALLOWED_EMAILS",
+    );
   });
 
   it("never passes the password sign-in flag to anything", () => {
@@ -163,7 +211,12 @@ describe("the Dockerfile build stage", () => {
     dockerfile.indexOf("AS migrator"),
   );
 
-  it.each(["DATABASE_URL", "APP_DATABASE_URL", "BETTER_AUTH_SECRET", "MCP_RESOURCE"])(
+  it.each([
+    "DATABASE_URL",
+    "APP_DATABASE_URL",
+    "BETTER_AUTH_SECRET",
+    "MCP_RESOURCE",
+  ])(
     "sets a placeholder for %s, which the auth module reads at import",
     (name) => {
       expect(build).toContain(`${name}=`);
@@ -190,7 +243,10 @@ describe("the Dockerfile build stage", () => {
 });
 
 describe("the TLS overlay", () => {
-  const overlay = readFileSync(join(root, "deploy", "compose.proxy.yaml"), "utf8");
+  const overlay = readFileSync(
+    join(root, "deploy", "compose.proxy.yaml"),
+    "utf8",
+  );
   const caddyfile = readFileSync(join(root, "deploy", "Caddyfile"), "utf8");
 
   it("refuses to start without the hostname to certify", () => {
@@ -230,22 +286,30 @@ describe("the TLS overlay", () => {
  * problem rather than a typo.
  */
 describe("the images a server pulls", () => {
-  const workflow = readFileSync(join(root, ".github", "workflows", "ci.yml"), "utf8");
+  const workflow = readFileSync(
+    join(root, ".github", "workflows", "ci.yml"),
+    "utf8",
+  );
 
   /** The tag on a service, e.g. `${IMAGE_REPO:-...}:${IMAGE_TAG:-main}-runtime`. */
   function imageLine(service: string): string {
     const match = serviceBlock(service).match(/^\s*image:\s*(\S+)\s*$/m);
-    expect(match, `compose.yaml gives ${service} no image, so a server has nothing to pull`)
-      .not.toBeNull();
+    expect(
+      match,
+      `compose.yaml gives ${service} no image, so a server has nothing to pull`,
+    ).not.toBeNull();
     return match![1]!;
   }
 
-  it.each(["app", "migrate"])("gives %s an image as well as a build", (service) => {
-    // Both, not either: `build:` is for CI and for hacking locally, `image:` is
-    // for every machine that must not build.
-    expect(imageLine(service)).toContain("ghcr.io/");
-    expect(serviceBlock(service)).toContain("target:");
-  });
+  it.each(["app", "migrate"])(
+    "gives %s an image as well as a build",
+    (service) => {
+      // Both, not either: `build:` is for CI and for hacking locally, `image:` is
+      // for every machine that must not build.
+      expect(imageLine(service)).toContain("ghcr.io/");
+      expect(serviceBlock(service)).toContain("target:");
+    },
+  );
 
   it.each(["app", "migrate"])("lets a self-hoster repoint %s", (service) => {
     // A hardcoded registry path makes this deployable by one account only.
@@ -266,12 +330,18 @@ describe("the images a server pulls", () => {
     expect(imageLine("app")).not.toBe(imageLine("migrate"));
   });
 
-  it.each(["app", "migrate"])("names a tag CI actually pushes, for %s", (service) => {
-    const suffix = imageLine(service).match(/}(-[a-z]+)$/)?.[1];
-    expect(suffix, `the image for ${service} has no -suffix to match against CI`).toBeTruthy();
-    expect(workflow).toContain(`:main${suffix}`);
-    expect(workflow).toContain(`}${suffix}`);
-  });
+  it.each(["app", "migrate"])(
+    "names a tag CI actually pushes, for %s",
+    (service) => {
+      const suffix = imageLine(service).match(/}(-[a-z]+)$/)?.[1];
+      expect(
+        suffix,
+        `the image for ${service} has no -suffix to match against CI`,
+      ).toBeTruthy();
+      expect(workflow).toContain(`:main${suffix}`);
+      expect(workflow).toContain(`}${suffix}`);
+    },
+  );
 
   it("publishes an immutable tag next to the moving one, so a rollback exists", () => {
     expect(workflow).toContain("sha-${GITHUB_SHA::7}");
@@ -297,9 +367,9 @@ describe("the images a server pulls", () => {
       // Prose wraps, so the command can straddle two lines and a line-by-line
       // scan misses it. That is how the one in CLAUDE.md survived the first fix.
       const text = readFileSync(join(root, file), "utf8").replace(/\s+/g, " ");
-      const bare = [...text.matchAll(/docker compose\b([^`\n]*?)\bpull\b/g)].filter(
-        (match) => !match[1]!.includes("--profile serve"),
-      );
+      const bare = [
+        ...text.matchAll(/docker compose\b([^`\n]*?)\bpull\b/g),
+      ].filter((match) => !match[1]!.includes("--profile serve"));
       expect(
         bare.map((match) => match[0]),
         `${file} documents a pull that would silently skip the app`,
@@ -308,23 +378,84 @@ describe("the images a server pulls", () => {
   });
 });
 
+/**
+ * The four names `scripts/lib/db.mjs` assembles from a prefix rather than
+ * writing out: `env[`${prefix}_DATABASE_URL`]` and its three siblings. No search
+ * for the literal name finds them, so the staleness check below cannot judge
+ * them and says so here instead of quietly passing them.
+ */
+const DERIVED_VARS = new Set([
+  "TEST_DATABASE_URL",
+  "TEST_APP_DATABASE_URL",
+  "VERIFY_DATABASE_URL",
+  "VERIFY_APP_DATABASE_URL",
+]);
+
+/**
+ * Every variable name `src/` reads, by the scan the test below documents.
+ * Hoisted out of that test because two of them need it.
+ */
+function variablesReadBySource(): Set<string> {
+  const read = new Set<string>();
+
+  /**
+   * Every environment variable is now resolved in `src/lib/config.ts`, and
+   * ESLint fails the build on `process.env` anywhere else in `src/`. So the
+   * names live in that one file, as string literals passed to its four
+   * readers, and scanning the whole tree for `process.env.NAME` finds almost
+   * nothing: the reads inside config.ts itself go through `process.env[name]`
+   * with a variable, which no regex can resolve.
+   *
+   * That is a better scan target, not a worse one. One file, four call
+   * shapes, and a lint rule that keeps it the only file worth scanning. The
+   * sanity assertion below is what would have caught the previous version of
+   * this test going quietly blind: it found four names and passed.
+   */
+  const configPatterns = [
+    /\brequired\("([A-Z0-9_]+)"\)/g,
+    /\boptional\("([A-Z0-9_]+)"\)/g,
+    /\bsecret\("([A-Z0-9_]+)"\)/g,
+    /\boptionalSecret\("([A-Z0-9_]+)"\)/g,
+    /requiredInProduction\("([A-Z0-9_]+)"/g,
+    /\bread\("([A-Z0-9_]+)"\)/g,
+  ];
+  const configText = readFileSync(
+    join(root, "src", "lib", "config.ts"),
+    "utf8",
+  );
+  for (const pattern of configPatterns) {
+    for (const match of configText.matchAll(pattern)) {
+      const name = match[1];
+      if (name) read.add(name);
+    }
+  }
+
+  // The two files ESLint exempts, because they read NODE_ENV, which the
+  // bundler inlines and which no container needs to be told.
+  for (const file of filesUnder(join(root, "src"))) {
+    const text = readFileSync(file, "utf8");
+    for (const match of text.matchAll(/process\.env\.([A-Z0-9_]+)/g)) {
+      const name = match[1];
+      if (name) read.add(name);
+    }
+  }
+
+  return read;
+}
+
 describe("every variable the application reads", () => {
   it("is either passed to a container or marked as not for one", () => {
-    const read = new Set<string>();
-    for (const file of sourceFiles(join(root, "src"))) {
-      const text = readFileSync(file, "utf8");
-      // src/lib/auth.ts reaches the environment through a helper as well as by
-      // property access, so both shapes are scanned.
-      for (const pattern of [/process\.env\.([A-Z0-9_]+)/g, /required\("([A-Z0-9_]+)"\)/g]) {
-        for (const match of text.matchAll(pattern)) {
-          const name = match[1];
-          if (name) read.add(name);
-        }
-      }
-    }
+    const read = variablesReadBySource();
 
-    // Sanity: a scan that found nothing would pass the assertion below.
-    expect(read.size).toBeGreaterThan(5);
+    // Sanity: a scan that found nothing, or that has stopped being able to see
+    // where the names are, would pass the assertion below without checking
+    // anything. This is the guard on the scan itself.
+    expect(
+      read.size,
+      "The environment scan found almost nothing, which means it has gone " +
+        "blind rather than that the application reads nothing. Check whether " +
+        "src/lib/config.ts still spells its variable names as string literals.",
+    ).toBeGreaterThan(8);
 
     const known = new Set<string>([
       ...AUTH_VARS,
@@ -341,12 +472,131 @@ describe("every variable the application reads", () => {
         "file, or to NOT_CONTAINER_VARS if it is development only.",
     ).toEqual([]);
   });
+
+  /**
+   * The list only ever grew. `NOT_CONTAINER_VARS` is checked in one direction,
+   * "is this name classified", and never in the other, so a variable that stops
+   * being read anywhere stays on it for ever and the next reader takes it for a
+   * live setting. That is how the list becomes documentation of a configuration
+   * that no longer exists.
+   */
+  it("has no entry in NOT_CONTAINER_VARS that nothing reads any more", () => {
+    const inSource = variablesReadBySource();
+    const scripts = filesUnder(join(root, "scripts"), [".mjs", ".ts", ".js"])
+      .map((file) => readFileSync(file, "utf8"))
+      .join("\n");
+    const nextConfig = readFileSync(join(root, "next.config.ts"), "utf8");
+
+    const stale = [...NOT_CONTAINER_VARS]
+      .filter((name) => !DERIVED_VARS.has(name))
+      .filter(
+        (name) =>
+          !inSource.has(name) &&
+          !scripts.includes(name) &&
+          !nextConfig.includes(name),
+      )
+      .sort();
+
+    expect(
+      stale,
+      "These names are marked as development only and are now read by " +
+        "nothing in src/, scripts/ or next.config.ts. Delete them from " +
+        "NOT_CONTAINER_VARS, or add them to DERIVED_VARS if the name is " +
+        "assembled from a prefix rather than written out.",
+    ).toEqual([]);
+  });
+
+  it("assembles the four derived names where it says it does", () => {
+    // The escape hatch above, checked. If db.mjs stops building these from a
+    // prefix, DERIVED_VARS becomes an unjustified exemption rather than a
+    // documented one.
+    const db = readFileSync(join(root, "scripts", "lib", "db.mjs"), "utf8");
+    expect(db).toContain("_DATABASE_URL`");
+    expect(db).toContain("_APP_DATABASE_URL`");
+  });
 });
 
-function sourceFiles(dir: string): string[] {
-  return readdirSync(dir).flatMap((entry) => {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) return sourceFiles(path);
-    return /\.tsx?$/.test(entry) ? [path] : [];
+/**
+ * The Node version, in the three places it is written.
+ *
+ * None of these disagreeing fails in development. `.nvmrc` decides what a
+ * developer runs, `engines.node` decides what `npm ci` refuses, and the
+ * Dockerfile decides what the image runs, so a drift between them is a
+ * difference between the laptop and the server with nothing announcing it.
+ */
+describe("the Node version", () => {
+  const nvmrc = readFileSync(join(root, ".nvmrc"), "utf8").trim();
+  const packageJson = JSON.parse(
+    readFileSync(join(root, "package.json"), "utf8"),
+  ) as { engines?: { node?: string } };
+
+  it("is a plain version in .nvmrc", () => {
+    expect(nvmrc).toMatch(/^\d+\.\d+\.\d+$/);
   });
-}
+
+  it("agrees with engines.node in package.json", () => {
+    // `^26.3.0` and `26.3.0`: the range's floor is the pinned version, so a
+    // developer on .nvmrc is never below what `npm ci` requires.
+    expect(packageJson.engines?.node).toBe(`^${nvmrc}`);
+  });
+
+  it("agrees with the base image the Dockerfile pins", () => {
+    /*
+     * The Dockerfile pins by digest, because `node:26.3-alpine` is republished
+     * whenever its Alpine base is patched and the same commit would otherwise
+     * rebuild into a different image. A digest tells a human nothing, so the
+     * readable tag stays in the comment beside it, and that tag is what this
+     * reads: it is the only machine-checkable link between the pin and .nvmrc.
+     */
+    const [major, minor] = nvmrc.split(".");
+    expect(dockerfile).toContain(`node:${major}.${minor}-alpine`);
+    expect(dockerfile).toMatch(/ARG NODE_IMAGE=node@sha256:[0-9a-f]{64}/);
+  });
+});
+
+/**
+ * The build context, which decides what can end up in a layer.
+ *
+ * A `.dockerignore` is the only thing keeping `.env` out, and an image that
+ * carried one would carry the database password and the auth secret into
+ * whatever registry it is pushed to, readable by anyone who can pull it. The
+ * file says as much in its first comment; this is the assertion behind it.
+ */
+describe(".dockerignore", () => {
+  const dockerignore = readFileSync(join(root, ".dockerignore"), "utf8");
+  const entries = dockerignore
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !line.startsWith("#"));
+
+  it.each([".env", ".env.*"])(
+    "keeps %s out of the build context",
+    (pattern) => {
+      expect(entries).toContain(pattern);
+    },
+  );
+
+  it("keeps the local Postgres data and the git history out too", () => {
+    // Not secrets, but both are large enough that including one turns every
+    // build into a multi-gigabyte context upload.
+    expect(entries).toContain(".git");
+    expect(entries).toContain("node_modules");
+    expect(entries).toContain(".next");
+  });
+
+  it("does not exclude anything the build actually copies", () => {
+    // The build stage copies package.json, the lockfile, src/, drizzle/ and the
+    // config files. Excluding one of those produces a build failure that reads
+    // as a missing file rather than as an ignore rule, which is a bad afternoon.
+    for (const needed of [
+      "package.json",
+      "package-lock.json",
+      "src",
+      "drizzle",
+      "messages",
+      "public",
+    ]) {
+      expect(entries, `.dockerignore excludes ${needed}`).not.toContain(needed);
+    }
+  });
+});

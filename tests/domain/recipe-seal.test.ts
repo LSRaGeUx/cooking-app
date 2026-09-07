@@ -27,12 +27,25 @@ describe("recipeSeal", () => {
     // point, so the spread is asserted rather than assumed.
     const used = new Set<number>();
     for (let index = 0; index < 200; index += 1) {
-      used.add(recipeSeal(`01a0588c-2e56-7993-a2ec-e9761${String(index).padStart(5, "0")}`));
+      used.add(
+        recipeSeal(
+          `01a0588c-2e56-7993-a2ec-e9761${String(index).padStart(5, "0")}`,
+        ),
+      );
     }
     expect(used.size).toBe(SEAL_COUNT);
   });
 
   it("names the class the stylesheet declares", () => {
-    expect(sealClass("anything")).toMatch(/^seal-[0-9]$/);
+    // Built from the constant, not hand-written as `[0-9]`. That literal baked
+    // `SEAL_COUNT <= 10` into a file that imports SEAL_COUNT two lines up: an
+    // eleventh hue would have kept this test green while `seal-10` named a
+    // class the stylesheet does not declare.
+    const indexes = Array.from({ length: SEAL_COUNT }, (_, index) => index);
+    const declared = new RegExp(`^seal-(?:${indexes.join("|")})$`);
+
+    for (let index = 0; index < 50; index += 1) {
+      expect(sealClass(`recipe-${index}`)).toMatch(declared);
+    }
   });
 });

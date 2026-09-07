@@ -10,16 +10,18 @@ describe("the access allowlist", () => {
   const list = ["cook@example.com", "guest@example.org"];
 
   it("admits an address on the list", () => {
-    expect(checkAccess("cook@example.com", { list })).toEqual({ allowed: true });
+    expect(checkAccess("cook@example.com", { list })).toEqual({
+      allowed: true,
+    });
   });
 
   it("ignores case and surrounding space, because a provider decides neither", () => {
     expect(checkAccess("  Cook@Example.COM ", { list })).toEqual({
       allowed: true,
     });
-    expect(checkAccess("cook@example.com", { list: [" COOK@example.com "] })).toEqual(
-      { allowed: true },
-    );
+    expect(
+      checkAccess("cook@example.com", { list: [" COOK@example.com "] }),
+    ).toEqual({ allowed: true });
   });
 
   it("refuses an address that is not on the list", () => {
@@ -44,13 +46,15 @@ describe("the access allowlist", () => {
   });
 
   it("stays open with no list in development, so a fresh clone can sign in", () => {
-    expect(checkAccess("anyone@example.com", { list: [], requireList: false })).toEqual(
-      { allowed: true },
-    );
+    expect(
+      checkAccess("anyone@example.com", { list: [], requireList: false }),
+    ).toEqual({ allowed: true });
   });
 
   it("closes with no list in production, which is the safe way to fail", () => {
-    expect(checkAccess("anyone@example.com", { list: [], requireList: true })).toEqual({
+    expect(
+      checkAccess("anyone@example.com", { list: [], requireList: true }),
+    ).toEqual({
       allowed: false,
       code: NOT_CONFIGURED,
     });
@@ -63,7 +67,9 @@ describe("the access allowlist", () => {
       expect(checkAccess("guest@example.org", { requireList: true })).toEqual({
         allowed: true,
       });
-      expect(checkAccess("stranger@example.org", { requireList: true })).toEqual({
+      expect(
+        checkAccess("stranger@example.org", { requireList: true }),
+      ).toEqual({
         allowed: false,
         code: NOT_ALLOWED,
       });

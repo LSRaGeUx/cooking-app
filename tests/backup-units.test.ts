@@ -12,8 +12,14 @@ import { describe, expect, it } from "vitest";
  */
 
 const root = join(import.meta.dirname, "..");
-const service = readFileSync(join(root, "deploy", "cooking-backup.service"), "utf8");
-const timer = readFileSync(join(root, "deploy", "cooking-backup.timer"), "utf8");
+const service = readFileSync(
+  join(root, "deploy", "cooking-backup.service"),
+  "utf8",
+);
+const timer = readFileSync(
+  join(root, "deploy", "cooking-backup.timer"),
+  "utf8",
+);
 
 function setting(unit: string, key: string): string | undefined {
   return unit.match(new RegExp(`^${key}=(.*)$`, "m"))?.[1];
@@ -24,7 +30,9 @@ describe("the backup service", () => {
     // A rename of the script would otherwise leave the unit pointing at nothing.
     const start = setting(service, "ExecStart");
     expect(start).toBe("/bin/sh scripts/backup.sh");
-    expect(() => readFileSync(join(root, "scripts", "backup.sh"))).not.toThrow();
+    expect(() =>
+      readFileSync(join(root, "scripts", "backup.sh")),
+    ).not.toThrow();
   });
 
   it("runs the script relative to a working directory, not an absolute path", () => {

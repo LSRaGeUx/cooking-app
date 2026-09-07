@@ -13,35 +13,45 @@ import {
 /** 2026-09-05 is a Saturday, so it is the natural example throughout. */
 const saturday = 6;
 
+/**
+ * Every date is built with `Date.UTC`, including the ones handed to
+ * `cycleContaining`, which used to take local midnight while the rest of the
+ * file used `Date.UTC`.
+ *
+ * A cycle is a run of whole days and the module compares UTC components, so
+ * local midnight west of Greenwich lands on the previous day and shops for the
+ * wrong week. `vitest.config.ts` pins `TZ` to UTC, so the mixed form passed;
+ * one construction throughout is what keeps it passing for the right reason.
+ */
 describe("cycleContaining", () => {
   it("starts on the shopping day itself", () => {
     // Shopping on Saturday, asked on that Saturday: the cycle that starts now.
-    const cycle = cycleContaining(new Date(2026, 8, 5), saturday);
+    const cycle = cycleContaining(new Date(Date.UTC(2026, 8, 5)), saturday);
     expect(formatCycleStart(cycle.startsOn)).toBe("2026-09-05");
     expect(formatCycleStart(cycle.endsOn)).toBe("2026-09-11");
   });
 
   it("looks back to the last shop on any other day", () => {
-    const cycle = cycleContaining(new Date(2026, 8, 9), saturday);
+    const cycle = cycleContaining(new Date(Date.UTC(2026, 8, 9)), saturday);
     expect(formatCycleStart(cycle.startsOn)).toBe("2026-09-05");
   });
 
   it("switches on the next shopping day", () => {
-    const before = cycleContaining(new Date(2026, 8, 11), saturday);
-    const after = cycleContaining(new Date(2026, 8, 12), saturday);
+    const before = cycleContaining(new Date(Date.UTC(2026, 8, 11)), saturday);
+    const after = cycleContaining(new Date(Date.UTC(2026, 8, 12)), saturday);
     expect(formatCycleStart(before.startsOn)).toBe("2026-09-05");
     expect(formatCycleStart(after.startsOn)).toBe("2026-09-12");
   });
 
   it("falls back to the ISO week when no shopping day is set", () => {
     // Wednesday 9 September 2026 sits in the week starting Monday the 7th.
-    const cycle = cycleContaining(new Date(2026, 8, 9), null);
+    const cycle = cycleContaining(new Date(Date.UTC(2026, 8, 9)), null);
     expect(formatCycleStart(cycle.startsOn)).toBe("2026-09-07");
     expect(formatCycleStart(cycle.endsOn)).toBe("2026-09-13");
   });
 
   it("handles a cycle that crosses the new year", () => {
-    const cycle = cycleContaining(new Date(2026, 11, 31), saturday);
+    const cycle = cycleContaining(new Date(Date.UTC(2026, 11, 31)), saturday);
     expect(formatCycleStart(cycle.startsOn)).toBe("2026-12-26");
     expect(formatCycleStart(cycle.endsOn)).toBe("2027-01-01");
   });
@@ -64,7 +74,9 @@ describe("isoWeeksInCycle", () => {
   it("never spans more than two weeks", () => {
     for (let offset = 0; offset < 400; offset += 1) {
       const start = new Date(Date.UTC(2026, 0, 1) + offset * 86_400_000);
-      expect(isoWeeksInCycle(cycleFromStart(start)).length).toBeLessThanOrEqual(2);
+      expect(isoWeeksInCycle(cycleFromStart(start)).length).toBeLessThanOrEqual(
+        2,
+      );
     }
   });
 });

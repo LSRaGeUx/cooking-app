@@ -9,12 +9,28 @@ import {
   shiftIsoWeek,
 } from "@/domain/week";
 
+/**
+ * Every date here is built with `Date.UTC`, and that is not decoration.
+ *
+ * The week functions read UTC components and the assertions compare
+ * `toISOString()`, so a date built from local midnight agrees with them only
+ * where the runner happens to sit on UTC. `vitest.config.ts` pins `TZ` to UTC,
+ * which makes the local form pass, and that is exactly what made it a trap:
+ * two constructions that mean the same thing in CI and different things the
+ * moment anything reads the clock differently.
+ */
 describe("ISO week arithmetic", () => {
   it("numbers a week by the year its Thursday falls in", () => {
     // 1 January 2027 is a Friday, so it belongs to the last week of 2026.
-    expect(isoWeekOf(new Date(2027, 0, 1))).toEqual({ year: 2026, week: 53 });
+    expect(isoWeekOf(new Date(Date.UTC(2027, 0, 1)))).toEqual({
+      year: 2026,
+      week: 53,
+    });
     // 31 December 2024 is a Tuesday, so it belongs to the first week of 2025.
-    expect(isoWeekOf(new Date(2024, 11, 31))).toEqual({ year: 2025, week: 1 });
+    expect(isoWeekOf(new Date(Date.UTC(2024, 11, 31)))).toEqual({
+      year: 2025,
+      week: 1,
+    });
   });
 
   it("starts every week on Monday", () => {
@@ -24,7 +40,7 @@ describe("ISO week arithmetic", () => {
   });
 
   it("round-trips a date through its week", () => {
-    const date = new Date(2026, 7, 31);
+    const date = new Date(Date.UTC(2026, 7, 31));
     const week = isoWeekOf(date);
     expect(isoWeekStart(week).toISOString().slice(0, 10)).toBe("2026-08-31");
   });

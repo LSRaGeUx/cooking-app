@@ -1,29 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
-import { withUser } from "@/db/client";
-import {
-  agentActivity,
-  allergen,
-  entryFeedback,
-  equipment,
-  exclusion,
-  fact,
-  groceryLine,
-  groceryList,
-  ingredient,
-  mealType,
-  pantryItem,
-  plan,
-  planEntry,
-  prepLink,
-  planVersion,
-  profile,
-  recipe,
-  recipeIngredient,
-  recipeRevision,
-  recipeStep,
-  slotConfig,
-} from "@/db/schema";
 import { userContext, type ServiceContext } from "@/services/context";
 
 /**
@@ -40,31 +15,11 @@ export function testUser(): ServiceContext {
   return userContext(randomUUID());
 }
 
-/** Deletes everything a test user owns, children before parents. */
-export async function cleanupUser(ctx: ServiceContext): Promise<void> {
-  await withUser(ctx.userId, async (tx) => {
-    await tx.delete(groceryLine).where(eq(groceryLine.userId, ctx.userId));
-    await tx.delete(groceryList).where(eq(groceryList.userId, ctx.userId));
-    await tx.delete(prepLink).where(eq(prepLink.userId, ctx.userId));
-    await tx.delete(entryFeedback).where(eq(entryFeedback.userId, ctx.userId));
-    await tx.delete(planEntry).where(eq(planEntry.userId, ctx.userId));
-    await tx.delete(planVersion).where(eq(planVersion.userId, ctx.userId));
-    await tx.delete(plan).where(eq(plan.userId, ctx.userId));
-    await tx
-      .delete(recipeIngredient)
-      .where(eq(recipeIngredient.userId, ctx.userId));
-    await tx.delete(recipeStep).where(eq(recipeStep.userId, ctx.userId));
-    await tx.delete(recipeRevision).where(eq(recipeRevision.userId, ctx.userId));
-    await tx.delete(recipe).where(eq(recipe.userId, ctx.userId));
-    await tx.delete(slotConfig).where(eq(slotConfig.userId, ctx.userId));
-    await tx.delete(mealType).where(eq(mealType.userId, ctx.userId));
-    await tx.delete(pantryItem).where(eq(pantryItem.userId, ctx.userId));
-    await tx.delete(ingredient).where(eq(ingredient.userId, ctx.userId));
-    await tx.delete(allergen).where(eq(allergen.userId, ctx.userId));
-    await tx.delete(exclusion).where(eq(exclusion.userId, ctx.userId));
-    await tx.delete(equipment).where(eq(equipment.userId, ctx.userId));
-    await tx.delete(fact).where(eq(fact.userId, ctx.userId));
-    await tx.delete(profile).where(eq(profile.userId, ctx.userId));
-    await tx.delete(agentActivity).where(eq(agentActivity.userId, ctx.userId));
-  });
-}
+/**
+ * `cleanupUser` used to live here as a hand-written list of twenty-one tables in
+ * foreign key order. It is now derived from the Drizzle schema in
+ * `tests/helpers/index.ts`, because the hand-written list stopped covering a
+ * table the moment one was added, and the rows it left behind leaked into the
+ * next file's user until the global truncate. Import it, and everything else a
+ * test needs, from `tests/helpers` rather than from here.
+ */

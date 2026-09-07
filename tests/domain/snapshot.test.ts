@@ -7,9 +7,18 @@ import {
   type SnapshotFact,
 } from "@/domain/snapshot";
 
+/**
+ * The ids only have to be distinct, and `Math.random()` bought that at the
+ * price of reproducibility: a selection that came out wrong once could not be
+ * rerun on the same input, and the id is a tiebreaker away from deciding the
+ * order. A counter gives every run the same ids.
+ */
+let nextFactId = 0;
+
 function ranked(overrides: Partial<RankedFact>): RankedFact {
+  nextFactId += 1;
   return {
-    id: Math.random().toString(36).slice(2),
+    id: `fact-${nextFactId}`,
     statement: "Un fait",
     category: "taste",
     polarity: "neutral",
@@ -26,7 +35,11 @@ describe("selecting facts under a budget", () => {
   it("keeps confirmed before unconfirmed, then confidence, then recency", () => {
     const selected = selectFactsForBudget(
       [
-        ranked({ statement: "unconfirmed high", status: "unconfirmed", confidence: "high" }),
+        ranked({
+          statement: "unconfirmed high",
+          status: "unconfirmed",
+          confidence: "high",
+        }),
         ranked({ statement: "confirmed low", confidence: "low" }),
         ranked({ statement: "confirmed high", confidence: "high" }),
       ],
@@ -63,7 +76,11 @@ describe("selecting facts under a budget", () => {
   it("pins a confirmed high-confidence rejection to the front", () => {
     const selected = selectFactsForBudget(
       [
-        ranked({ statement: "aime le poisson", polarity: "positive", confidence: "high" }),
+        ranked({
+          statement: "aime le poisson",
+          polarity: "positive",
+          confidence: "high",
+        }),
         ranked({
           statement: "ne mange jamais de porc",
           polarity: "negative",
@@ -80,7 +97,10 @@ describe("selecting facts under a budget", () => {
     const selected = selectFactsForBudget(
       [
         ranked({ statement: "oublié", lastReferencedAt: null }),
-        ranked({ statement: "récent", lastReferencedAt: new Date("2026-08-01") }),
+        ranked({
+          statement: "récent",
+          lastReferencedAt: new Date("2026-08-01"),
+        }),
       ],
       1,
     );
@@ -106,8 +126,12 @@ describe("routing a fact into a section", () => {
     expect(sectionOfFact(fact({ category: "health" }))).toBe("strong");
     expect(sectionOfFact(fact({ category: "equipment" }))).toBe("kitchen");
     expect(sectionOfFact(fact({ category: "technique" }))).toBe("kitchen");
-    expect(sectionOfFact(fact({ category: "organization" }))).toBe("organization");
-    expect(sectionOfFact(fact({ category: "pantry_habit" }))).toBe("organization");
+    expect(sectionOfFact(fact({ category: "organization" }))).toBe(
+      "organization",
+    );
+    expect(sectionOfFact(fact({ category: "pantry_habit" }))).toBe(
+      "organization",
+    );
     expect(sectionOfFact(fact({ category: "social" }))).toBe("organization");
     expect(sectionOfFact(fact({ category: "taste" }))).toBe("taste");
     expect(sectionOfFact(fact({ category: "other" }))).toBe("taste");

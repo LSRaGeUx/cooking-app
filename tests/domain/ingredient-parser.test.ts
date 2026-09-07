@@ -21,6 +21,61 @@ describe("ingredient paste parser", () => {
     });
   });
 
+  it("reads a French decimal comma as a decimal, not as a note", () => {
+    // The note split ran before the quantity was extracted, so this line came
+    // out with no quantity, no unit, a name of "1" and a note of
+    // "5 kg de farine". A comma with a digit on both sides is a decimal point.
+    expect(parseIngredientLine("1,5 kg de farine")).toMatchObject({
+      quantity: 1.5,
+      unit: "kg",
+      rawName: "farine",
+      note: null,
+    });
+    // And a comma that separates clauses still introduces a note, even when
+    // the line also carries a decimal.
+    expect(parseIngredientLine("1,5 kg de farine, tamisée")).toMatchObject({
+      quantity: 1.5,
+      unit: "kg",
+      rawName: "farine",
+      note: "tamisée",
+    });
+  });
+
+  it("reads a French thousands separator as one number", () => {
+    // "1 000 g" parsed as a quantity of 1 with "000 g de farine" as the name.
+    expect(parseIngredientLine("1 000 g de farine")).toMatchObject({
+      quantity: 1000,
+      unit: "g",
+      rawName: "farine",
+    });
+    // A non-breaking space is what a word processor and most web pages emit.
+    expect(parseIngredientLine("1 000 g de farine")).toMatchObject({
+      quantity: 1000,
+      unit: "g",
+      rawName: "farine",
+    });
+    // Two separate numbers are still two: the group has to be three digits.
+    expect(parseIngredientLine("1 5 kg de farine")).toMatchObject({
+      quantity: 1,
+      rawName: "5 kg de farine",
+    });
+  });
+
+  it("recognizes pièces, the commonest French countable unit", () => {
+    // With no alias for it the unit went unrecognized, the connector was never
+    // stripped, and the whole tail became the name.
+    expect(parseIngredientLine("3 pièces de poulet")).toMatchObject({
+      quantity: 3,
+      unit: "morceau",
+      rawName: "poulet",
+    });
+    expect(parseIngredientLine("1 pièce de boeuf")).toMatchObject({
+      quantity: 1,
+      unit: "morceau",
+      rawName: "boeuf",
+    });
+  });
+
   it("leaves a countable ingredient without a unit", () => {
     expect(parseIngredientLine("2 oignons")).toMatchObject({
       quantity: 2,
@@ -113,7 +168,11 @@ describe("ingredient paste parser", () => {
     );
 
     expect(lines).toHaveLength(3);
-    expect(lines[0]).toMatchObject({ quantity: 100, unit: "g", rawName: "beurre" });
+    expect(lines[0]).toMatchObject({
+      quantity: 100,
+      unit: "g",
+      rawName: "beurre",
+    });
     expect(lines[1]).toMatchObject({ quantity: 2, rawName: "œufs" });
     expect(lines[2]).toMatchObject({
       quantity: 1,

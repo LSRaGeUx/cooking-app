@@ -1,14 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { agentContext } from "@/services/context";
+import { agentContext, type ServiceContext } from "@/services/context";
 import { createFact, listFacts, retireFact } from "@/services/fact-service";
-import { ensureUserSetup } from "@/services/onboarding-service";
-import {
-  createAllergen,
-  updateProfile,
-} from "@/services/profile-service";
+import { createAllergen, updateProfile } from "@/services/profile-service";
 import { composeProfileSnapshot } from "@/services/snapshot-service";
-import { setSlotConfig, listMealTypes } from "@/services/slot-service";
-import { cleanupUser, testUser } from "../helpers/fixtures";
+import { setSlotConfig } from "@/services/slot-service";
+import { setupTestUser } from "../helpers";
 
 /**
  * The snapshot is what the product actually sells, so this reads it the way an
@@ -16,11 +12,14 @@ import { cleanupUser, testUser } from "../helpers/fixtures";
  * the data is stated rather than implied.
  */
 
-const ctx = testUser();
-const agent = agentContext(ctx.userId, "client-xyz");
+let user: Awaited<ReturnType<typeof setupTestUser>>;
+let ctx: ServiceContext;
+let agent: ServiceContext;
 
 beforeAll(async () => {
-  await ensureUserSetup(ctx);
+  user = await setupTestUser();
+  ctx = user.ctx;
+  agent = agentContext(ctx.userId, "client-xyz");
 
   await updateProfile(ctx, {
     diet: "pescatarian",
@@ -43,9 +42,7 @@ beforeAll(async () => {
     matches: ["lait", "crème"],
   });
 
-  const dinnerId = (await listMealTypes(ctx)).find(
-    (type) => type.key === "dinner",
-  )!.id;
+  const dinnerId = user.dinnerId;
   await setSlotConfig(ctx, {
     dayOfWeek: 2,
     mealTypeId: dinnerId,
@@ -88,7 +85,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await cleanupUser(ctx);
+  await user.cleanup();
 });
 
 describe("the composed document", () => {
@@ -109,29 +106,47 @@ describe("the composed document", () => {
 
   it("separates an allergen to avoid from one that blocks", async () => {
     const { snapshot } = await composeProfileSnapshot(ctx);
-    expect(snapshot.hardConstraints.strictAllergens.map((row) => row.name)).toEqual(
-      ["Arachide"],
-    );
+    expect(
+      snapshot.hardConstraints.strictAllergens.map((row) => row.name),
+    ).toEqual(["Arachide"]);
     expect(
       snapshot.strongPreferences.avoidAllergens.map((row) => row.name),
     ).toEqual(["Lactose"]);
   });
 
   it("describes the week including the slot that must not be filled", async () => {
-    const { markdown, snapshot } = await composeProfileSnapshot(ctx);
-    expect(markdown).toContain("mardi dîner : planifié, 20 min");
-    expect(markdown).toContain("vendredi dîner : sauté");
-    expect(markdown).toContain("Tolérance de dépassement : 15 min");
+    /*
+     * Read off the snapshot object rather than out of the French sentence the
+     * service composes. This used to assert "mardi dîner : planifié, 20 min"
+     * and "vendredi dîner : sauté" as literal substrings, so every copy edit
+     * broke a test about slot state, and the thing being tested, that a skipped
+     * slot is carried through and labelled, is a field.
+     */
+    const { snapshot } = await composeProfileSnapshot(ctx);
+
+    const tuesday = snapshot.weekShape.slots.find(
+      (slot) => slot.dayOfWeek === 2 && slot.mealTypeLabel === "Dîner",
+    );
+    const friday = snapshot.weekShape.slots.find(
+      (slot) => slot.dayOfWeek === 5 && slot.mealTypeLabel === "Dîner",
+    );
+
+    expect(tuesday).toMatchObject({ state: "planned", timeBudgetMin: 20 });
+    // The one that matters: an agent that fills a skipped slot has broken a
+    // promise, so the state has to survive into the document.
+    expect(friday?.state).toBe("skipped");
+
     expect(snapshot.weekShape.defaultServings).toBe(3);
     expect(snapshot.weekShape.varietyPreference).toBe(4);
+    expect(snapshot.weekShape.timeBudgetToleranceMin).toBe(15);
   });
 
   it("routes each fact to its section", async () => {
     const { snapshot } = await composeProfileSnapshot(ctx);
 
-    expect(snapshot.strongPreferences.facts.map((row) => row.statement)).toContain(
-      "Limite le sel, tension artérielle",
-    );
+    expect(
+      snapshot.strongPreferences.facts.map((row) => row.statement),
+    ).toContain("Limite le sel, tension artérielle");
     expect(snapshot.kitchen.facts.map((row) => row.statement)).toContain(
       "Utilise beaucoup la cocotte en fonte",
     );
@@ -144,14 +159,45 @@ describe("the composed document", () => {
   });
 
   it("marks an agent's unconfirmed claim as such, inline", async () => {
-    const { markdown } = await composeProfileSnapshot(ctx);
-    expect(markdown).toContain(
-      "Cuisine en grande quantité le dimanche (confiance faible, non confirmé, écrit par un agent)",
+    const { markdown, snapshot } = await composeProfileSnapshot(ctx);
+
+    // The fields first, since they are what the annotation is rendered from.
+    const claim = snapshot.organizationFacts.find(
+      (row) => row.statement === "Cuisine en grande quantité le dimanche",
     );
+    expect(claim).toMatchObject({
+      status: "unconfirmed",
+      source: "agent",
+      confidence: "low",
+    });
+
+    /*
+     * And one assertion on the document, because inline is the point: an agent
+     * reading a flat list of statements cannot tell which of them a human
+     * actually confirmed, and a footnote is not read. The whole parenthetical
+     * used to be asserted word for word; this pins that the annotation is on
+     * the same line as the claim and says it is unconfirmed, and leaves the
+     * wording to the catalogue.
+     */
+    const line = markdown
+      .split("\n")
+      .find((row) => row.includes("Cuisine en grande quantité le dimanche"));
+    expect(line).toBeDefined();
+    expect(line).toContain("non confirmé");
+    expect(line).toContain("agent");
   });
 
   it("excludes a retired fact", async () => {
-    const target = (await listFacts(ctx, { category: "taste" }))[0]!;
+    // Its own fact, created and retired here. It used to take whichever taste
+    // fact happened to come back first and retire it, which both depended on
+    // the ordering of a query and mutated a row two later `describe` blocks
+    // read, so a reordering or a `-t` filter changed what those blocks saw.
+    const target = await createFact(ctx, {
+      category: "taste",
+      statement: "Fait de goût créé pour être retiré",
+      polarity: "neutral",
+      confidence: "low",
+    });
     await retireFact(ctx, target.id);
 
     const { markdown, snapshot } = await composeProfileSnapshot(ctx);
@@ -193,14 +239,50 @@ describe("the composed document", () => {
 
   it("says what an empty section means, rather than leaving it bare", async () => {
     const { markdown } = await composeProfileSnapshot(ctx);
-    // Nothing recorded for this user, and the document is explicit that this
-    // is absence of data rather than absence of the thing.
-    expect(markdown).toContain(
-      "Absence de retour ne veut pas dire que rien n'a été cuisiné.",
+
+    /*
+     * Structural rather than two French sentences quoted verbatim.
+     *
+     * The rule is that a section with no data still says something, because an
+     * empty heading reads to a model as "this person has no preferences"
+     * rather than as "nothing was recorded", and the two lead to different
+     * weeks. Every section is checked, not the two that happen to be empty for
+     * this account: a heading with nothing under it is the defect whichever
+     * heading it is.
+     */
+    const sections = markdown
+      .split(/^## /m)
+      .slice(1)
+      .map((section) => {
+        const [heading = "", ...body] = section.split("\n");
+        return { heading, body: body.join("\n").trim() };
+      });
+
+    expect(sections).toHaveLength(9);
+    for (const section of sections) {
+      expect(
+        section.body,
+        `section "${section.heading}" is a heading with nothing under it`,
+      ).not.toBe("");
+    }
+
+    /*
+     * And the two sections where absence is genuinely ambiguous get a sentence
+     * rather than a word. "Rien à signaler." is enough for the signals
+     * section, because no signal means no signal. An empty history could mean
+     * nothing was cooked or that nobody filled in the feedback, and an empty
+     * pantry could mean the cupboards are bare or that the list was never
+     * started: read the wrong way round, either one produces a week built on a
+     * false premise, so the document has to say which it is.
+     */
+    const history = sections.find((section) =>
+      section.heading.startsWith("8."),
     );
-    expect(markdown).toContain(
-      "Cela ne veut pas dire que les placards sont vides",
-    );
+    const pantry = sections.find((section) => section.heading.startsWith("7."));
+    expect(history?.body.length ?? 0).toBeGreaterThan(60);
+    expect(pantry?.body.length ?? 0).toBeGreaterThan(60);
+    expect(history?.body).toMatch(/ne veut pas dire/);
+    expect(pantry?.body).toMatch(/ne veut pas dire/);
   });
 });
 
@@ -212,19 +294,26 @@ describe("the fact budget", () => {
 
     expect(snapshot.factBudget.included).toBe(1);
     expect(snapshot.factBudget.active).toBeGreaterThan(1);
-    // Singular agreement: the document is read by a model but checked by a
-    // person, and machine-sounding prose invites less scrutiny.
-    expect(markdown).toContain(
-      `Il contient 1 fait sur ${snapshot.factBudget.active} actifs`,
+
+    /*
+     * The numbers, and the singular agreement, without quoting the sentence
+     * around them. "1 fait" and not "1 faits": the document is read by a model
+     * but checked by a person, and machine-sounding prose invites less
+     * scrutiny. That is the assertion; the clause it sits in is copy.
+     */
+    expect(markdown).toMatch(
+      new RegExp(`\\b1 fait sur ${snapshot.factBudget.active} actifs?\\b`),
     );
-    expect(markdown).toContain("Vous ne voyez donc pas tous les faits connus.");
+    // And the document says out loud that it is partial, which is the whole
+    // reason the budget is reported at all.
+    expect(markdown).toMatch(/pas tous les faits/);
   });
 
   it("keeps the health constraint when the budget is one fact", async () => {
     const { snapshot } = await composeProfileSnapshot(ctx, { factBudget: 1 });
-    expect(snapshot.strongPreferences.facts.map((row) => row.statement)).toEqual([
-      "Limite le sel, tension artérielle",
-    ]);
+    expect(
+      snapshot.strongPreferences.facts.map((row) => row.statement),
+    ).toEqual(["Limite le sel, tension artérielle"]);
   });
 });
 
@@ -236,7 +325,9 @@ describe("recording that facts were handed out", () => {
     // Previewing your own snapshot must not distort the pruning heuristic.
     await composeProfileSnapshot(ctx, { markReferenced: false });
     const afterPreview = await listFacts(ctx, {});
-    expect(afterPreview.every((row) => row.lastReferencedAt === null)).toBe(true);
+    expect(afterPreview.every((row) => row.lastReferencedAt === null)).toBe(
+      true,
+    );
 
     await composeProfileSnapshot(ctx, { markReferenced: true });
     const afterRead = await listFacts(ctx, {});

@@ -307,10 +307,57 @@ describe("what must never be merged", () => {
     );
   });
 
-  it("never merges unlinked lines, because two spellings are not evidence", () => {
+  /**
+   * Rule 2 is about two *different* spellings, and it used to be enforced with
+   * a counter that made an unlinked line merge with nothing at all, itself
+   * included. One recipe planned twice then produced two identical "persil
+   * plat" lines, which a cook reading the list cannot tell from two separate
+   * things to buy. The same string twice is the same thing twice.
+   */
+  it("merges an unlinked line with itself, however it was capitalized", () => {
     const lines = aggregateGroceryLines([
       line({ rawName: "persil plat", quantity: 1 }),
-      line({ rawName: "persil plat", quantity: 1, entryId: "entry-2" }),
+      line({ rawName: "Persil plat", quantity: 1, entryId: "entry-2" }),
+    ]);
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      displayName: "persil plat",
+      quantity: 2,
+      // Nothing to group: there is one line, and an unlinked line is never
+      // grouped with another anyway.
+      unmergeableGroup: null,
+    });
+    expect(lines[0]!.sourceEntryIds.sort()).toEqual(["entry-1", "entry-2"]);
+  });
+
+  it("never merges two spellings of an unlinked name, because looking alike is not evidence", () => {
+    const lines = aggregateGroceryLines([
+      line({ rawName: "persil plat", quantity: 1 }),
+      line({ rawName: "persil frisé", quantity: 1, entryId: "entry-2" }),
+      // Including a plural. A linked name folds its plural onto the ingredient
+      // it was linked to, which is evidence; an unlinked one has nothing behind
+      // it, so "persils plats" stays a third line rather than being assumed.
+      line({ rawName: "persils plats", quantity: 1, entryId: "entry-3" }),
+    ]);
+
+    expect(lines).toHaveLength(3);
+    expect(lines.every((row) => row.unmergeableGroup === null)).toBe(true);
+    expect(lines.every((row) => row.quantity === 1)).toBe(true);
+  });
+
+  it("keeps two units of one unlinked name apart", () => {
+    // The same string twice merges, and the merge still cannot invent a
+    // conversion: a bunch and 30 grams are not addable, and neither is linked
+    // to an ingredient that could say how heavy a bunch is.
+    const lines = aggregateGroceryLines([
+      line({ rawName: "persil plat", quantity: 1 }),
+      line({
+        rawName: "persil plat",
+        quantity: 30,
+        unit: "g",
+        entryId: "entry-2",
+      }),
     ]);
 
     expect(lines).toHaveLength(2);
