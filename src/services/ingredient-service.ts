@@ -1,8 +1,6 @@
 import { asc, eq } from "drizzle-orm";
 import { ingredient } from "@/db/schema";
 import { normalizeTerm, termMatches } from "@/domain/allergens";
-import { DomainError } from "@/domain/errors";
-import { ingredientInputSchema } from "@/domain/schemas";
 import { inScope, type ServiceContext } from "./context";
 import { STARTER_INGREDIENTS } from "./data/starter-ingredients";
 
@@ -24,7 +22,7 @@ export interface IngredientMatch {
 }
 
 export async function listIngredients(ctx: ServiceContext) {
-  return inScope(ctx, (tx) =>
+  return inScope(ctx, ({ tx }) =>
     tx
       .select()
       .from(ingredient)
@@ -33,28 +31,57 @@ export async function listIngredients(ctx: ServiceContext) {
   );
 }
 
-export async function createIngredient(ctx: ServiceContext, input: unknown) {
-  const parsed = ingredientInputSchema.parse(input);
-  return inScope(ctx, async (tx) => {
-    const rows = await tx
-      .insert(ingredient)
-      .values({ ...parsed, userId: ctx.userId })
-      .onConflictDoNothing()
-      .returning();
-    if (rows[0]) return rows[0];
+/**
+ * One vocabulary entry with its names normalized once.
+ *
+ * The normalization is the whole reason this type exists. Matching used to
+ * re-normalize every candidate name for every written name it was asked about,
+ * and `termMatches` compiled a fresh RegExp per pair on top of that: a
+ * hundred-line recipe against sixty starter ingredients, each carrying a few
+ * aliases, ran into tens of thousands of regex constructions for one save. The
+ * candidates are prepared once per read instead.
+ */
+interface PreparedCandidate {
+  readonly id: string;
+  readonly canonicalName: string;
+  /** Canonical name first, then the aliases, each already normalized. */
+  readonly normalizedNames: readonly string[];
+  /** The names as written, which is what the contained match tests against. */
+  readonly names: readonly string[];
+  /**
+   * The shortest form of each normalized name that a word-boundary match could
+   * possibly find, used as a cheap prefilter before `termMatches` compiles a
+   * pattern. See `termForms` in src/domain/allergens.ts: it varies a term by
+   * stripping a trailing plural marker and nothing else, so every form it can
+   * produce still contains the stem. If that rule ever widens, this prefilter
+   * has to widen with it, or a link that should resolve will quietly stop
+   * resolving.
+   */
+  readonly stems: readonly string[];
+}
 
-    const existing = await tx
-      .select()
-      .from(ingredient)
-      .where(eq(ingredient.canonicalName, parsed.canonicalName))
-      .limit(1);
-    if (!existing[0]) {
-      throw new DomainError(
-        "VALIDATION",
-        `L'ingrédient « ${parsed.canonicalName} » n'a pas pu être créé.`,
-      );
-    }
-    return existing[0];
+/** The stem `termForms` can strip a term down to. */
+function stemOf(normalized: string): string {
+  return normalized.length <= 3 ? normalized : normalized.replace(/[sx]$/, "");
+}
+
+function prepareCandidates(
+  rows: ReadonlyArray<{
+    id: string;
+    canonicalName: string;
+    aliases: readonly string[];
+  }>,
+): PreparedCandidate[] {
+  return rows.map((row) => {
+    const names = [row.canonicalName, ...row.aliases];
+    const normalizedNames = names.map(normalizeTerm);
+    return {
+      id: row.id,
+      canonicalName: row.canonicalName,
+      names,
+      normalizedNames,
+      stems: normalizedNames.map(stemOf),
+    };
   });
 }
 
@@ -67,20 +94,15 @@ export async function createIngredient(ctx: ServiceContext, input: unknown) {
  * whichever row happened to be read first. Word-boundary matching is what keeps
  * "Lait" from claiming "laitue".
  */
-export function matchIngredient(
+function matchPrepared(
   rawName: string,
-  candidates: ReadonlyArray<{
-    id: string;
-    canonicalName: string;
-    aliases: readonly string[];
-  }>,
+  candidates: readonly PreparedCandidate[],
 ): IngredientMatch | null {
   const normalized = normalizeTerm(rawName);
   if (!normalized) return null;
 
   for (const candidate of candidates) {
-    const names = [candidate.canonicalName, ...candidate.aliases];
-    if (names.some((name) => normalizeTerm(name) === normalized)) {
+    if (candidate.normalizedNames.includes(normalized)) {
       return {
         id: candidate.id,
         canonicalName: candidate.canonicalName,
@@ -89,15 +111,22 @@ export function matchIngredient(
     }
   }
 
-  let best: { candidate: (typeof candidates)[number]; length: number } | null =
-    null;
+  let best: { candidate: PreparedCandidate; length: number } | null = null;
 
   for (const candidate of candidates) {
-    const names = [candidate.canonicalName, ...candidate.aliases];
-    for (const name of names) {
+    for (const [index, name] of candidate.names.entries()) {
+      const stem = candidate.stems[index];
+      // The prefilter. A name whose stem does not appear anywhere in the
+      // written text cannot match on a word boundary either, and skipping it
+      // here is what keeps the regex compilation off the hot path.
+      if (stem === undefined || stem.length === 0) continue;
+      if (!normalized.includes(stem)) continue;
+      const length = candidate.normalizedNames[index]?.length ?? 0;
+      // Nothing longer can be found later in this pass, so a candidate that
+      // cannot win is not tested at all.
+      if (best && length <= best.length) continue;
       if (!termMatches(name, rawName)) continue;
-      const length = normalizeTerm(name).length;
-      if (!best || length > best.length) best = { candidate, length };
+      best = { candidate, length };
     }
   }
 
@@ -117,8 +146,8 @@ export async function linkIngredientNames(
 ): Promise<Map<string, IngredientMatch>> {
   if (rawNames.length === 0) return new Map();
 
-  return inScope(ctx, async (tx) => {
-    const candidates = await tx
+  return inScope(ctx, async ({ tx }) => {
+    const rows = await tx
       .select({
         id: ingredient.id,
         canonicalName: ingredient.canonicalName,
@@ -127,17 +156,44 @@ export async function linkIngredientNames(
       .from(ingredient)
       .where(eq(ingredient.userId, ctx.userId));
 
+    const candidates = prepareCandidates(rows);
+
     const resolved = new Map<string, IngredientMatch>();
     for (const rawName of rawNames) {
-      const match = matchIngredient(rawName, candidates);
+      // The same written name can appear twice in one recipe, and the answer
+      // cannot change between the two.
+      if (resolved.has(rawName)) continue;
+      const match = matchPrepared(rawName, candidates);
       if (match) resolved.set(rawName, match);
     }
     return resolved;
   });
 }
 
+/**
+ * The ids of this user's vocabulary entries.
+ *
+ * It exists because a caller may name an `ingredientId` explicitly, and a
+ * foreign key is not a tenancy check: foreign key checks run as the table owner
+ * and bypass row-level security, so an insert naming another tenant's uuid
+ * succeeded or failed depending on whether that uuid happened to exist. That is
+ * an existence oracle, and the row it produced was invisible to every join that
+ * scopes by user. The recipe service checks against this set first.
+ */
+export async function ownedIngredientIds(
+  ctx: ServiceContext,
+): Promise<Set<string>> {
+  return inScope(ctx, async ({ tx }) => {
+    const rows = await tx
+      .select({ id: ingredient.id })
+      .from(ingredient)
+      .where(eq(ingredient.userId, ctx.userId));
+    return new Set(rows.map((row) => row.id));
+  });
+}
+
 export async function seedStarterIngredients(ctx: ServiceContext) {
-  return inScope(ctx, async (tx) => {
+  return inScope(ctx, async ({ tx }) => {
     const existing = await tx
       .select({ id: ingredient.id })
       .from(ingredient)

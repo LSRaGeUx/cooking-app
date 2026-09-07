@@ -1,5 +1,7 @@
 import { desc, eq, sql } from "drizzle-orm";
 import { agentActivity } from "@/db/schema";
+import { activityQuerySchema } from "@/domain/schemas";
+import type { ActivityDirection, ActivityResult } from "@/domain/vocabulary";
 import { inScope, type ServiceContext } from "./context";
 
 /**
@@ -14,11 +16,16 @@ import { inScope, type ServiceContext } from "./context";
 export interface ActivityEntry {
   readonly id: string;
   readonly toolName: string;
-  readonly direction: string;
-  readonly result: string;
+  /**
+   * The vocabulary unions rather than `string`. Both columns now carry a check
+   * constraint holding exactly these values, so a widened type here would
+   * promise a reader something the database refuses to store.
+   */
+  readonly direction: ActivityDirection;
+  readonly result: ActivityResult;
   readonly rejectionCode: string | null;
   readonly oauthClientId: string | null;
-  readonly payloadSummary: unknown;
+  readonly payloadSummary: Record<string, unknown> | null;
   readonly createdAt: Date;
 }
 
@@ -27,14 +34,19 @@ export interface ActivityPage {
   readonly total: number;
 }
 
+/**
+ * Paging comes from `activityQuerySchema` rather than from a pair of
+ * hand-written clamps. The clamps allowed a limit of 200 where the published
+ * schema says 100, so the same call answered differently through the two entry
+ * points, which is the exact drift rule 9 exists to stop.
+ */
 export async function listAgentActivity(
   ctx: ServiceContext,
-  options: { limit?: number; offset?: number } = {},
+  options: unknown = {},
 ): Promise<ActivityPage> {
-  const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
-  const offset = Math.max(options.offset ?? 0, 0);
+  const { limit, offset } = activityQuerySchema.parse(options);
 
-  return inScope(ctx, async (tx) => {
+  return inScope(ctx, async ({ tx }) => {
     const entries = await tx
       .select()
       .from(agentActivity)
@@ -52,8 +64,11 @@ export async function listAgentActivity(
       entries: entries.map((row) => ({
         id: row.id,
         toolName: row.toolName,
-        direction: row.direction,
-        result: row.result,
+        // The column is `text` plus a check constraint, so Drizzle types it as
+        // `string`. Narrowed here, at the one boundary that turns a row into a
+        // view, rather than at every reader.
+        direction: row.direction as ActivityDirection,
+        result: row.result as ActivityResult,
         rejectionCode: row.rejectionCode,
         oauthClientId: row.oauthClientId,
         payloadSummary: row.payloadSummary,
@@ -65,10 +80,8 @@ export async function listAgentActivity(
 }
 
 /** Whether any agent has ever called this account, for the connection test. */
-export async function lastAgentCall(
-  ctx: ServiceContext,
-): Promise<Date | null> {
-  return inScope(ctx, async (tx) => {
+export async function lastAgentCall(ctx: ServiceContext): Promise<Date | null> {
+  return inScope(ctx, async ({ tx }) => {
     const rows = await tx
       .select({ createdAt: agentActivity.createdAt })
       .from(agentActivity)

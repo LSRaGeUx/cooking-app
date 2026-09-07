@@ -34,15 +34,34 @@ export async function listConnectedClients(
   // the join reaches into agent_activity, which does, and an unscoped read of
   // it returns zero rows rather than erroring. That is the intended failure
   // mode for tenancy and a silent wrong answer for anything else.
-  const rows = await inScope(ctx, (tx) => tx.execute<{
-    consent_id: string;
-    client_id: string;
-    name: string | null;
-    scopes: unknown;
-    created_at: Date;
-    last_seen_at: Date | null;
-    calls_last_7_days: number;
-  }>(sql`
+  /**
+   * `created_at` and `last_seen_at` are `string | Date`, not `Date`, and that
+   * matters.
+   *
+   * The type argument to `tx.execute` is an unchecked assertion: Drizzle does
+   * not verify it against what the driver returns, and the raw execute path
+   * hands back a `timestamptz` as a string (`'2026-09-07 18:28:24.28+00'`)
+   * rather than as a `Date`, because no column type is in play to parse it.
+   *
+   * Declaring `Date` here made the compiler agree with a value that was a
+   * string, and the screen that renders it crashed: `Intl.DateTimeFormat`
+   * coerces its argument with `ToNumber`, a date string gives `NaN`, and
+   * `format(NaN)` throws `RangeError: Invalid time value`. So the agent
+   * connections page threw for any account that had ever connected a client,
+   * and nothing in the types or the tests saw it.
+   *
+   * The honest type plus a coercion in the mapper is the fix. Keep both.
+   */
+  const rows = await inScope(ctx, ({ tx }) =>
+    tx.execute<{
+      consent_id: string;
+      client_id: string;
+      name: string | null;
+      scopes: unknown;
+      created_at: string | Date;
+      last_seen_at: string | Date | null;
+      calls_last_7_days: number;
+    }>(sql`
     select c.id            as consent_id,
            c."clientId"    as client_id,
            cl.name         as name,
@@ -61,17 +80,28 @@ export async function listConnectedClients(
     ) a on a.oauth_client_id = c."clientId"
     where c."userId" = ${ctx.userId}
     order by c."createdAt" desc
-  `));
+  `),
+  );
 
   return rows.rows.map((row) => ({
     consentId: row.consent_id,
     clientId: row.client_id,
     name: row.name,
-    scopes: Array.isArray(row.scopes) ? (row.scopes as string[]) : [],
-    connectedAt: row.created_at,
-    lastSeenAt: row.last_seen_at,
-    callsLast7Days: row.calls_last_7_days,
+    // Better Auth stores the scopes as jsonb and this query reads them as
+    // `unknown`, so they are filtered rather than cast: a cast would have this
+    // function promise strings for whatever that column happens to hold.
+    scopes: Array.isArray(row.scopes)
+      ? row.scopes.filter((scope): scope is string => typeof scope === "string")
+      : [],
+    connectedAt: toDate(row.created_at),
+    lastSeenAt: row.last_seen_at === null ? null : toDate(row.last_seen_at),
+    callsLast7Days: Number(row.calls_last_7_days),
   }));
+}
+
+/** A timestamp from a raw query, whichever of the two shapes the driver used. */
+function toDate(value: string | Date): Date {
+  return value instanceof Date ? value : new Date(value);
 }
 
 /**
@@ -88,22 +118,30 @@ export async function revokeClient(
   ctx: ServiceContext,
   clientId: string,
 ): Promise<void> {
-  const consents = await db.execute(
-    sql`delete from "oauthConsent" where "userId" = ${ctx.userId} and "clientId" = ${clientId} returning id`,
-  );
-
-  if (consents.rows.length === 0) {
-    throw new DomainError(
-      "NOT_FOUND",
-      "Ce client n'est pas connecté à votre compte.",
-      { clientId },
+  // One transaction for all three statements. They used to run on the pool
+  // separately, so a failure after the consent delete left the access and
+  // refresh tokens in place: the consent check in src/mcp/tool-runner.ts still
+  // refuses the call, which is why nothing was visibly broken, but a revoke
+  // that half happened leaves credentials on disk that the user was told were
+  // destroyed. Either all three go or none does.
+  await db.transaction(async (tx) => {
+    const consents = await tx.execute(
+      sql`delete from "oauthConsent" where "userId" = ${ctx.userId} and "clientId" = ${clientId} returning id`,
     );
-  }
 
-  await db.execute(
-    sql`delete from "oauthAccessToken" where "userId" = ${ctx.userId} and "clientId" = ${clientId}`,
-  );
-  await db.execute(
-    sql`delete from "oauthRefreshToken" where "userId" = ${ctx.userId} and "clientId" = ${clientId}`,
-  );
+    if (consents.rows.length === 0) {
+      throw new DomainError(
+        "NOT_FOUND",
+        "Ce client n'est pas connecté à votre compte.",
+        { clientId },
+      );
+    }
+
+    await tx.execute(
+      sql`delete from "oauthAccessToken" where "userId" = ${ctx.userId} and "clientId" = ${clientId}`,
+    );
+    await tx.execute(
+      sql`delete from "oauthRefreshToken" where "userId" = ${ctx.userId} and "clientId" = ${clientId}`,
+    );
+  });
 }

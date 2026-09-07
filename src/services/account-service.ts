@@ -1,5 +1,4 @@
 import { eq, sql } from "drizzle-orm";
-import { db, withUser } from "@/db/client";
 import {
   agentActivity,
   allergen,
@@ -9,6 +8,7 @@ import {
   fact,
   groceryLine,
   groceryList,
+  groceryListVersion,
   ingredient,
   mealType,
   pantryItem,
@@ -23,7 +23,8 @@ import {
   recipeStep,
   slotConfig,
 } from "@/db/schema";
-import type { ServiceContext } from "./context";
+import { inScope, type ServiceContext } from "./context";
+import { forgetUserSetup } from "./onboarding-service";
 
 /**
  * Taking your data out, and taking your account down.
@@ -37,9 +38,14 @@ import type { ServiceContext } from "./context";
 export async function exportAccount(
   ctx: ServiceContext,
 ): Promise<Record<string, unknown>> {
-  return withUser(ctx.userId, async (tx) => {
-    // Read through the scoped transaction, so row-level security is the second
-    // pair of eyes on an export as much as on anything else.
+  // `inScope` rather than `withUser` directly, so an export composed inside
+  // another service's transaction joins it instead of opening a second one.
+  // This was the one service that ignored `ctx.tx`.
+  return inScope(ctx, async ({ tx }) => {
+    // Every select carries the `user_id` predicate. Row-level security is the
+    // second pair of eyes this file's own comment claimed it was, and it was
+    // the only one: twenty-one unscoped selects relied entirely on the policy,
+    // which is the arrangement rule 8 exists to forbid.
     const [
       profileRows,
       allergens,
@@ -60,30 +66,68 @@ export async function exportAccount(
       prepLinks,
       pantry,
       lists,
+      listVersions,
       lines,
       activity,
     ] = [
-      await tx.select().from(profile),
-      await tx.select().from(allergen),
-      await tx.select().from(exclusion),
-      await tx.select().from(equipment),
-      await tx.select().from(fact),
-      await tx.select().from(mealType),
-      await tx.select().from(slotConfig),
-      await tx.select().from(ingredient),
-      await tx.select().from(recipe),
-      await tx.select().from(recipeIngredient),
-      await tx.select().from(recipeStep),
-      await tx.select().from(recipeRevision),
-      await tx.select().from(plan),
-      await tx.select().from(planVersion),
-      await tx.select().from(planEntry),
-      await tx.select().from(entryFeedback),
-      await tx.select().from(prepLink),
-      await tx.select().from(pantryItem),
-      await tx.select().from(groceryList),
-      await tx.select().from(groceryLine),
-      await tx.select().from(agentActivity),
+      await tx.select().from(profile).where(eq(profile.userId, ctx.userId)),
+      await tx.select().from(allergen).where(eq(allergen.userId, ctx.userId)),
+      await tx.select().from(exclusion).where(eq(exclusion.userId, ctx.userId)),
+      await tx.select().from(equipment).where(eq(equipment.userId, ctx.userId)),
+      await tx.select().from(fact).where(eq(fact.userId, ctx.userId)),
+      await tx.select().from(mealType).where(eq(mealType.userId, ctx.userId)),
+      await tx
+        .select()
+        .from(slotConfig)
+        .where(eq(slotConfig.userId, ctx.userId)),
+      await tx
+        .select()
+        .from(ingredient)
+        .where(eq(ingredient.userId, ctx.userId)),
+      await tx.select().from(recipe).where(eq(recipe.userId, ctx.userId)),
+      await tx
+        .select()
+        .from(recipeIngredient)
+        .where(eq(recipeIngredient.userId, ctx.userId)),
+      await tx
+        .select()
+        .from(recipeStep)
+        .where(eq(recipeStep.userId, ctx.userId)),
+      await tx
+        .select()
+        .from(recipeRevision)
+        .where(eq(recipeRevision.userId, ctx.userId)),
+      await tx.select().from(plan).where(eq(plan.userId, ctx.userId)),
+      await tx
+        .select()
+        .from(planVersion)
+        .where(eq(planVersion.userId, ctx.userId)),
+      await tx.select().from(planEntry).where(eq(planEntry.userId, ctx.userId)),
+      await tx
+        .select()
+        .from(entryFeedback)
+        .where(eq(entryFeedback.userId, ctx.userId)),
+      await tx.select().from(prepLink).where(eq(prepLink.userId, ctx.userId)),
+      await tx
+        .select()
+        .from(pantryItem)
+        .where(eq(pantryItem.userId, ctx.userId)),
+      await tx
+        .select()
+        .from(groceryList)
+        .where(eq(groceryList.userId, ctx.userId)),
+      await tx
+        .select()
+        .from(groceryListVersion)
+        .where(eq(groceryListVersion.userId, ctx.userId)),
+      await tx
+        .select()
+        .from(groceryLine)
+        .where(eq(groceryLine.userId, ctx.userId)),
+      await tx
+        .select()
+        .from(agentActivity)
+        .where(eq(agentActivity.userId, ctx.userId)),
     ];
 
     return {
@@ -109,6 +153,10 @@ export async function exportAccount(
       prepLinks,
       pantryItems: pantry,
       groceryLists: lists,
+      // Which plan versions each list was built from. It was missing, so an
+      // export promising "everything, in one file" could not say what any
+      // grocery list had been generated against.
+      groceryListVersions: listVersions,
       groceryLines: lines,
       agentActivity: activity,
     };
@@ -123,10 +171,20 @@ export async function exportAccount(
  * That is written down in docs/02-data-model.md as a cost to be paid here, and
  * this is where it is paid: children before parents, then the account itself,
  * which does cascade Better Auth's own tables and every live session.
+ *
+ * All of it in one transaction, the `user` row included. It used to commit the
+ * domain deletes and then issue the `user` delete on the pool afterwards, so a
+ * failure in that last statement left an account that could still sign in with
+ * every one of its recipes, plans and facts gone, and which then re-seeded a
+ * starter grid on the next request. It is the same database, so there is
+ * nothing to gain by leaving it outside.
  */
 export async function deleteAccount(ctx: ServiceContext): Promise<void> {
-  await withUser(ctx.userId, async (tx) => {
+  await inScope(ctx, async ({ tx }) => {
     await tx.delete(groceryLine).where(eq(groceryLine.userId, ctx.userId));
+    await tx
+      .delete(groceryListVersion)
+      .where(eq(groceryListVersion.userId, ctx.userId));
     await tx.delete(groceryList).where(eq(groceryList.userId, ctx.userId));
     await tx.delete(prepLink).where(eq(prepLink.userId, ctx.userId));
     await tx.delete(entryFeedback).where(eq(entryFeedback.userId, ctx.userId));
@@ -137,7 +195,9 @@ export async function deleteAccount(ctx: ServiceContext): Promise<void> {
       .delete(recipeIngredient)
       .where(eq(recipeIngredient.userId, ctx.userId));
     await tx.delete(recipeStep).where(eq(recipeStep.userId, ctx.userId));
-    await tx.delete(recipeRevision).where(eq(recipeRevision.userId, ctx.userId));
+    await tx
+      .delete(recipeRevision)
+      .where(eq(recipeRevision.userId, ctx.userId));
     await tx.delete(recipe).where(eq(recipe.userId, ctx.userId));
     await tx.delete(pantryItem).where(eq(pantryItem.userId, ctx.userId));
     await tx.delete(slotConfig).where(eq(slotConfig.userId, ctx.userId));
@@ -149,9 +209,15 @@ export async function deleteAccount(ctx: ServiceContext): Promise<void> {
     await tx.delete(equipment).where(eq(equipment.userId, ctx.userId));
     await tx.delete(agentActivity).where(eq(agentActivity.userId, ctx.userId));
     await tx.delete(profile).where(eq(profile.userId, ctx.userId));
+
+    // Better Auth owns this row and its foreign keys, so removing it takes the
+    // sessions, the OAuth clients and the consents with it. Raw SQL because
+    // that table is outside the Drizzle schema, on the same connection because
+    // it is the same database and the same unit of work.
+    await tx.execute(sql`delete from "user" where id = ${ctx.userId}`);
   });
 
-  // Better Auth owns this row and its foreign keys, so removing it takes the
-  // sessions, the OAuth clients and the consents with it.
-  await db.execute(sql`delete from "user" where id = ${ctx.userId}`);
+  // The setup memo in onboarding-service would otherwise keep claiming this
+  // user is seeded, for the life of the process.
+  forgetUserSetup(ctx.userId);
 }
