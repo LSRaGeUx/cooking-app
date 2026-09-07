@@ -1,4 +1,16 @@
-import { and, arrayOverlaps, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  arrayOverlaps,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm";
 import {
   ingredient,
   recipe,
@@ -6,7 +18,8 @@ import {
   recipeRevision,
   recipeStep,
 } from "@/db/schema";
-import { findAllergenHits, type IngredientText } from "@/domain/allergens";
+import { firstRow } from "@/db/rows";
+import type { IngredientText } from "@/domain/allergens";
 import { DomainError } from "@/domain/errors";
 import {
   recipeInputSchema,
@@ -14,10 +27,14 @@ import {
   type RecipeInput,
 } from "@/domain/schemas";
 import type { RecipeSource } from "@/domain/vocabulary";
-import { isoWeekOf, shiftIsoWeek, weeksBetween } from "@/domain/week";
-import { inScope, type ServiceContext } from "./context";
-import { linkIngredientNames } from "./ingredient-service";
-import { listAllergens } from "./profile-service";
+import { isoWeekOf, shiftIsoWeek } from "@/domain/week";
+import { inScope, type ScopedContext, type ServiceContext } from "./context";
+import { recipeHistoryAggregate, weeksSinceKey } from "./history-service";
+import {
+  linkIngredientNames,
+  ownedIngredientIds,
+  type IngredientMatch,
+} from "./ingredient-service";
 
 /**
  * Recipes: create, edit, read, search, soft delete.
@@ -25,9 +42,24 @@ import { listAllergens } from "./profile-service";
  * Two rules shape this file. Edits keep a revision, because an agent-driven
  * edit has to be reversible. And deletes are soft, because past plan entries
  * reference the recipe and history has to stay readable.
+ *
+ * **There is no cached allergen list on a recipe any more.** `recipe.allergen_ids`
+ * was written when a recipe was created or edited and never afterwards, so
+ * adding or deleting an allergen left every existing recipe carrying a list
+ * derived from the old rules: a listing showed a recipe as clean while the
+ * assignment path, which re-runs the matcher against live data on every write,
+ * refused it. Correctness beats the read cost here, and the read cost turned
+ * out to be nothing at all: the only consumer of the column was the MCP
+ * serializer, which deliberately drops it as "rows an agent cannot resolve", so
+ * the cache had no readers. Nothing writes it now, it is out of `recipeColumns`
+ * so no reader can pick up a stale value, and the column itself is the domain
+ * agent's to drop.
  */
 
-/** Everything but the generated search vector, which is never read directly. */
+/**
+ * Everything but the generated search vector, which is never read directly, and
+ * `allergen_ids`, which is no longer maintained. See the note above.
+ */
 const recipeColumns = {
   id: recipe.id,
   userId: recipe.userId,
@@ -48,12 +80,18 @@ const recipeColumns = {
   mainProtein: recipe.mainProtein,
   difficulty: recipe.difficulty,
   equipmentKeys: recipe.equipmentKeys,
-  allergenIds: recipe.allergenIds,
   revision: recipe.revision,
   createdAt: recipe.createdAt,
   updatedAt: recipe.updatedAt,
   deletedAt: recipe.deletedAt,
 } as const;
+
+/**
+ * How long a soft-deleted recipe can be restored. Rule 6 promises the window,
+ * and `purgeDeletedRecipes` below is what makes it a window rather than a
+ * permanent hoard.
+ */
+export const RECIPE_RESTORE_WINDOW_DAYS = 30;
 
 export type RecipeRow = {
   [K in keyof typeof recipeColumns]: (typeof recipe.$inferSelect)[K];
@@ -96,14 +134,10 @@ export async function createRecipe(
   const source: RecipeSource =
     options.source ?? (ctx.actor === "agent" ? "agent" : "manual");
 
-  return inScope(ctx, async (tx) => {
-    const scoped = { ...ctx, tx };
-    const links = await linkIngredientNames(
-      scoped,
-      parsed.ingredients.map((line) => line.rawName),
-    );
+  return inScope(ctx, async (scoped) => {
+    const links = await resolveIngredientLinks(scoped, parsed);
 
-    const inserted = await tx
+    const inserted = await scoped.tx
       .insert(recipe)
       .values({
         userId: ctx.userId,
@@ -127,9 +161,8 @@ export async function createRecipe(
       })
       .returning({ id: recipe.id });
 
-    const recipeId = inserted[0]!.id;
-    await writeChildren(tx, ctx, recipeId, parsed, links);
-    await refreshDerivedAllergens(scoped, recipeId);
+    const recipeId = firstRow(inserted, "recipe insert").id;
+    await writeChildren(scoped, recipeId, parsed, links);
 
     return loadRecipe(scoped, recipeId);
   });
@@ -139,6 +172,16 @@ export async function createRecipe(
  * Every edit snapshots the previous state into recipe_revision and bumps
  * `revision`, so a plan entry that recorded revision 3 can still be explained
  * after the recipe moved on.
+ *
+ * A soft-deleted recipe is refused. `loadRecipe` ignores `deleted_at`, so an
+ * edit of a deleted recipe used to succeed, bump its revision and pile up
+ * revision rows for something the library no longer shows.
+ *
+ * The row is locked before it is read. Read, then insert a revision numbered
+ * from what was read, then update, is a race: two concurrent edits both read
+ * revision 3, both insert revision 3 and the loser gets a raw `23505` from
+ * `recipe_revision_recipe_revision_key`. `for update` makes the second edit
+ * wait and then read revision 4, which is what it should have read.
  */
 export async function updateRecipe(
   ctx: ServiceContext,
@@ -147,9 +190,17 @@ export async function updateRecipe(
 ): Promise<RecipeDetail> {
   const parsed = recipeInputSchema.parse(input);
 
-  return inScope(ctx, async (tx) => {
-    const scoped = { ...ctx, tx };
+  return inScope(ctx, async (scoped) => {
+    const { tx } = scoped;
+    await lockRecipe(scoped, recipeId);
     const before = await loadRecipe(scoped, recipeId);
+    if (before.recipe.deletedAt !== null) {
+      throw new DomainError(
+        "RECIPE_NOT_FOUND",
+        `La recette « ${before.recipe.title} » est supprimée et ne peut pas être modifiée. Restaurez-la d'abord si vous voulez la reprendre.`,
+        { recipeId, deletedAt: before.recipe.deletedAt.toISOString() },
+      );
+    }
 
     await tx.insert(recipeRevision).values({
       userId: ctx.userId,
@@ -176,36 +227,50 @@ export async function updateRecipe(
         difficulty: parsed.difficulty,
         equipmentKeys: parsed.equipmentKeys,
         revision: before.recipe.revision + 1,
-        updatedAt: new Date(),
+        // `updatedAt` carries `$onUpdate`, so Drizzle writes it itself.
       })
-      .where(eq(recipe.id, recipeId));
+      .where(and(eq(recipe.id, recipeId), eq(recipe.userId, ctx.userId)));
 
     await tx
       .delete(recipeIngredient)
-      .where(eq(recipeIngredient.recipeId, recipeId));
-    await tx.delete(recipeStep).where(eq(recipeStep.recipeId, recipeId));
+      .where(
+        and(
+          eq(recipeIngredient.recipeId, recipeId),
+          eq(recipeIngredient.userId, ctx.userId),
+        ),
+      );
+    await tx
+      .delete(recipeStep)
+      .where(
+        and(
+          eq(recipeStep.recipeId, recipeId),
+          eq(recipeStep.userId, ctx.userId),
+        ),
+      );
 
-    const links = await linkIngredientNames(
-      scoped,
-      parsed.ingredients.map((line) => line.rawName),
-    );
-    await writeChildren(tx, ctx, recipeId, parsed, links);
-    await refreshDerivedAllergens(scoped, recipeId);
+    const links = await resolveIngredientLinks(scoped, parsed);
+    await writeChildren(scoped, recipeId, parsed, links);
 
     return loadRecipe(scoped, recipeId);
   });
 }
 
-/** Soft delete, with a 30-day window before the purge job takes it. */
+/** Soft delete, with a 30-day window before `purgeDeletedRecipes` takes it. */
 export async function softDeleteRecipe(
   ctx: ServiceContext,
   recipeId: string,
 ): Promise<void> {
-  await inScope(ctx, async (tx) => {
+  await inScope(ctx, async ({ tx }) => {
     const rows = await tx
       .update(recipe)
-      .set({ deletedAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(recipe.id, recipeId), isNull(recipe.deletedAt)))
+      .set({ deletedAt: new Date() })
+      .where(
+        and(
+          eq(recipe.id, recipeId),
+          eq(recipe.userId, ctx.userId),
+          isNull(recipe.deletedAt),
+        ),
+      )
       .returning({ id: recipe.id });
     if (!rows[0]) {
       throw new DomainError(
@@ -217,23 +282,106 @@ export async function softDeleteRecipe(
   });
 }
 
+/**
+ * Brings a soft-deleted recipe back, and says so when it cannot.
+ *
+ * It used to clear `deleted_at` on any id, reporting nothing when the id was
+ * unknown or the recipe was never deleted, which is the wrong half of the pair:
+ * `softDeleteRecipe` throws and this said nothing, so a screen wiring the two
+ * together could show a successful restore of a recipe that does not exist.
+ */
 export async function restoreRecipe(
   ctx: ServiceContext,
   recipeId: string,
-): Promise<void> {
-  await inScope(ctx, async (tx) => {
-    await tx
+): Promise<RecipeDetail> {
+  return inScope(ctx, async (scoped) => {
+    const rows = await scoped.tx
       .update(recipe)
-      .set({ deletedAt: null, updatedAt: new Date() })
-      .where(eq(recipe.id, recipeId));
+      .set({ deletedAt: null })
+      .where(
+        and(
+          eq(recipe.id, recipeId),
+          eq(recipe.userId, ctx.userId),
+          isNotNull(recipe.deletedAt),
+        ),
+      )
+      .returning({ id: recipe.id });
+    if (!rows[0]) {
+      throw new DomainError(
+        "RECIPE_NOT_FOUND",
+        `Aucune recette supprimée ne correspond à cet identifiant. Une recette supprimée depuis plus de ${RECIPE_RESTORE_WINDOW_DAYS} jours a pu être purgée, et une recette encore présente n'a pas besoin d'être restaurée.`,
+        { recipeId },
+      );
+    }
+    return loadRecipe(scoped, recipeId);
   });
 }
 
+/** Soft-deleted recipes still inside the window, for the restore control. */
+export async function listDeletedRecipes(
+  ctx: ServiceContext,
+): Promise<RecipeRow[]> {
+  return inScope(ctx, ({ tx }) =>
+    tx
+      .select(recipeColumns)
+      .from(recipe)
+      .where(and(eq(recipe.userId, ctx.userId), isNotNull(recipe.deletedAt)))
+      .orderBy(desc(recipe.deletedAt)),
+  );
+}
+
+/**
+ * Deletes for real what has been soft-deleted longer than the window.
+ *
+ * The comment on `softDeleteRecipe` promised a purge job and there was none, so
+ * "30-day window" meant "kept for ever, hidden". This is the service half; a
+ * schedule that calls it per user is the tooling agent's.
+ *
+ * A recipe still referenced by a plan entry survives the purge. `plan_entry`
+ * carries an `on delete set null` on `recipe_id`, so deleting the row would
+ * unlink historic meals and leave the week showing a dish with no recipe. The
+ * title snapshot keeps history readable either way, but a plan the user can
+ * still open should keep working, so the purge only takes what nothing points
+ * at. The count returned is what was actually removed.
+ */
+export async function purgeDeletedRecipes(
+  ctx: ServiceContext,
+  now: Date = new Date(),
+): Promise<number> {
+  const cutoff = new Date(
+    now.getTime() - RECIPE_RESTORE_WINDOW_DAYS * 86_400_000,
+  );
+
+  return inScope(ctx, async ({ tx }) => {
+    const purged = await tx
+      .delete(recipe)
+      .where(
+        and(
+          eq(recipe.userId, ctx.userId),
+          isNotNull(recipe.deletedAt),
+          lt(recipe.deletedAt, cutoff),
+          sql`not exists (
+            select 1 from plan_entry pe
+            where pe.recipe_id = ${recipe.id}
+              and pe.user_id = ${ctx.userId}
+          )`,
+        ),
+      )
+      .returning({ id: recipe.id });
+    return purged.length;
+  });
+}
+
+/**
+ * One recipe, deleted or not. `deletedAt` is part of `RecipeRow`, so a reader
+ * can tell: this used to return a deleted recipe with nothing to distinguish it
+ * from a live one, and the screens rendered it as current.
+ */
 export async function getRecipe(
   ctx: ServiceContext,
   recipeId: string,
 ): Promise<RecipeDetail> {
-  return inScope(ctx, (tx) => loadRecipe({ ...ctx, tx }, recipeId));
+  return inScope(ctx, (scoped) => loadRecipe(scoped, recipeId));
 }
 
 export interface RecipeSearchResult {
@@ -244,21 +392,31 @@ export interface RecipeSearchResult {
 /**
  * Full-text search on the generated French vector, with a title fallback so a
  * partial word still finds something while the user is typing.
+ *
+ * `now` is injected rather than read from the clock inside, so the two
+ * week-relative filters are testable and so a caller that also reads history
+ * can pass one instant for the whole answer. See the note in
+ * src/domain/week.ts: week arithmetic is done on the running instance's local
+ * calendar day, which is the one clock this codebase uses for "today".
  */
 export async function searchRecipes(
   ctx: ServiceContext,
   input: unknown = {},
+  now: Date = new Date(),
 ): Promise<RecipeSearchResult> {
   const search = recipeSearchSchema.parse(input);
 
-  return inScope(ctx, async (tx) => {
-    const conditions = [eq(recipe.userId, ctx.userId), isNull(recipe.deletedAt)];
+  return inScope(ctx, async ({ tx }) => {
+    const conditions = [
+      eq(recipe.userId, ctx.userId),
+      isNull(recipe.deletedAt),
+    ];
 
     if (search.query && search.query.trim().length > 0) {
       const query = search.query.trim();
       const textMatch = or(
         sql`${recipe.searchVector} @@ websearch_to_tsquery('french', ${query})`,
-        sql`${recipe.title} ilike ${`%${query}%`}`,
+        sql`${recipe.title} ilike ${`%${escapeLikePattern(query)}%`} escape '\\'`,
       );
       if (textMatch) conditions.push(textMatch);
     }
@@ -279,7 +437,7 @@ export async function searchRecipes(
       // Weeks are compared as year*100 + week, which orders correctly across a
       // year boundary and across a 53-week year, unlike a bare week number.
       const cutoff = shiftIsoWeek(
-        isoWeekOf(new Date()),
+        isoWeekOf(now),
         -(search.notPlannedInWeeks - 1),
       );
       const cutoffKey = cutoff.year * 100 + cutoff.week;
@@ -288,6 +446,7 @@ export async function searchRecipes(
         join plan_version pv on pv.id = pe.plan_version_id
         join plan p on p.id = pv.plan_id
         where pe.recipe_id = ${recipe.id}
+          and pe.user_id = ${ctx.userId}
           and pv.state = 'active'
           and (p.iso_year * 100 + p.iso_week) >= ${cutoffKey}
       )`);
@@ -295,7 +454,7 @@ export async function searchRecipes(
 
     if (search.notCookedInWeeks !== undefined) {
       const cutoff = shiftIsoWeek(
-        isoWeekOf(new Date()),
+        isoWeekOf(now),
         -(search.notCookedInWeeks - 1),
       );
       const cutoffKey = cutoff.year * 100 + cutoff.week;
@@ -307,6 +466,7 @@ export async function searchRecipes(
         join plan p on p.id = pv.plan_id
         join entry_feedback f on f.plan_entry_id = pe.id
         where pe.recipe_id = ${recipe.id}
+          and pe.user_id = ${ctx.userId}
           and pv.state = 'active'
           and f.outcome = 'cooked'
           and (p.iso_year * 100 + p.iso_week) >= ${cutoffKey}
@@ -320,7 +480,9 @@ export async function searchRecipes(
         select avg(f.rating)
         from plan_entry pe
         join entry_feedback f on f.plan_entry_id = pe.id
-        where pe.recipe_id = ${recipe.id} and f.rating is not null
+        where pe.recipe_id = ${recipe.id}
+          and pe.user_id = ${ctx.userId}
+          and f.rating is not null
       ), -1) >= ${search.minRating}`);
     }
 
@@ -377,8 +539,8 @@ export interface RecipeIndexEntry {
   readonly weeksSinceLastCooked: number | null;
   /**
    * Weeks since this recipe last appeared in an active plan. Null when it has
-   * never been planned. Deliberately not called "rotation age": until feedback
-   * exists in phase 6 we know what was planned, not what was cooked.
+   * never been planned. Deliberately not called "rotation age": it is what was
+   * planned, which is not the same as what was cooked.
    */
   readonly weeksSinceLastPlanned: number | null;
 }
@@ -389,13 +551,17 @@ export interface RecipeIndexEntry {
  * Compactness is the point: a 200-recipe library has to be readable in a few
  * hundred tokens, or the agent burns its context on the catalogue instead of
  * the plan.
+ *
+ * The plan-and-feedback half comes from `recipeHistoryAggregate`, which is the
+ * one statement of that aggregate. This file used to carry its own copy of the
+ * same join, and the two had drifted.
  */
 export async function loadRecipeIndex(
   ctx: ServiceContext,
   now: Date = new Date(),
 ): Promise<RecipeIndexEntry[]> {
-  return inScope(ctx, async (tx) => {
-    const rows = await tx
+  return inScope(ctx, async (scoped) => {
+    const rows = await scoped.tx
       .select({
         id: recipe.id,
         title: recipe.title,
@@ -412,51 +578,11 @@ export async function loadRecipeIndex(
       .where(and(eq(recipe.userId, ctx.userId), isNull(recipe.deletedAt)))
       .orderBy(asc(recipe.title));
 
-    // Only active versions count. A superseded version is a plan that was
-    // replaced, so counting it would say a recipe was planned when it was not.
-    const planned = await tx.execute<{
-      recipe_id: string;
-      times_planned: number;
-      times_cooked: number;
-      average_rating: string | null;
-      last_key: number | null;
-      last_cooked_key: number | null;
-    }>(sql`
-      select pe.recipe_id,
-             count(*)::int as times_planned,
-             count(*) filter (where f.outcome = 'cooked')::int as times_cooked,
-             avg(f.rating) filter (where f.rating is not null) as average_rating,
-             max(p.iso_year * 100 + p.iso_week) as last_key,
-             max(p.iso_year * 100 + p.iso_week)
-               filter (where f.outcome = 'cooked') as last_cooked_key
-      from plan_entry pe
-      join plan_version pv on pv.id = pe.plan_version_id
-      join plan p on p.id = pv.plan_id
-      left join entry_feedback f on f.plan_entry_id = pe.id
-      where pe.user_id = ${ctx.userId}
-        and pv.state = 'active'
-        and pe.recipe_id is not null
-      group by pe.recipe_id
-    `);
-
-    const history = new Map(
-      planned.rows.map((row) => [
-        row.recipe_id,
-        {
-          timesPlanned: row.times_planned,
-          timesCooked: row.times_cooked,
-          averageRating:
-            row.average_rating === null ? null : Number(row.average_rating),
-          lastKey: row.last_key,
-          lastCookedKey: row.last_cooked_key,
-        },
-      ]),
-    );
+    const history = await recipeHistoryAggregate(scoped);
     const thisWeek = isoWeekOf(now);
 
     return rows.map((row) => {
       const seen = history.get(row.id);
-      const lastKey = seen?.lastKey ?? null;
       return {
         id: row.id,
         title: row.title,
@@ -470,26 +596,20 @@ export async function loadRecipeIndex(
         mainProtein: row.mainProtein,
         cuisine: row.cuisine,
         batchFriendly: row.batchFriendly,
-        timesPlanned: seen?.timesPlanned ?? 0,
-        timesCooked: seen?.timesCooked ?? 0,
+        timesPlanned: seen?.planned ?? 0,
+        timesCooked: seen?.cooked ?? 0,
         averageRating: seen?.averageRating ?? null,
-        weeksSinceLastPlanned: weeksSince(lastKey, thisWeek),
-        weeksSinceLastCooked: weeksSince(seen?.lastCookedKey ?? null, thisWeek),
+        weeksSinceLastPlanned: weeksSinceKey(
+          seen?.lastPlannedKey ?? null,
+          thisWeek,
+        ),
+        weeksSinceLastCooked: weeksSinceKey(
+          seen?.lastCookedKey ?? null,
+          thisWeek,
+        ),
       };
     });
   });
-}
-
-/** Weeks from a stored `year * 100 + week` key to now, or null if never. */
-function weeksSince(
-  key: number | null,
-  thisWeek: { year: number; week: number },
-): number | null {
-  if (key === null) return null;
-  return weeksBetween(
-    { year: Math.floor(key / 100), week: key % 100 },
-    thisWeek,
-  );
 }
 
 export interface RecipeBasketLine {
@@ -527,7 +647,7 @@ export async function loadRecipeBaskets(
 ): Promise<Map<string, RecipeBasket>> {
   if (recipeIds.length === 0) return new Map();
 
-  return inScope(ctx, async (tx) => {
+  return inScope(ctx, async ({ tx }) => {
     const recipes = await tx
       .select({ id: recipe.id, servings: recipe.servings })
       .from(recipe)
@@ -549,7 +669,12 @@ export async function loadRecipeBaskets(
       })
       .from(recipeIngredient)
       .leftJoin(ingredient, eq(ingredient.id, recipeIngredient.ingredientId))
-      .where(inArray(recipeIngredient.recipeId, [...recipeIds]))
+      .where(
+        and(
+          eq(recipeIngredient.userId, ctx.userId),
+          inArray(recipeIngredient.recipeId, [...recipeIds]),
+        ),
+      )
       .orderBy(asc(recipeIngredient.position));
 
     const baskets = new Map<string, RecipeBasket>();
@@ -569,9 +694,8 @@ export async function loadRecipeBaskets(
         rawName: line.rawName,
         canonicalName: line.canonicalName,
         aisle: line.aisle,
-        densityGPerMl:
-          line.densityGPerMl === null ? null : Number(line.densityGPerMl),
-        quantity: line.quantity === null ? null : Number(line.quantity),
+        densityGPerMl: numberOrNull(line.densityGPerMl),
+        quantity: numberOrNull(line.quantity),
         unit: line.unit,
         optional: line.optional,
       });
@@ -592,7 +716,7 @@ export async function loadRecipeSummaries(
 ): Promise<Map<string, RecipeSummary>> {
   if (recipeIds.length === 0) return new Map();
 
-  return inScope(ctx, async (tx) => {
+  return inScope(ctx, async ({ tx }) => {
     const rows = await tx
       .select({
         id: recipe.id,
@@ -644,11 +768,13 @@ export async function loadRecipesForValidation(
 ): Promise<Map<string, RecipeForValidation>> {
   if (recipeIds.length === 0) return new Map();
 
-  return inScope(ctx, async (tx) => {
+  return inScope(ctx, async ({ tx }) => {
     const recipes = await tx
       .select(recipeColumns)
       .from(recipe)
-      .where(and(eq(recipe.userId, ctx.userId), inArray(recipe.id, [...recipeIds])));
+      .where(
+        and(eq(recipe.userId, ctx.userId), inArray(recipe.id, [...recipeIds])),
+      );
 
     const lines = await tx
       .select({
@@ -659,28 +785,39 @@ export async function loadRecipesForValidation(
       })
       .from(recipeIngredient)
       .leftJoin(ingredient, eq(ingredient.id, recipeIngredient.ingredientId))
-      .where(inArray(recipeIngredient.recipeId, [...recipeIds]));
+      .where(
+        and(
+          eq(recipeIngredient.userId, ctx.userId),
+          inArray(recipeIngredient.recipeId, [...recipeIds]),
+        ),
+      );
 
-    const byRecipe = new Map<string, RecipeForValidation>();
-    for (const row of recipes) {
-      byRecipe.set(row.id, { recipe: row, ingredientTexts: [] });
-    }
+    // Collected into a mutable map and assembled after, rather than pushing
+    // through `(entry.ingredientTexts as IngredientText[])`. The cast was there
+    // to defeat the `readonly` on the interface, which is the interface saying
+    // the array is not to be mutated.
+    const textsByRecipe = new Map<string, IngredientText[]>();
     for (const line of lines) {
-      const entry = byRecipe.get(line.recipeId);
-      if (!entry) continue;
-      (entry.ingredientTexts as IngredientText[]).push({
+      const texts = textsByRecipe.get(line.recipeId) ?? [];
+      texts.push({
         rawName: line.rawName,
         canonicalName: line.canonicalName,
         aliases: line.aliases,
       });
+      textsByRecipe.set(line.recipeId, texts);
     }
 
-    return byRecipe;
+    return new Map(
+      recipes.map((row) => [
+        row.id,
+        { recipe: row, ingredientTexts: textsByRecipe.get(row.id) ?? [] },
+      ]),
+    );
   });
 }
 
 async function loadRecipe(
-  ctx: ServiceContext & { tx: NonNullable<ServiceContext["tx"]> },
+  ctx: ScopedContext,
   recipeId: string,
 ): Promise<RecipeDetail> {
   const { tx } = ctx;
@@ -716,7 +853,12 @@ async function loadRecipe(
     })
     .from(recipeIngredient)
     .leftJoin(ingredient, eq(ingredient.id, recipeIngredient.ingredientId))
-    .where(eq(recipeIngredient.recipeId, recipeId))
+    .where(
+      and(
+        eq(recipeIngredient.recipeId, recipeId),
+        eq(recipeIngredient.userId, ctx.userId),
+      ),
+    )
     .orderBy(asc(recipeIngredient.position));
 
   const steps = await tx
@@ -728,26 +870,93 @@ async function loadRecipe(
       unattended: recipeStep.unattended,
     })
     .from(recipeStep)
-    .where(eq(recipeStep.recipeId, recipeId))
+    .where(
+      and(eq(recipeStep.recipeId, recipeId), eq(recipeStep.userId, ctx.userId)),
+    )
     .orderBy(asc(recipeStep.position));
 
   return {
     recipe: found,
     ingredients: ingredients.map((row) => ({
       ...row,
-      quantity: row.quantity === null ? null : Number(row.quantity),
+      quantity: numberOrNull(row.quantity),
     })),
     steps,
   };
 }
 
+/** Takes the row lock `updateRecipe` needs before it reads a revision number. */
+async function lockRecipe(ctx: ScopedContext, recipeId: string): Promise<void> {
+  const rows = await ctx.tx.execute<{ id: string }>(sql`
+    select id from recipe
+    where id = ${recipeId} and user_id = ${ctx.userId}
+    for update
+  `);
+  if (rows.rows.length === 0) {
+    throw new DomainError(
+      "RECIPE_NOT_FOUND",
+      `Aucune recette ne correspond à l'identifiant ${recipeId}. Utilisez la recherche de recettes pour retrouver un identifiant valide.`,
+      { recipeId },
+    );
+  }
+}
+
+/**
+ * Resolves every ingredient line's link, and refuses an explicit
+ * `ingredientId` that is not this user's.
+ *
+ * The explicit id used to be inserted unchecked. A foreign key looks like it
+ * covers that, and it does not: foreign key checks run as the table owner and
+ * bypass row-level security, so naming another tenant's uuid succeeded when
+ * that row existed and failed when it did not, which answers a question about
+ * someone else's data. The row it wrote was then invisible to every join that
+ * scopes by user, so the ingredient silently did not link at all.
+ */
+async function resolveIngredientLinks(
+  ctx: ScopedContext,
+  parsed: RecipeInput,
+): Promise<Map<string, IngredientMatch>> {
+  const explicit = [
+    ...new Set(
+      parsed.ingredients
+        .map((line) => line.ingredientId)
+        .filter((id): id is string => id !== null),
+    ),
+  ];
+
+  if (explicit.length > 0) {
+    const owned = await ownedIngredientIds(ctx);
+    const unknown = explicit.filter((id) => !owned.has(id));
+    if (unknown.length > 0) {
+      throw new DomainError(
+        "VALIDATION",
+        `Ces identifiants d'ingrédient n'existent pas dans votre vocabulaire : ${unknown.join(", ")}. Laissez \`ingredientId\` à null pour laisser le rattachement se faire sur le nom, ou reprenez un identifiant de la liste des ingrédients.`,
+        { ingredientIds: unknown },
+      );
+    }
+  }
+
+  return linkIngredientNames(
+    ctx,
+    parsed.ingredients.map((line) => line.rawName),
+  );
+}
+
+/**
+ * Inserts the ingredient and step rows of a recipe.
+ *
+ * Takes a `ScopedContext` like every other helper in the service layer. It used
+ * to take `(tx, ctx, ...)`, which is the same two values in a shape nothing else
+ * used.
+ */
 async function writeChildren(
-  tx: NonNullable<ServiceContext["tx"]>,
-  ctx: ServiceContext,
+  ctx: ScopedContext,
   recipeId: string,
   parsed: RecipeInput,
-  links: Map<string, { id: string }>,
+  links: Map<string, IngredientMatch>,
 ): Promise<void> {
+  const { tx } = ctx;
+
   if (parsed.ingredients.length > 0) {
     await tx.insert(recipeIngredient).values(
       parsed.ingredients.map((line, index) => ({
@@ -759,7 +968,8 @@ async function writeChildren(
         rawName: line.rawName,
         note: line.note,
         optional: line.optional,
-        // An explicit link from the caller wins; otherwise best-effort.
+        // An explicit link from the caller wins, and it has been checked
+        // against this user's vocabulary by `resolveIngredientLinks`.
         ingredientId: line.ingredientId ?? links.get(line.rawName)?.id ?? null,
       })),
     );
@@ -780,42 +990,19 @@ async function writeChildren(
 }
 
 /**
- * Caches which of the user's allergens this recipe touches, for display and
- * filtering. It is a cache and nothing more: the strict block re-runs the
- * matcher against live data on every assignment, because an allergen added
- * after a recipe was saved must still block it.
+ * `%` and `_` are wildcards in `like`, so a user searching for "100_g" or for a
+ * literal "%" was running a pattern rather than a search. The backslash has to
+ * go first, since it is the escape character the query names.
  */
-async function refreshDerivedAllergens(
-  ctx: ServiceContext & { tx: NonNullable<ServiceContext["tx"]> },
-  recipeId: string,
-): Promise<void> {
-  const { tx } = ctx;
-  const allergens = await listAllergens(ctx);
-  if (allergens.length === 0) {
-    await tx.update(recipe).set({ allergenIds: [] }).where(eq(recipe.id, recipeId));
-    return;
-  }
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, "\\$&");
+}
 
-  const lines = await tx
-    .select({
-      rawName: recipeIngredient.rawName,
-      canonicalName: ingredient.canonicalName,
-      aliases: ingredient.aliases,
-    })
-    .from(recipeIngredient)
-    .leftJoin(ingredient, eq(ingredient.id, recipeIngredient.ingredientId))
-    .where(eq(recipeIngredient.recipeId, recipeId));
-
-  const hits = findAllergenHits(
-    lines,
-    allergens.map((row) => ({
-      id: row.id,
-      name: row.name,
-      severity: row.severity as "avoid" | "strict",
-      matches: row.matches,
-    })),
-  );
-
-  const allergenIds = [...new Set(hits.map((hit) => hit.allergenId))];
-  await tx.update(recipe).set({ allergenIds }).where(eq(recipe.id, recipeId));
+/**
+ * Postgres hands `numeric` back as a string, so every read of one converts.
+ * Written once here rather than as three inline ternaries; the grocery service
+ * imports it for the same reason.
+ */
+export function numberOrNull(value: string | null): number | null {
+  return value === null ? null : Number(value);
 }

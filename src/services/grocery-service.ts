@@ -3,10 +3,10 @@ import {
   groceryLine,
   groceryList,
   groceryListVersion,
-  plan,
   planEntry,
   planVersion,
 } from "@/db/schema";
+import { firstRow } from "@/db/rows";
 import { normalizeTerm } from "@/domain/allergens";
 import { DomainError } from "@/domain/errors";
 import {
@@ -25,12 +25,15 @@ import {
   type AggregatedGroceryLine,
   type GrocerySourceLine,
 } from "@/domain/grocery";
-import { isoWeekSchema } from "@/domain/schemas";
+import { manualLineInputSchema } from "@/domain/schemas";
+import { totalServingsFor } from "@/domain/prep";
+import type { GroceryLineOrigin, GroceryListState } from "@/domain/vocabulary";
 import type { IsoWeek } from "@/domain/week";
-import { inScope, type ServiceContext } from "./context";
+import { inScope, type ScopedContext, type ServiceContext } from "./context";
 import { loadPantryCoverage, type PantryCoverage } from "./pantry-service";
+import { findActivePlanVersion } from "./plan-queries";
 import { loadPrepLinks } from "./prep-service";
-import { loadRecipeBaskets } from "./recipe-service";
+import { loadRecipeBaskets, numberOrNull } from "./recipe-service";
 
 /**
  * The grocery list: generated from a plan version, then persisted and edited in
@@ -55,7 +58,7 @@ export interface GroceryLineView {
   readonly quantity: number | null;
   readonly unit: string | null;
   readonly aisle: string | null;
-  readonly origin: string;
+  readonly origin: GroceryLineOrigin;
   readonly checked: boolean;
   readonly coveredByPantry: boolean;
   /** Something to eat before it goes. Marked, never removed. */
@@ -80,7 +83,7 @@ export interface GroceryEntrySource {
 
 export interface GroceryListView {
   readonly id: string;
-  readonly state: string;
+  readonly state: GroceryListState;
   /** First and last day covered, as `yyyy-mm-dd`. */
   readonly startsOn: string;
   readonly endsOn: string;
@@ -116,8 +119,7 @@ export async function getGroceryList(
 ): Promise<GroceryListView | null> {
   const cycle = requireCycle(cycleStart);
 
-  return inScope(ctx, async (tx) => {
-    const scoped = { ...ctx, tx };
+  return inScope(ctx, async (scoped) => {
     const found = await findLiveList(scoped, cycle);
     if (!found) return null;
     return loadListView(scoped, found.listId);
@@ -135,8 +137,8 @@ export async function generateGroceryList(
 ): Promise<GenerateResult> {
   const cycle = requireCycle(cycleStart);
 
-  return inScope(ctx, async (tx) => {
-    const scoped = { ...ctx, tx };
+  return inScope(ctx, async (scoped) => {
+    const { tx } = scoped;
     const versions = await versionsForCycle(scoped, cycle);
     if (versions.length === 0) {
       throw new DomainError(
@@ -151,30 +153,20 @@ export async function generateGroceryList(
 
     const aggregated = await aggregateForCycle(scoped, cycle, versions);
     const coverage = await loadPantryCoverage(scoped);
-    const existing = await findLiveList(scoped, cycle);
 
-    if (!existing) {
-      const created = await tx
-        .insert(groceryList)
-        .values({
-          userId: ctx.userId,
-          startsOn: formatCycleStart(cycle.startsOn),
-          endsOn: formatCycleStart(cycle.endsOn),
-          state: "active",
-        })
-        .returning({ id: groceryList.id });
+    const listId = await ensureListForCycle(scoped, cycle);
 
-      const listId = created[0]!.id;
-      await recordVersions(scoped, listId, versions);
+    if (listId.created) {
+      await recordVersions(scoped, listId.id, versions);
       const inserted = await insertDerivedLines(
         scoped,
-        listId,
+        listId.id,
         aggregated,
         coverage,
       );
 
       return {
-        list: await loadListView(scoped, listId),
+        list: await loadListView(scoped, listId.id),
         diff: {
           added: inserted.length,
           updated: 0,
@@ -185,20 +177,60 @@ export async function generateGroceryList(
       };
     }
 
-    const diff = await mergeIntoList(
-      scoped,
-      existing.listId,
-      aggregated,
-      coverage,
-    );
-    await recordVersions(scoped, existing.listId, versions);
+    const diff = await mergeIntoList(scoped, listId.id, aggregated, coverage);
+    await recordVersions(scoped, listId.id, versions);
+    // `updatedAt` carries `$onUpdate`, so the touch only has to be an update.
     await tx
       .update(groceryList)
-      .set({ updatedAt: new Date() })
-      .where(eq(groceryList.id, existing.listId));
+      .set({ state: "active" })
+      .where(
+        and(eq(groceryList.id, listId.id), eq(groceryList.userId, ctx.userId)),
+      );
 
-    return { list: await loadListView(scoped, existing.listId), diff };
+    return { list: await loadListView(scoped, listId.id), diff };
   });
+}
+
+/**
+ * The live list for this cycle, created if there is none.
+ *
+ * Find-then-insert is a race against `grocery_list_one_live_per_cycle_idx`: two
+ * regenerations of the same cycle arriving together both found nothing and both
+ * inserted, and the loser got a raw `23505` rather than merging into the list
+ * the winner had just created. The insert is now conditional and a conflict is
+ * resolved by re-reading, which is the same shape `ensurePlan` and `getProfile`
+ * use.
+ */
+async function ensureListForCycle(
+  ctx: ScopedContext,
+  cycle: ShoppingCycle,
+): Promise<{ id: string; created: boolean }> {
+  const existing = await findLiveList(ctx, cycle);
+  if (existing) return { id: existing.listId, created: false };
+
+  const created = await ctx.tx
+    .insert(groceryList)
+    .values({
+      userId: ctx.userId,
+      startsOn: formatCycleStart(cycle.startsOn),
+      endsOn: formatCycleStart(cycle.endsOn),
+      state: "active",
+    })
+    .onConflictDoNothing()
+    .returning({ id: groceryList.id });
+
+  const [row] = created;
+  if (row) return { id: row.id, created: true };
+
+  const reread = await findLiveList(ctx, cycle);
+  if (!reread) {
+    throw new DomainError(
+      "VALIDATION",
+      `La liste de courses du cycle du ${formatCycleStart(cycle.startsOn)} n'a pas pu être créée.`,
+      { startsOn: formatCycleStart(cycle.startsOn) },
+    );
+  }
+  return { id: reread.listId, created: false };
 }
 
 /**
@@ -223,60 +255,56 @@ export async function setLineChecked(
   lineId: string,
   checked: boolean,
 ): Promise<void> {
-  await inScope(ctx, async (tx) => {
+  await inScope(ctx, async ({ tx }) => {
     const rows = await tx
       .update(groceryLine)
       .set({ checked })
-      .where(eq(groceryLine.id, lineId))
+      .where(
+        and(eq(groceryLine.id, lineId), eq(groceryLine.userId, ctx.userId)),
+      )
       .returning({ id: groceryLine.id });
     if (!rows[0]) {
-      throw new DomainError("NOT_FOUND", "Cette ligne n'existe pas.", { lineId });
+      throw new DomainError("NOT_FOUND", "Cette ligne n'existe pas.", {
+        lineId,
+      });
     }
   });
-}
-
-export interface ManualLineInput {
-  readonly displayName: string;
-  readonly quantity?: number | null;
-  readonly unit?: string | null;
-  readonly aisle?: string | null;
 }
 
 /**
  * Coffee, dish soap, the things no recipe knows about. Manual lines are never
  * touched by a regeneration.
+ *
+ * `manualLineInputSchema` validates rather than an interface plus one length
+ * check. The old shape looked at `displayName` and nothing else, so a negative
+ * quantity, a twenty-thousand-character unit and an arbitrary aisle all went
+ * straight into the row.
  */
 export async function addManualLine(
   ctx: ServiceContext,
   listId: string,
-  input: ManualLineInput,
+  input: unknown,
 ): Promise<GroceryLineView> {
-  const displayName = input.displayName.trim();
-  if (displayName.length === 0 || displayName.length > 200) {
-    throw new DomainError(
-      "VALIDATION",
-      "Le nom d'une ligne manuelle doit faire entre 1 et 200 caractères.",
-      { displayName: input.displayName },
-    );
-  }
+  const parsed = manualLineInputSchema.parse(input);
 
-  return inScope(ctx, async (tx) => {
-    await requireList({ ...ctx, tx }, listId);
-    const rows = await tx
+  return inScope(ctx, async (scoped) => {
+    await requireList(scoped, listId);
+    const rows = await scoped.tx
       .insert(groceryLine)
       .values({
         userId: ctx.userId,
         groceryListId: listId,
-        displayName,
-        quantity: input.quantity === null || input.quantity === undefined
-          ? null
-          : String(input.quantity),
-        unit: input.unit ?? null,
-        aisle: input.aisle ?? null,
+        displayName: parsed.displayName,
+        quantity: parsed.quantity === null ? null : String(parsed.quantity),
+        unit: parsed.unit,
+        aisle: parsed.aisle,
         origin: "manual",
       })
       .returning();
-    return toLineView(rows[0]!, await loadPantryCoverage({ ...ctx, tx }));
+    return toLineView(
+      firstRow(rows, "manual grocery line insert"),
+      await loadPantryCoverage(scoped),
+    );
   });
 }
 
@@ -284,8 +312,18 @@ export async function deleteLine(
   ctx: ServiceContext,
   lineId: string,
 ): Promise<void> {
-  await inScope(ctx, async (tx) => {
-    await tx.delete(groceryLine).where(eq(groceryLine.id, lineId));
+  await inScope(ctx, async ({ tx }) => {
+    const rows = await tx
+      .delete(groceryLine)
+      .where(
+        and(eq(groceryLine.id, lineId), eq(groceryLine.userId, ctx.userId)),
+      )
+      .returning({ id: groceryLine.id });
+    if (!rows[0]) {
+      throw new DomainError("NOT_FOUND", "Cette ligne n'existe pas.", {
+        lineId,
+      });
+    }
   });
 }
 
@@ -293,19 +331,28 @@ export async function archiveGroceryList(
   ctx: ServiceContext,
   listId: string,
 ): Promise<void> {
-  await inScope(ctx, async (tx) => {
-    await tx
+  await inScope(ctx, async ({ tx }) => {
+    const rows = await tx
       .update(groceryList)
-      .set({ state: "archived", updatedAt: new Date() })
-      .where(eq(groceryList.id, listId));
+      .set({ state: "archived" })
+      .where(
+        and(
+          eq(groceryList.id, listId),
+          eq(groceryList.userId, ctx.userId),
+          ne(groceryList.state, "archived"),
+        ),
+      )
+      .returning({ id: groceryList.id });
+    if (!rows[0]) {
+      throw new DomainError(
+        "NOT_FOUND",
+        "Cette liste de courses n'existe pas ou est déjà archivée.",
+        { listId },
+      );
+    }
   });
 }
 
-/**
- * Reads the week's entries, scales every recipe to the servings the entry asks
- * for, and aggregates. Soft-deleted recipes still contribute: the meal is still
- * planned, and the shopper still needs the ingredients.
- */
 interface CycleVersion {
   readonly id: string;
   readonly versionNumber: number;
@@ -318,12 +365,14 @@ interface CycleVersion {
  * nothing, which is how a half-planned cycle still produces a usable list.
  */
 async function versionsForCycle(
-  ctx: ServiceContext & { tx: NonNullable<ServiceContext["tx"]> },
+  ctx: ScopedContext,
   cycle: ShoppingCycle,
 ): Promise<CycleVersion[]> {
   const found: CycleVersion[] = [];
   for (const week of isoWeeksInCycle(cycle)) {
-    const active = await findActiveVersion(ctx, week);
+    // `findActivePlanVersion` lives in plan-queries. This file used to carry
+    // its own join for it, which was `findPlan` plus `findVersion` written out.
+    const active = await findActivePlanVersion(ctx, week);
     if (active) found.push({ ...active, week });
   }
   return found;
@@ -331,13 +380,18 @@ async function versionsForCycle(
 
 /** Rewritten on every regeneration, so staleness always reflects the last build. */
 async function recordVersions(
-  ctx: ServiceContext & { tx: NonNullable<ServiceContext["tx"]> },
+  ctx: ScopedContext,
   listId: string,
   versions: readonly CycleVersion[],
 ): Promise<void> {
   await ctx.tx
     .delete(groceryListVersion)
-    .where(eq(groceryListVersion.groceryListId, listId));
+    .where(
+      and(
+        eq(groceryListVersion.userId, ctx.userId),
+        eq(groceryListVersion.groceryListId, listId),
+      ),
+    );
 
   if (versions.length === 0) return;
   await ctx.tx.insert(groceryListVersion).values(
@@ -352,6 +406,12 @@ async function recordVersions(
 /**
  * What to buy for one shopping cycle.
  *
+ * Reads the cycle's entries, scales every recipe to the servings the entry asks
+ * for, and aggregates. Soft-deleted recipes still contribute: the meal is still
+ * planned, and the shopper still needs the ingredients. (This docstring used to
+ * sit on the `CycleVersion` interface above, which is a three-field record and
+ * does none of it.)
+ *
  * The rule is about cooking sessions, not about meals. You buy for a session
  * that happens inside the cycle, scaled to cover everything it feeds, including
  * a meal that will be eaten after the next shop: the cooking is now, so the
@@ -362,7 +422,7 @@ async function recordVersions(
  * cycle fall outside it and drop off the list instead of sitting there unticked.
  */
 async function aggregateForCycle(
-  ctx: ServiceContext & { tx: NonNullable<ServiceContext["tx"]> },
+  ctx: ScopedContext,
   cycle: ShoppingCycle,
   versions: readonly CycleVersion[],
 ): Promise<AggregatedGroceryLine[]> {
@@ -378,9 +438,12 @@ async function aggregateForCycle(
     })
     .from(planEntry)
     .where(
-      inArray(
-        planEntry.planVersionId,
-        versions.map((version) => version.id),
+      and(
+        eq(planEntry.userId, ctx.userId),
+        inArray(
+          planEntry.planVersionId,
+          versions.map((version) => version.id),
+        ),
       ),
     );
 
@@ -418,13 +481,12 @@ async function aggregateForCycle(
       .filter((link) => link.sourceEntryId !== null)
       .map((link) => link.dependentEntryId),
   );
-  const drawnBySource = new Map<string, number>();
+  const drawsBySource = new Map<string, Array<{ servingsDrawn: number }>>();
   for (const link of links) {
     if (!link.sourceEntryId) continue;
-    drawnBySource.set(
-      link.sourceEntryId,
-      (drawnBySource.get(link.sourceEntryId) ?? 0) + link.servingsDrawn,
-    );
+    const draws = drawsBySource.get(link.sourceEntryId) ?? [];
+    draws.push({ servingsDrawn: link.servingsDrawn });
+    drawsBySource.set(link.sourceEntryId, draws);
   }
 
   const sourceLines: GrocerySourceLine[] = [];
@@ -438,7 +500,13 @@ async function aggregateForCycle(
     const basket = baskets.get(entry.recipeId);
     if (!basket) continue;
 
-    const servings = entry.servings + (drawnBySource.get(entry.id) ?? 0);
+    // `totalServingsFor` from src/domain/prep.ts, which is where the model
+    // "the source's servings are its own meal, and the draws are added on top"
+    // is decided. This file reimplemented the same sum.
+    const servings = totalServingsFor(
+      { servings: entry.servings },
+      drawsBySource.get(entry.id) ?? [],
+    );
 
     for (const line of basket.lines) {
       sourceLines.push({
@@ -462,9 +530,16 @@ async function aggregateForCycle(
  * The merge. A derived line that still exists keeps its checked state and takes
  * the new quantity; one that no longer has a source is dropped; a new one
  * arrives unchecked. Manual lines are not considered at all.
+ *
+ * The writes are batched. This used to issue one INSERT or one UPDATE per
+ * aggregated line, and it updated every surviving line whether or not anything
+ * about it had changed, so regenerating an unchanged forty-line list was forty
+ * pointless UPDATEs inside the transaction. New lines go in one insert, and a
+ * surviving line is only written when one of its stored fields actually
+ * differs.
  */
 async function mergeIntoList(
-  ctx: ServiceContext & { tx: NonNullable<ServiceContext["tx"]> },
+  ctx: ScopedContext,
   listId: string,
   aggregated: readonly AggregatedGroceryLine[],
   coverage: PantryCoverage,
@@ -476,6 +551,7 @@ async function mergeIntoList(
     .from(groceryLine)
     .where(
       and(
+        eq(groceryLine.userId, ctx.userId),
         eq(groceryLine.groceryListId, listId),
         eq(groceryLine.origin, "derived"),
       ),
@@ -483,10 +559,10 @@ async function mergeIntoList(
 
   const byKey = new Map(current.map((row) => [matchKeyOfRow(row), row]));
   const changedLineIds: string[] = [];
-  let added = 0;
   let updated = 0;
   let unchanged = 0;
 
+  const toInsert: AggregatedGroceryLine[] = [];
   const seen = new Set<string>();
 
   for (const line of aggregated) {
@@ -500,53 +576,69 @@ async function mergeIntoList(
     const existing = byKey.get(key);
 
     if (!existing) {
-      const inserted = await tx
-        .insert(groceryLine)
-        .values(derivedValues(ctx.userId, listId, line, coverage))
-        .returning({ id: groceryLine.id });
-      added += 1;
-      changedLineIds.push(inserted[0]!.id);
+      toInsert.push(line);
       continue;
     }
 
-    const sameQuantity =
-      numberOrNull(existing.quantity) === line.quantity &&
-      existing.unit === line.unit;
+    const next = {
+      quantity: line.quantity === null ? null : String(line.quantity),
+      unit: line.unit,
+      aisle: line.aisle,
+      sourceEntryIds: line.sourceEntryIds,
+      // Re-evaluated on every regeneration: a staple added since last time
+      // should drop off the list now, not next week.
+      coveredByPantry: matchesCoverage(
+        line,
+        coverage.stapleIngredientIds,
+        coverage.stapleNames,
+      ),
+      unmergeableGroup: line.unmergeableGroup,
+    };
+
+    const visible = shopperVisibleChange(existing, next);
+
+    if (!needsWrite(existing, next)) {
+      unchanged += 1;
+      continue;
+    }
 
     await tx
       .update(groceryLine)
-      .set({
-        quantity: line.quantity === null ? null : String(line.quantity),
-        unit: line.unit,
-        aisle: line.aisle,
-        sourceEntryIds: line.sourceEntryIds,
-        // Re-evaluated on every regeneration: a staple added since last time
-        // should drop off the list now, not next week.
-        coveredByPantry: isCovered(line, coverage),
-        unmergeableGroup: line.unmergeableGroup,
-      })
-      .where(eq(groceryLine.id, existing.id));
+      .set(next)
+      .where(
+        and(
+          eq(groceryLine.id, existing.id),
+          eq(groceryLine.userId, ctx.userId),
+        ),
+      );
 
-    if (sameQuantity) {
-      unchanged += 1;
-    } else {
+    // Written either way, reported only when the shopping actually differs.
+    if (visible) {
       updated += 1;
       changedLineIds.push(existing.id);
+    } else {
+      unchanged += 1;
     }
   }
+
+  const inserted = await insertDerivedLines(ctx, listId, toInsert, coverage);
+  changedLineIds.push(...inserted);
 
   const orphaned = current.filter((row) => !seen.has(matchKeyOfRow(row)));
   if (orphaned.length > 0) {
     await tx.delete(groceryLine).where(
-      inArray(
-        groceryLine.id,
-        orphaned.map((row) => row.id),
+      and(
+        eq(groceryLine.userId, ctx.userId),
+        inArray(
+          groceryLine.id,
+          orphaned.map((row) => row.id),
+        ),
       ),
     );
   }
 
   return {
-    added,
+    added: inserted.length,
     updated,
     unchanged,
     removed: orphaned.length,
@@ -554,8 +646,72 @@ async function mergeIntoList(
   };
 }
 
+/**
+ * Whether a stored line already says what the regeneration wants it to say.
+ *
+ * All five stored fields are compared, not only the quantity and the unit. The
+ * old check compared those two and then wrote anyway, so the diff reported
+ * "unchanged" for a line whose aisle or pantry coverage had in fact just
+ * changed, and the screen highlighted nothing.
+ */
+interface MergedLineFields {
+  quantity: string | null;
+  unit: string | null;
+  aisle: string | null;
+  sourceEntryIds: string[];
+  coveredByPantry: boolean;
+  unmergeableGroup: string | null;
+}
+
+/**
+ * What the shopper would notice.
+ *
+ * Kept apart from `needsWrite` below because the two answer different
+ * questions, and conflating them made the diff lie. `diff.updated` and
+ * `diff.changedLineIds` are what the screen uses to say what moved since the
+ * last list, so they must mean "this line is different to buy", not "this row
+ * was written".
+ */
+function shopperVisibleChange(
+  row: typeof groceryLine.$inferSelect,
+  next: MergedLineFields,
+): boolean {
+  return (
+    numberOrNull(row.quantity) !== numberOrNull(next.quantity) ||
+    row.unit !== next.unit ||
+    row.aisle !== next.aisle ||
+    row.coveredByPantry !== next.coveredByPantry ||
+    row.unmergeableGroup !== next.unmergeableGroup
+  );
+}
+
+/**
+ * Whether the row has to be written at all.
+ *
+ * `sourceEntryIds` is provenance, not content: it is what lets the screen say
+ * which meal a line came from. Plan versions are immutable, so assigning one
+ * new meal writes a whole new version and every entry in the week gets a new
+ * id. Every derived line's pointers therefore have to be rewritten, even the
+ * ones whose quantity, unit and aisle are all identical.
+ *
+ * That is why it is excluded from `shopperVisibleChange`. Counting it there
+ * reported every line in the week as having moved whenever any one meal
+ * changed: regenerating after adding a gratin said the pepper and the onions
+ * had changed too, when nothing about buying them had.
+ */
+function needsWrite(
+  row: typeof groceryLine.$inferSelect,
+  next: MergedLineFields,
+): boolean {
+  return (
+    shopperVisibleChange(row, next) ||
+    row.sourceEntryIds.length !== next.sourceEntryIds.length ||
+    row.sourceEntryIds.some((id, index) => id !== next.sourceEntryIds[index])
+  );
+}
+
 async function insertDerivedLines(
-  ctx: ServiceContext & { tx: NonNullable<ServiceContext["tx"]> },
+  ctx: ScopedContext,
   listId: string,
   lines: readonly AggregatedGroceryLine[],
   coverage: PantryCoverage,
@@ -586,7 +742,11 @@ function derivedValues(
     aisle: line.aisle,
     origin: "derived" as const,
     sourceEntryIds: line.sourceEntryIds,
-    coveredByPantry: isCovered(line, coverage),
+    coveredByPantry: matchesCoverage(
+      line,
+      coverage.stapleIngredientIds,
+      coverage.stapleNames,
+    ),
     unmergeableGroup: line.unmergeableGroup,
     optional: line.optional,
     productVariant: line.productVariant,
@@ -594,46 +754,40 @@ function derivedValues(
 }
 
 /**
- * A line is covered when the pantry says so, by linked ingredient or by name.
- * Matching on the name too is what makes an unlinked staple still useful.
+ * Whether the pantry says something about this line, by linked ingredient or by
+ * name.
+ *
+ * One function over two pairs of sets, because "is it a staple" and "should it
+ * be used soon" were the same fifteen lines twice. Matching on the name too is
+ * what makes an unlinked staple still useful.
  *
  * The ingredient half is skipped for a product variant: flour in the cupboard
  * does not cover the puff pastry that resolved to it, and a line silently
  * dropped is a dinner that does not happen.
+ *
+ * The name comparison is `normalizeTerm`, the same folding the allergen matcher
+ * and `matchKey` below use. It was `trim().toLowerCase()` on this side only, so
+ * a pantry holding "Crème fraîche" covered nothing written "creme fraiche" and
+ * "Œufs" never covered "oeufs": two halves of one comparison disagreeing about
+ * what the same word is.
  */
-function isCovered(
-  line: Pick<
-    AggregatedGroceryLine,
-    "ingredientId" | "displayName" | "productVariant"
-  >,
-  coverage: PantryCoverage,
-): boolean {
-  if (
-    line.ingredientId &&
-    !line.productVariant &&
-    coverage.stapleIngredientIds.has(line.ingredientId)
-  ) {
-    return true;
-  }
-  return coverage.stapleNames.has(line.displayName.trim().toLowerCase());
-}
-
-function isUseSoon(
+function matchesCoverage(
   line: {
     ingredientId: string | null;
     displayName: string;
     productVariant: boolean;
   },
-  coverage: PantryCoverage,
+  ingredientIds: ReadonlySet<string>,
+  names: ReadonlySet<string>,
 ): boolean {
   if (
     line.ingredientId &&
     !line.productVariant &&
-    coverage.useSoonIngredientIds.has(line.ingredientId)
+    ingredientIds.has(line.ingredientId)
   ) {
     return true;
   }
-  return coverage.useSoonNames.has(line.displayName.trim().toLowerCase());
+  return names.has(normalizeTerm(line.displayName));
 }
 
 /**
@@ -657,36 +811,13 @@ function matchKeyOfRow(row: typeof groceryLine.$inferSelect): string {
   return matchKey(row.ingredientId, row.displayName, row.unit, row.optional);
 }
 
-async function findActiveVersion(
-  ctx: ServiceContext & { tx: NonNullable<ServiceContext["tx"]> },
-  isoWeek: IsoWeek,
-): Promise<{ id: string; versionNumber: number } | null> {
-  const rows = await ctx.tx
-    .select({
-      id: planVersion.id,
-      versionNumber: planVersion.versionNumber,
-    })
-    .from(planVersion)
-    .innerJoin(plan, eq(plan.id, planVersion.planId))
-    .where(
-      and(
-        eq(plan.userId, ctx.userId),
-        eq(plan.isoYear, isoWeek.year),
-        eq(plan.isoWeek, isoWeek.week),
-        eq(planVersion.state, "active"),
-      ),
-    )
-    .limit(1);
-  return rows[0] ?? null;
-}
-
 /**
  * The live list for a cycle, found by the date it starts on. A cycle can span
  * two ISO weeks, so there is nothing to join through: the start date is the
  * list's identity.
  */
 async function findLiveList(
-  ctx: ServiceContext & { tx: NonNullable<ServiceContext["tx"]> },
+  ctx: ScopedContext,
   cycle: ShoppingCycle,
 ): Promise<{ listId: string } | null> {
   const rows = await ctx.tx
@@ -704,14 +835,11 @@ async function findLiveList(
   return rows[0] ?? null;
 }
 
-async function requireList(
-  ctx: ServiceContext & { tx: NonNullable<ServiceContext["tx"]> },
-  listId: string,
-): Promise<void> {
+async function requireList(ctx: ScopedContext, listId: string): Promise<void> {
   const rows = await ctx.tx
     .select({ id: groceryList.id })
     .from(groceryList)
-    .where(eq(groceryList.id, listId))
+    .where(and(eq(groceryList.id, listId), eq(groceryList.userId, ctx.userId)))
     .limit(1);
   if (!rows[0]) {
     throw new DomainError("NOT_FOUND", "Cette liste de courses n'existe pas.", {
@@ -721,7 +849,7 @@ async function requireList(
 }
 
 async function loadListView(
-  ctx: ServiceContext & { tx: NonNullable<ServiceContext["tx"]> },
+  ctx: ScopedContext,
   listId: string,
 ): Promise<GroceryListView> {
   const { tx } = ctx;
@@ -732,18 +860,15 @@ async function loadListView(
       state: groceryList.state,
       startsOn: groceryList.startsOn,
       endsOn: groceryList.endsOn,
-      generatedAt: groceryList.generatedAt,
+      // The Drizzle property is `createdAt` now; the column is unchanged. The
+      // view keeps calling it `generatedAt`, which is what the screens read and
+      // the better name for the concept.
+      generatedAt: groceryList.createdAt,
       updatedAt: groceryList.updatedAt,
     })
     .from(groceryList)
-    .where(eq(groceryList.id, listId))
+    .where(and(eq(groceryList.id, listId), eq(groceryList.userId, ctx.userId)))
     .limit(1);
-
-  const versions = await tx
-    .select({ state: planVersion.state })
-    .from(groceryListVersion)
-    .innerJoin(planVersion, eq(planVersion.id, groceryListVersion.planVersionId))
-    .where(eq(groceryListVersion.groceryListId, listId));
 
   const list = lists[0];
   if (!list) {
@@ -752,10 +877,29 @@ async function loadListView(
     });
   }
 
+  const versions = await tx
+    .select({ state: planVersion.state })
+    .from(groceryListVersion)
+    .innerJoin(
+      planVersion,
+      eq(planVersion.id, groceryListVersion.planVersionId),
+    )
+    .where(
+      and(
+        eq(groceryListVersion.userId, ctx.userId),
+        eq(groceryListVersion.groceryListId, listId),
+      ),
+    );
+
   const lines = await tx
     .select()
     .from(groceryLine)
-    .where(eq(groceryLine.groceryListId, listId))
+    .where(
+      and(
+        eq(groceryLine.userId, ctx.userId),
+        eq(groceryLine.groceryListId, listId),
+      ),
+    )
     .orderBy(asc(groceryLine.displayName));
 
   const coverage = await loadPantryCoverage(ctx);
@@ -772,11 +916,16 @@ async function loadListView(
             recipeId: planEntry.recipeId,
           })
           .from(planEntry)
-          .where(inArray(planEntry.id, entryIds));
+          .where(
+            and(
+              eq(planEntry.userId, ctx.userId),
+              inArray(planEntry.id, entryIds),
+            ),
+          );
 
   return {
     id: list.id,
-    state: list.state,
+    state: list.state as GroceryListState,
     startsOn: list.startsOn,
     endsOn: list.endsOn,
     // A list built from a superseded version is still perfectly shoppable; the
@@ -785,9 +934,7 @@ async function loadListView(
     stale: versions.some((row) => row.state !== "active"),
     generatedAt: list.generatedAt,
     updatedAt: list.updatedAt,
-    lines: lines
-      .map((row) => toLineView(row, coverage))
-      .sort(compareLines),
+    lines: lines.map((row) => toLineView(row, coverage)).sort(compareLines),
     sources,
   };
 }
@@ -803,16 +950,16 @@ function toLineView(
     quantity: numberOrNull(row.quantity),
     unit: row.unit,
     aisle: row.aisle,
-    origin: row.origin,
+    origin: row.origin as GroceryLineOrigin,
     checked: row.checked,
     coveredByPantry: row.coveredByPantry,
-    useSoon: isUseSoon(row, coverage),
+    useSoon: matchesCoverage(
+      row,
+      coverage.useSoonIngredientIds,
+      coverage.useSoonNames,
+    ),
     optional: row.optional,
     unmergeableGroup: row.unmergeableGroup,
     sourceEntryIds: row.sourceEntryIds,
   };
-}
-
-function numberOrNull(value: string | null): number | null {
-  return value === null ? null : Number(value);
 }

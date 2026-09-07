@@ -9,7 +9,7 @@ import {
   type RankedFact,
   type SnapshotFact,
 } from "@/domain/snapshot";
-import { DEFAULT_FACT_CAP } from "@/domain/vocabulary";
+import { DEFAULT_FACT_CAP, type Diet } from "@/domain/vocabulary";
 import { inScope, type ServiceContext } from "./context";
 import { listFacts, markFactsReferenced } from "./fact-service";
 import { loadHistory, loadSignals } from "./history-service";
@@ -55,9 +55,7 @@ export async function composeProfileSnapshot(
 ): Promise<SnapshotResult> {
   const budget = options.factBudget ?? DEFAULT_SNAPSHOT_FACT_BUDGET;
 
-  return inScope(ctx, async (tx) => {
-    const scoped = { ...ctx, tx };
-
+  return inScope(ctx, async (scoped) => {
     const enforcement = await loadEnforcementContext(scoped);
     const slots = await loadSlotDefinitions(scoped);
     const activeFacts = await listFacts(scoped, {});
@@ -67,6 +65,13 @@ export async function composeProfileSnapshot(
     const { signals } = await loadSignals(scoped);
     const pantry = await listPantry(scoped);
 
+    // No narrowing needed on the way in any more: `FactView` carries the
+    // vocabulary unions, and `RankedFact` wants exactly those, so a value the
+    // database holds but the union does not know about cannot reach the label
+    // records in src/domain/snapshot.ts. Those records are exhaustive and their
+    // runtime fallbacks are gone, so a missing label is now a build error
+    // rather than a raw database token rendered into the document an agent
+    // reads as instructions.
     const ranked: RankedFact[] = activeFacts.map((row) => ({
       id: row.id,
       statement: row.statement,
@@ -118,7 +123,14 @@ export async function composeProfileSnapshot(
       factBudget: {
         included: selected.length,
         active: activeFacts.length,
-        cap: Math.min(budget, DEFAULT_FACT_CAP),
+        // The store's cap, which is what the field name and the rendered
+        // sentence ("plafond d'affichage") both claim. It was
+        // `Math.min(budget, DEFAULT_FACT_CAP)`, which for every real call is
+        // the budget again: the document then told the agent that the cap on
+        // the number of facts it could hold was 150, when it is 300, and an
+        // agent that believes it is near a cap starts retiring facts to make
+        // room it already has.
+        cap: DEFAULT_FACT_CAP,
       },
       hardConstraints: {
         strictAllergens: enforcement.allergens
@@ -127,7 +139,11 @@ export async function composeProfileSnapshot(
             name: allergen.name,
             matches: [...allergen.matches],
           })),
-        diet: profile.diet,
+        // `profile.diet` is `text` plus `check profile_diet_known`, so Drizzle
+        // types it `string`. Narrowed here, at the boundary, because
+        // `DIET_LABELS` is exhaustive over `Diet` and a value outside the union
+        // would index it with nothing there.
+        diet: profile.diet as Diet,
         dietNotes: profile.dietNotes,
       },
       strongPreferences: {

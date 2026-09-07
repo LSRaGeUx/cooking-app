@@ -18,6 +18,20 @@ export interface ServiceContext {
   readonly tx?: Tx;
 }
 
+/**
+ * A context that is definitely inside a transaction, which is what every
+ * private helper in the service layer actually wants.
+ *
+ * It exists because the type was spelled out by hand, as
+ * `ServiceContext & { tx: NonNullable<ServiceContext["tx"]> }`, at about twenty
+ * signatures, and the matching value was rebuilt as `{ ...ctx, tx }` at about
+ * thirty call sites. `inScope` now hands one to its callback, so neither
+ * spelling is needed anywhere.
+ */
+export type ScopedContext = ServiceContext & {
+  tx: NonNullable<ServiceContext["tx"]>;
+};
+
 export function userContext(userId: string): ServiceContext {
   return { userId, actor: "user", clientId: null };
 }
@@ -29,19 +43,21 @@ export function agentContext(
   return { userId, actor: "agent", clientId };
 }
 
-export function withTx(ctx: ServiceContext, tx: Tx): ServiceContext {
-  return { ...ctx, tx };
-}
-
 /**
  * Runs `fn` with the tenancy scope set, reusing the caller's transaction when
  * there is one. Re-entrant on purpose: a plan version write calls the recipe
  * and profile services and all of it has to commit or roll back together.
+ *
+ * The callback receives a `ScopedContext` rather than a bare `Tx`. Handing over
+ * the transaction alone meant every service that wanted to call another one
+ * rebuilt `{ ...ctx, tx }` itself, and a call that forgot opened a second
+ * transaction that could commit while the outer one rolled back. The queries
+ * read `scoped.tx`, which is the same handle.
  */
 export async function inScope<T>(
   ctx: ServiceContext,
-  fn: (tx: Tx) => Promise<T>,
+  fn: (scoped: ScopedContext) => Promise<T>,
 ): Promise<T> {
-  if (ctx.tx) return fn(ctx.tx);
-  return withUser(ctx.userId, fn);
+  if (ctx.tx) return fn({ ...ctx, tx: ctx.tx });
+  return withUser(ctx.userId, (tx) => fn({ ...ctx, tx }));
 }
