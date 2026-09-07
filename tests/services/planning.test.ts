@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DomainError } from "@/domain/errors";
 import { createAllergen } from "@/services/profile-service";
 import { ensureUserSetup } from "@/services/onboarding-service";
 import {
@@ -14,7 +13,12 @@ import {
 } from "@/services/plan-service";
 import { createRecipe } from "@/services/recipe-service";
 import { listMealTypes, setSlotConfig } from "@/services/slot-service";
-import { cleanupUser, testUser } from "../helpers/fixtures";
+import {
+  cleanupUser,
+  expectDomainError,
+  setupTestUser,
+  testUser,
+} from "../helpers";
 
 /**
  * The rules this file pins down are the ones the whole product rests on:
@@ -40,7 +44,10 @@ const creamyRecipe = {
   title: "Gratin dauphinois",
   servings: 4,
   activeTimeMin: 25,
-  ingredients: [{ rawName: "500 ml de crème fraîche" }, { rawName: "1 kg de pommes de terre" }],
+  ingredients: [
+    { rawName: "500 ml de crème fraîche" },
+    { rawName: "1 kg de pommes de terre" },
+  ],
   steps: [{ text: "Enfourner." }],
 };
 
@@ -82,7 +89,9 @@ describe("an unplanned week", () => {
     expect(view.activeVersion).toBeNull();
     expect(view.entries).toEqual([]);
     // The seeded grid: dinner planned every day.
-    expect(view.slots.filter((slot) => slot.state === "planned")).toHaveLength(7);
+    expect(view.slots.filter((slot) => slot.state === "planned")).toHaveLength(
+      7,
+    );
   });
 });
 
@@ -120,7 +129,9 @@ describe("assigning a recipe", () => {
     expect(result.entries).toHaveLength(2);
 
     const versions = await listVersions(ctx, target);
-    expect(versions.map((version) => [version.versionNumber, version.state])).toEqual([
+    expect(
+      versions.map((version) => [version.versionNumber, version.state]),
+    ).toEqual([
       [2, "active"],
       [1, "superseded"],
     ]);
@@ -155,34 +166,26 @@ describe("slot rules", () => {
       defaultServings: null,
     });
 
-    let thrown: unknown;
-    try {
-      await assignRecipe(ctx, week(4), {
+    const error = await expectDomainError(
+      assignRecipe(ctx, week(4), {
         dayOfWeek: 5,
         mealTypeId: dinnerId,
         recipeId: quickId,
-      });
-    } catch (error) {
-      thrown = error;
-    }
-
-    const error = thrown as DomainError;
-    expect(error.code).toBe("SLOT_NOT_PLANNED");
+      }),
+      "SLOT_NOT_PLANNED",
+    );
     expect(Array.isArray(error.details.available)).toBe(true);
   });
 
   it("refuses a (day, meal) that is not configured at all", async () => {
-    let thrown: unknown;
-    try {
-      await assignRecipe(ctx, week(4), {
+    await expectDomainError(
+      assignRecipe(ctx, week(4), {
         dayOfWeek: 3,
         mealTypeId: lunchId,
         recipeId: quickId,
-      });
-    } catch (error) {
-      thrown = error;
-    }
-    expect((thrown as DomainError).code).toBe("SLOT_UNKNOWN");
+      }),
+      "SLOT_UNKNOWN",
+    );
   });
 
   it("keeps an entry as orphaned when its slot stops being planned", async () => {
@@ -227,19 +230,14 @@ describe("time budget", () => {
       defaultServings: null,
     });
 
-    let thrown: unknown;
-    try {
-      await assignRecipe(ctx, week(6), {
+    const error = await expectDomainError(
+      assignRecipe(ctx, week(6), {
         dayOfWeek: 2,
         mealTypeId: dinnerId,
         recipeId: longId,
-      });
-    } catch (error) {
-      thrown = error;
-    }
-
-    const error = thrown as DomainError;
-    expect(error.code).toBe("TIME_BUDGET_EXCEEDED");
+      }),
+      "TIME_BUDGET_EXCEEDED",
+    );
     expect(error.details).toMatchObject({ budgetMin: 15, activeTimeMin: 90 });
   });
 
@@ -312,7 +310,9 @@ describe("grid editing", () => {
       mealTypeId: dinnerId,
     });
 
-    expect(result.entries.map((entry) => entry.dayOfWeek).sort()).toEqual([4, 7]);
+    expect(result.entries.map((entry) => entry.dayOfWeek).sort()).toEqual([
+      4, 7,
+    ]);
   });
 
   it("swaps when moved onto an occupied slot", async () => {
@@ -324,7 +324,9 @@ describe("grid editing", () => {
       mealTypeId: dinnerId,
     });
 
-    expect(result.entries.map((entry) => entry.dayOfWeek).sort()).toEqual([4, 7]);
+    expect(result.entries.map((entry) => entry.dayOfWeek).sort()).toEqual([
+      4, 7,
+    ]);
   });
 
   it("clears one entry and leaves the rest", async () => {
@@ -361,13 +363,13 @@ describe("version history", () => {
     // The revert is itself a version, so it is revertible in turn.
     const versions = await listVersions(ctx, target);
     expect(versions.map((version) => version.versionNumber)).toEqual([3, 2, 1]);
-    expect(versions.filter((version) => version.state === "active")).toHaveLength(1);
+    expect(
+      versions.filter((version) => version.state === "active"),
+    ).toHaveLength(1);
   });
 
   it("refuses to revert to a version that does not exist", async () => {
-    await expect(revertToVersion(ctx, week(9), 99)).rejects.toBeInstanceOf(
-      DomainError,
-    );
+    await expectDomainError(revertToVersion(ctx, week(9), 99), "NOT_FOUND");
   });
 });
 
@@ -379,19 +381,14 @@ describe("the strict allergen block", () => {
       matches: ["lait", "crème", "beurre"],
     });
 
-    let thrown: unknown;
-    try {
-      await assignRecipe(ctx, week(10), {
+    const error = await expectDomainError(
+      assignRecipe(ctx, week(10), {
         dayOfWeek: 1,
         mealTypeId: dinnerId,
         recipeId: creamyId,
-      });
-    } catch (error) {
-      thrown = error;
-    }
-
-    const error = thrown as DomainError;
-    expect(error.code).toBe("STRICT_ALLERGEN");
+      }),
+      "STRICT_ALLERGEN",
+    );
     expect(error.message).toContain("Gratin dauphinois");
 
     // Nothing was written: the version does not exist.
@@ -400,16 +397,58 @@ describe("the strict allergen block", () => {
   });
 
   it("blocks the next edit of a week that already contains the allergen", async () => {
-    // The allergen was added after week 3 was planned with the creamy recipe.
-    // A new version must be valid as a whole, so the edit is refused rather
-    // than quietly carrying the violation forward.
-    await expect(
-      assignRecipe(ctx, week(3), {
-        dayOfWeek: 7,
-        mealTypeId: dinnerId,
-        recipeId: quickId,
-      }),
-    ).rejects.toMatchObject({ code: "STRICT_ALLERGEN" });
+    /*
+     * Its own account, and the order matters: the week is planned with the
+     * creamy recipe first, and only then is the allergen declared. That is the
+     * real sequence, somebody learning of an intolerance after a week is
+     * already planned, and it cannot be staged inside the shared account of
+     * this file because the allergen above is account-wide and already blocks
+     * every write.
+     *
+     * It also used to depend on week 3 having been planned by a different
+     * `describe` and on the allergen created by the previous `it`, so a `-t`
+     * filter or a reordering broke it. And the assertion had rotted into
+     * `await expect(promise, "STRICT_ALLERGEN")`, which is `expect` with a
+     * label and no matcher: it asserted nothing, and the rejection it ignored
+     * surfaced as an unhandled error attributed to whichever test ran next.
+     */
+    const own = await setupTestUser();
+    try {
+      const gratinId = (await createRecipe(own.ctx, creamyRecipe)).recipe.id;
+      const omeletteId = (await createRecipe(own.ctx, quickRecipe)).recipe.id;
+
+      await assignRecipe(own.ctx, week(3), {
+        dayOfWeek: 1,
+        mealTypeId: own.dinnerId,
+        recipeId: gratinId,
+      });
+
+      await createAllergen(own.ctx, {
+        name: "Lait",
+        severity: "strict",
+        matches: ["lait", "crème", "beurre"],
+      });
+
+      // A new version has to be valid as a whole, so an unrelated edit is
+      // refused rather than quietly carrying the violation forward.
+      const error = await expectDomainError(
+        assignRecipe(own.ctx, week(3), {
+          dayOfWeek: 7,
+          mealTypeId: own.dinnerId,
+          recipeId: omeletteId,
+        }),
+        "STRICT_ALLERGEN",
+      );
+      expect(error.message).toContain("Gratin dauphinois");
+
+      // And the week it refused to edit is unchanged: still one entry, still
+      // the version it had.
+      const view = await getWeekView(own.ctx, week(3));
+      expect(view.entries).toHaveLength(1);
+      expect(view.activeVersion?.versionNumber).toBe(1);
+    } finally {
+      await own.cleanup();
+    }
   });
 
   it("still allows a week with no offending recipe", async () => {

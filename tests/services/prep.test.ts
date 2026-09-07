@@ -1,30 +1,21 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { formatCycleStart } from "@/domain/shopping";
-import { isoWeekStart } from "@/domain/week";
-import { DomainError } from "@/domain/errors";
 import { currentIsoWeek } from "@/domain/week";
-import { agentContext } from "@/services/context";
+import { agentContext, type ServiceContext } from "@/services/context";
 import { generateGroceryList } from "@/services/grocery-service";
-import { ensureUserSetup } from "@/services/onboarding-service";
 import {
   assignRecipe,
+  clearEntry,
   getWeekView,
   moveEntry,
   proposeWeek,
 } from "@/services/plan-service";
-import { linkPrep, loadPrepLinks, unsourcedLinks } from "@/services/prep-service";
+import {
+  linkPrep,
+  loadPrepLinks,
+  unsourcedLinks,
+} from "@/services/prep-service";
 import { createRecipe } from "@/services/recipe-service";
-import { listMealTypes } from "@/services/slot-service";
-import { cleanupUser, testUser } from "../helpers/fixtures";
-
-/**
- * Grocery lists cover a shopping cycle, not a week. These tests plan by week,
- * so they shop on the Monday cycle of that week, which is exactly the fallback
- * an account with no shopping day set gets.
- */
-function cycleOf(week: { year: number; week: number }): string {
-  return formatCycleStart(isoWeekStart(week));
-}
+import { cycleOf, expectDomainError, setupTestUser } from "../helpers";
 
 /**
  * "Cook double Sunday, eat Tuesday in ten minutes."
@@ -33,14 +24,16 @@ function cycleOf(week: { year: number; week: number }): string {
  * a week is immutable, so every edit rewrites the entries the link points at.
  */
 
-const ctx = testUser();
+let user: Awaited<ReturnType<typeof setupTestUser>>;
+let ctx: ServiceContext;
 const week = currentIsoWeek();
 let dinnerId = "";
 let stewId = "";
 
 beforeAll(async () => {
-  await ensureUserSetup(ctx);
-  dinnerId = (await listMealTypes(ctx)).find((type) => type.key === "dinner")!.id;
+  user = await setupTestUser();
+  ctx = user.ctx;
+  dinnerId = user.dinnerId;
 
   stewId = (
     await createRecipe(ctx, {
@@ -57,12 +50,12 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await cleanupUser(ctx);
+  await user.cleanup();
 });
 
 describe("linking a meal to a cooking session", () => {
   it("refuses to serve on Monday what is cooked on Wednesday", async () => {
-    const sunday = await assignRecipe(ctx, week, {
+    const wednesdayWrite = await assignRecipe(ctx, week, {
       dayOfWeek: 3,
       mealTypeId: dinnerId,
       recipeId: stewId,
@@ -76,22 +69,18 @@ describe("linking a meal to a cooking session", () => {
     const view = await getWeekView(ctx, week);
     const wednesday = view.entries.find((row) => row.dayOfWeek === 3)!;
     const monday = view.entries.find((row) => row.dayOfWeek === 1)!;
-    expect(sunday.entries.length).toBeGreaterThan(0);
+    expect(wednesdayWrite.entries.length).toBeGreaterThan(0);
 
-    let thrown: unknown;
-    try {
-      await linkPrep(ctx, week, {
+    await expectDomainError(
+      linkPrep(ctx, week, {
         sourceEntryId: wednesday.id,
         dependentEntryId: monday.id,
-      });
-    } catch (error) {
-      thrown = error;
-    }
-
-    expect((thrown as DomainError).code).toBe("PREP_LINK_ORDER");
+      }),
+      "PREP_LINK_ORDER",
+    );
   });
 
-  it("links forward in the week and warns about the shortfall", async () => {
+  it("links forward in the week, with no false shortfall warning", async () => {
     const view = await getWeekView(ctx, week);
     const monday = view.entries.find((row) => row.dayOfWeek === 1)!;
     const wednesday = view.entries.find((row) => row.dayOfWeek === 3)!;
@@ -103,10 +92,22 @@ describe("linking a meal to a cooking session", () => {
     });
 
     expect(result.link.sourceEntryId).toBe(monday.id);
-    // Monday cooks 2 portions and Wednesday draws 2 more, so the session has to
-    // produce 4. A shortfall is a warning, never a refusal: people knowingly
-    // stretch a dish.
-    expect(result.warnings.map((warning) => warning.code)).toContain(
+
+    // No shortfall, and that is the point of this assertion.
+    //
+    // This used to expect `SERVINGS_SHORTFALL`, and the warning it expected was
+    // false. `servingsDrawn` has a minimum of 1, so `source.servings + drawn`
+    // was always greater than `source.servings`, and the warning therefore fired
+    // on every prep link that has ever been created. It told the user to raise
+    // servings that the shopping list had already bought.
+    //
+    // The model, decided in `totalServingsFor` in src/domain/prep.ts, is that an
+    // entry's `servings` is its own meal and the draws are added on top.
+    // `aggregateForCycle` scales the source recipe by exactly that sum, so
+    // Monday cooking 2 with Wednesday drawing 2 buys ingredients for 4. Nothing
+    // is short. A real capacity model would need to know what the pan holds,
+    // and nothing in the data model does.
+    expect(result.warnings.map((warning) => warning.code)).not.toContain(
       "SERVINGS_SHORTFALL",
     );
   });
@@ -151,8 +152,11 @@ describe("linking a meal to a cooking session", () => {
 describe("the grocery list under a prep link", () => {
   it("counts the session once, scaled to everything drawn from it", async () => {
     const { list } = await generateGroceryList(ctx, cycleOf(week));
-    const beef = list.lines.find((line) => line.displayName === "Boeuf haché")
-      ?? list.lines.find((line) => line.displayName.toLowerCase().includes("boeuf"));
+    const beef =
+      list.lines.find((line) => line.displayName === "Boeuf haché") ??
+      list.lines.find((line) =>
+        line.displayName.toLowerCase().includes("boeuf"),
+      );
 
     // Monday cooks for 2 and Wednesday draws 2, so the recipe written for 4
     // scales to 4 servings' worth of beef: 800 g, not 400 twice.
@@ -193,9 +197,7 @@ describe("when the week moves underneath a link", () => {
   it("leaves the dependent meal unsourced rather than deleting it", async () => {
     const view = await getWeekView(ctx, week);
     const source = view.entries.find((row) => row.dayOfWeek === 2)!;
-    const dependent = view.entries.find((row) => row.dayOfWeek === 3)!;
 
-    const { clearEntry } = await import("@/services/plan-service");
     const after = await clearEntry(ctx, week, source.id);
 
     // The Wednesday meal survives: the user still intends to eat it.
@@ -203,7 +205,6 @@ describe("when the week moves underneath a link", () => {
 
     const orphans = await unsourcedLinks(ctx);
     expect(orphans.length).toBeGreaterThan(0);
-    void dependent;
   });
 });
 
@@ -239,7 +240,7 @@ describe("prep links inside a proposal", () => {
 
   it("refuses a link whose indices do not exist", async () => {
     const agent = agentContext(ctx.userId, "client-prep");
-    await expect(
+    await expectDomainError(
       proposeWeek(agent, {
         year: 2026,
         week: 47,
@@ -253,6 +254,11 @@ describe("prep links inside a proposal", () => {
         ],
         prepLinks: [{ sourceIndex: 0, dependentIndex: 9 }],
       }),
-    ).rejects.toBeInstanceOf(DomainError);
+      // VALIDATION rather than a prep-specific code, and the message is what
+      // makes it actionable: it names both indices and says they are offsets
+      // into the `entries` array of the same call, which is the one thing an
+      // agent cannot guess from "invalid".
+      "VALIDATION",
+    );
   });
 });

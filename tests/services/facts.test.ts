@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DomainError } from "@/domain/errors";
 import { agentContext } from "@/services/context";
 import {
   confirmFact,
@@ -12,7 +11,7 @@ import {
   updateFactMetadata,
 } from "@/services/fact-service";
 import { ensureUserSetup } from "@/services/onboarding-service";
-import { cleanupUser, testUser } from "../helpers/fixtures";
+import { cleanupUser, expectDomainError, testUser } from "../helpers";
 
 /**
  * The fact store is the moat, so these tests are about what an agent cannot do
@@ -108,8 +107,9 @@ describe("a fact is never rewritten to mean something else", () => {
       polarity: "positive",
       confidence: "medium",
     });
-    await expect(updateFactMetadata(ctx, created.id, {})).rejects.toBeInstanceOf(
-      DomainError,
+    await expectDomainError(
+      updateFactMetadata(ctx, created.id, {}),
+      "VALIDATION",
     );
   });
 
@@ -159,7 +159,7 @@ describe("retiring and filtering", () => {
     const active = await listFacts(ctx, {});
     expect(active.some((row) => row.id === created.id)).toBe(false);
 
-    await expect(retireFact(ctx, created.id)).rejects.toBeInstanceOf(DomainError);
+    await expectDomainError(retireFact(ctx, created.id), "NOT_FOUND");
   });
 
   it("filters by category and by status", async () => {
@@ -173,7 +173,9 @@ describe("retiring and filtering", () => {
   it("shows unconfirmed facts first, because that is what needs review", async () => {
     const all = await listFacts(ctx, {});
     const firstConfirmed = all.findIndex((row) => row.status === "confirmed");
-    const lastUnconfirmed = all.map((row) => row.status).lastIndexOf("unconfirmed");
+    const lastUnconfirmed = all
+      .map((row) => row.status)
+      .lastIndexOf("unconfirmed");
     if (firstConfirmed !== -1 && lastUnconfirmed !== -1) {
       expect(lastUnconfirmed).toBeLessThan(firstConfirmed);
     }
@@ -184,9 +186,8 @@ describe("the cap", () => {
   it("rejects a write past the cap and names what to retire", async () => {
     const active = await countActiveFacts(ctx);
 
-    let thrown: unknown;
-    try {
-      await createFact(
+    const error = await expectDomainError(
+      createFact(
         ctx,
         {
           category: "other",
@@ -195,26 +196,33 @@ describe("the cap", () => {
           confidence: "low",
         },
         { cap: active },
-      );
-    } catch (error) {
-      thrown = error;
-    }
-
-    const error = thrown as DomainError;
-    expect(error.code).toBe("FACT_CAP_REACHED");
+      ),
+      "FACT_CAP_REACHED",
+    );
     expect(error.details).toMatchObject({ active, cap: active });
     expect(Array.isArray(error.details.candidates)).toBe(true);
   });
 
   it("still allows a replacement at the cap, because it does not add one", async () => {
+    /*
+     * A fixture with a category this test chose, rather than
+     * `target.category as "taste"` on whatever row happened to come back first.
+     * That cast asserted a category the fixture never set and would have gone
+     * on compiling after the enum changed underneath it.
+     */
+    const target = await createFact(ctx, {
+      category: "taste",
+      statement: "Fait à remplacer exactement au plafond",
+      polarity: "neutral",
+      confidence: "medium",
+    });
     const active = await countActiveFacts(ctx);
-    const target = (await listFacts(ctx, { status: "confirmed" }))[0]!;
 
     const { created } = await supersedeFact(
       ctx,
       target.id,
       {
-        category: target.category as "taste",
+        category: "taste",
         statement: "Version remplacée au plafond",
         polarity: "neutral",
         confidence: "medium",

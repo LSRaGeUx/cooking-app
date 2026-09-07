@@ -48,12 +48,21 @@ describe("base conversion", () => {
 
 describe("reading a quantity back", () => {
   it("moves up the scale when the number gets big", () => {
-    expect(normalizeBaseQuantity(1500, "mass")).toEqual({ quantity: 1.5, unit: "kg" });
-    expect(normalizeBaseQuantity(1200, "volume")).toEqual({ quantity: 1.2, unit: "l" });
+    expect(normalizeBaseQuantity(1500, "mass")).toEqual({
+      quantity: 1.5,
+      unit: "kg",
+    });
+    expect(normalizeBaseQuantity(1200, "volume")).toEqual({
+      quantity: 1.2,
+      unit: "l",
+    });
   });
 
   it("moves down the scale when the number gets small", () => {
-    expect(normalizeBaseQuantity(0.5, "mass")).toEqual({ quantity: 500, unit: "mg" });
+    expect(normalizeBaseQuantity(0.5, "mass")).toEqual({
+      quantity: 500,
+      unit: "mg",
+    });
   });
 
   it("rounds a countable up, never down", () => {

@@ -1,14 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { currentIsoWeek, shiftIsoWeek, weeksBetween } from "@/domain/week";
-import { ensureUserSetup } from "@/services/onboarding-service";
 import { assignRecipe } from "@/services/plan-service";
 import {
   createRecipe,
   loadRecipeIndex,
   searchRecipes,
 } from "@/services/recipe-service";
-import { listMealTypes } from "@/services/slot-service";
-import { cleanupUser, testUser } from "../helpers/fixtures";
+import type { ServiceContext } from "@/services/context";
+import { setupTestUser } from "../helpers";
 
 /**
  * What an agent surveys before choosing, and the filter that answers "something
@@ -16,15 +15,16 @@ import { cleanupUser, testUser } from "../helpers/fixtures";
  * feedback does not exist until phase 6, and the naming says so.
  */
 
-const ctx = testUser();
+let user: Awaited<ReturnType<typeof setupTestUser>>;
+let ctx: ServiceContext;
 let dinnerId = "";
 let recentId = "";
 let oldId = "";
-let neverId = "";
 
 beforeAll(async () => {
-  await ensureUserSetup(ctx);
-  dinnerId = (await listMealTypes(ctx)).find((type) => type.key === "dinner")!.id;
+  user = await setupTestUser();
+  ctx = user.ctx;
+  dinnerId = user.dinnerId;
 
   const make = async (title: string) =>
     (
@@ -38,7 +38,9 @@ beforeAll(async () => {
 
   recentId = await make("Plat de cette semaine");
   oldId = await make("Plat d'il y a cinq semaines");
-  neverId = await make("Plat jamais planifié");
+  // Seeded and never planned. The assertions below find it by title, so it
+  // needs no binding: it is the "never planned" row the index must still show.
+  await make("Plat jamais planifié");
 
   const thisWeek = currentIsoWeek();
   await assignRecipe(ctx, thisWeek, {
@@ -54,7 +56,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await cleanupUser(ctx);
+  await user.cleanup();
 });
 
 describe("the recipe index", () => {
@@ -95,7 +97,10 @@ describe("the not-planned-in-weeks filter", () => {
   });
 
   it("widens correctly as the window grows", async () => {
-    const found = await searchRecipes(ctx, { notPlannedInWeeks: 10, limit: 50 });
+    const found = await searchRecipes(ctx, {
+      notPlannedInWeeks: 10,
+      limit: 50,
+    });
     const titles = found.recipes.map((row) => row.title);
 
     expect(titles).not.toContain("Plat de cette semaine");
@@ -112,8 +117,14 @@ describe("the not-planned-in-weeks filter", () => {
 describe("week arithmetic behind the filter", () => {
   it("counts whole weeks across a year boundary", () => {
     // A bare week-number subtraction would say -52 here.
-    expect(weeksBetween({ year: 2026, week: 53 }, { year: 2027, week: 1 })).toBe(1);
-    expect(weeksBetween({ year: 2027, week: 1 }, { year: 2026, week: 53 })).toBe(-1);
-    expect(weeksBetween({ year: 2026, week: 10 }, { year: 2026, week: 10 })).toBe(0);
+    expect(
+      weeksBetween({ year: 2026, week: 53 }, { year: 2027, week: 1 }),
+    ).toBe(1);
+    expect(
+      weeksBetween({ year: 2027, week: 1 }, { year: 2026, week: 53 }),
+    ).toBe(-1);
+    expect(
+      weeksBetween({ year: 2026, week: 10 }, { year: 2026, week: 10 }),
+    ).toBe(0);
   });
 });

@@ -11,11 +11,15 @@ import {
   loadRecipeStats,
   loadSignals,
 } from "@/services/history-service";
-import { ensureUserSetup } from "@/services/onboarding-service";
 import { assignRecipe, getWeekView, moveEntry } from "@/services/plan-service";
-import { createRecipe, loadRecipeIndex, searchRecipes } from "@/services/recipe-service";
-import { listMealTypes, setSlotConfig } from "@/services/slot-service";
-import { cleanupUser, testUser } from "../helpers/fixtures";
+import {
+  createRecipe,
+  loadRecipeIndex,
+  searchRecipes,
+} from "@/services/recipe-service";
+import { setSlotConfig } from "@/services/slot-service";
+import type { ServiceContext } from "@/services/context";
+import { setupTestUser } from "../helpers";
 
 /**
  * The loop that makes week 20 better than week 1.
@@ -24,7 +28,8 @@ import { cleanupUser, testUser } from "../helpers/fixtures";
  * unjudged, not failed. Everything downstream depends on not confusing the two.
  */
 
-const ctx = testUser();
+let user: Awaited<ReturnType<typeof setupTestUser>>;
+let ctx: ServiceContext;
 let dinnerId = "";
 let lovedId = "";
 let ignoredId = "";
@@ -34,8 +39,9 @@ const pastWeek = shiftIsoWeek(currentIsoWeek(), -2);
 const olderWeek = shiftIsoWeek(currentIsoWeek(), -4);
 
 beforeAll(async () => {
-  await ensureUserSetup(ctx);
-  dinnerId = (await listMealTypes(ctx)).find((type) => type.key === "dinner")!.id;
+  user = await setupTestUser();
+  ctx = user.ctx;
+  dinnerId = user.dinnerId;
 
   const make = async (title: string) =>
     (
@@ -55,7 +61,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await cleanupUser(ctx);
+  await user.cleanup();
 });
 
 describe("recording what happened", () => {

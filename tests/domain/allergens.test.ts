@@ -6,7 +6,7 @@ import {
   termMatches,
   type AllergenRule,
 } from "@/domain/allergens";
-import { DomainError } from "@/domain/errors";
+import { expectDomainError } from "../helpers";
 
 const milk: AllergenRule = {
   id: "allergen-milk",
@@ -31,6 +31,28 @@ describe("allergen term matching", () => {
   it("tolerates a French plural", () => {
     expect(termMatches("oeuf", "3 oeufs")).toBe(true);
     expect(termMatches("noix", "des noix")).toBe(true);
+  });
+
+  it("tolerates the plural on the term as well as on the ingredient", () => {
+    // The asymmetric version of this rule left a hole on the side that
+    // matters: a user who typed the plural was unprotected against the
+    // singular, which is how a recipe line is usually written.
+    expect(termMatches("oeufs", "1 oeuf")).toBe(true);
+    expect(termMatches("arachides", "huile d'arachide")).toBe(true);
+    // And it still holds in the direction that already worked.
+    expect(termMatches("arachide", "des arachides")).toBe(true);
+  });
+
+  it("folds hyphens, so a hyphenated compound is one term", () => {
+    // The regulated French allergen names are hyphenated compounds, and a
+    // paste from a label spells them either way. Both must fire, in both
+    // directions, or the block has a gap the user cannot see.
+    expect(termMatches("fruits à coque", "fruits-à-coque")).toBe(true);
+    expect(termMatches("fruits-a-coque", "des fruits à coque")).toBe(true);
+    // Including the dashes a web page uses instead of a hyphen-minus.
+    expect(termMatches("fruits à coque", "fruits‑a‑coque")).toBe(true);
+    // The word boundary still holds across the fold.
+    expect(termMatches("lait", "petit-laitue")).toBe(false);
   });
 
   it("does not fire on a longer word that merely contains the term", () => {
@@ -67,17 +89,17 @@ describe("strict allergen block", () => {
     });
   });
 
-  it("throws STRICT_ALLERGEN with an actionable message", () => {
-    let thrown: unknown;
-    try {
-      assertNoStrictAllergen("Gratin dauphinois", ingredients, [milk]);
-    } catch (error) {
-      thrown = error;
-    }
-
-    expect(thrown).toBeInstanceOf(DomainError);
-    const error = thrown as DomainError;
-    expect(error.code).toBe("STRICT_ALLERGEN");
+  it("throws STRICT_ALLERGEN with an actionable message", async () => {
+    // Through the shared helper rather than `try/catch` then a cast. The cast
+    // turned "it did not throw" into a TypeError about reading `code` of
+    // `undefined`, which reads as a crash inside the rule instead of as the
+    // block having quietly stopped firing. The call is synchronous, so it is
+    // wrapped in a promise for a helper written against the services.
+    const error = await expectDomainError(
+      (async () =>
+        assertNoStrictAllergen("Gratin dauphinois", ingredients, [milk]))(),
+      "STRICT_ALLERGEN",
+    );
     // The message must name the recipe, the ingredient and the allergen, or an
     // agent cannot fix its own proposal without asking a human.
     expect(error.message).toContain("Gratin dauphinois");

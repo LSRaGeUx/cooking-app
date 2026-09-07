@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { and, eq } from "drizzle-orm";
+import { withUser } from "@/db/client";
+import { recipeRevision } from "@/db/schema";
 import { parseIngredientBlock } from "@/domain/ingredient-parser";
-import { DomainError } from "@/domain/errors";
 import { listIngredients } from "@/services/ingredient-service";
-import { ensureUserSetup } from "@/services/onboarding-service";
 import {
   createRecipe,
   getRecipe,
@@ -10,9 +11,10 @@ import {
   softDeleteRecipe,
   updateRecipe,
 } from "@/services/recipe-service";
-import { cleanupUser, testUser } from "../helpers/fixtures";
+import { expectDomainError, setupTestUser } from "../helpers";
 
-const ctx = testUser();
+let user: Awaited<ReturnType<typeof setupTestUser>>;
+let ctx: Awaited<ReturnType<typeof setupTestUser>>["ctx"];
 
 const gratin = {
   title: "Gratin de courgettes",
@@ -23,9 +25,12 @@ const gratin = {
   activeTimeMin: 20,
   tags: ["gratin", "légumes"],
   ingredients: parseIngredientBlock(
-    ["3 courgettes", "200 ml de crème fraîche", "100 g de gruyère râpé", "sel"].join(
-      "\n",
-    ),
+    [
+      "3 courgettes",
+      "200 ml de crème fraîche",
+      "100 g de gruyère râpé",
+      "sel",
+    ].join("\n"),
   ).map((line) => ({
     quantity: line.quantity,
     unit: line.unit,
@@ -35,17 +40,22 @@ const gratin = {
     ingredientId: null,
   })),
   steps: [
-    { text: "Couper les courgettes en rondelles.", durationMin: 10, unattended: false },
+    {
+      text: "Couper les courgettes en rondelles.",
+      durationMin: 10,
+      unattended: false,
+    },
     { text: "Enfourner 35 minutes.", durationMin: 35, unattended: true },
   ],
 };
 
 beforeAll(async () => {
-  await ensureUserSetup(ctx);
+  user = await setupTestUser();
+  ctx = user.ctx;
 });
 
 afterAll(async () => {
-  await cleanupUser(ctx);
+  await user.cleanup();
 });
 
 describe("recipe creation", () => {
@@ -60,7 +70,9 @@ describe("recipe creation", () => {
 
     // Best-effort linking against the seeded starter set: courgette and crème
     // are known, "sel" is known, and nothing blocks on the ones that are not.
-    const linked = created.ingredients.filter((line) => line.ingredientId !== null);
+    const linked = created.ingredients.filter(
+      (line) => line.ingredientId !== null,
+    );
     expect(linked.length).toBeGreaterThanOrEqual(3);
 
     const courgette = created.ingredients.find((line) =>
@@ -93,9 +105,72 @@ describe("recipe editing", () => {
     expect(updated.recipe.title).toBe("Soupe de poireaux et pommes de terre");
     expect(updated.recipe.servings).toBe(6);
 
-    // The prior state is recoverable, which is what makes an agent edit safe.
     const reread = await getRecipe(ctx, created.recipe.id);
     expect(reread.recipe.revision).toBe(2);
+
+    /*
+     * The comment here used to say "the prior state is recoverable, which is
+     * what makes an agent edit safe" and then assert only that the revision
+     * number was 2. A counter proves a counter: `updateRecipe` could have
+     * bumped it and written no revision row at all, or written an empty one,
+     * and nothing would have failed. Rule 5 is about the old state surviving,
+     * so the row is read and the old values are checked.
+     *
+     * Read straight from the table, because no service exposes revisions yet.
+     * `withUser` rather than the owner connection on purpose: the row has to be
+     * visible to the tenant that owns it, since a revision nobody can read is
+     * not a revision anybody can restore from.
+     */
+    const revisions = await withUser(ctx.userId, (tx) =>
+      tx
+        .select()
+        .from(recipeRevision)
+        .where(
+          and(
+            eq(recipeRevision.recipeId, created.recipe.id),
+            eq(recipeRevision.userId, ctx.userId),
+          ),
+        ),
+    );
+
+    expect(revisions).toHaveLength(1);
+    const [snapshot] = revisions;
+    // Revision 1, the state before the edit, not the state after it.
+    expect(snapshot?.revision).toBe(1);
+
+    const before = snapshot?.snapshot as {
+      recipe: { title: string; servings: number; revision: number };
+      ingredients: unknown[];
+      steps: unknown[];
+    };
+    expect(before.recipe.title).toBe("Soupe de poireaux");
+    expect(before.recipe.servings).toBe(4);
+    expect(before.recipe.revision).toBe(1);
+    // The children are in the snapshot too, so a restore would not come back
+    // as a title with no ingredients.
+    expect(before.ingredients).toHaveLength(4);
+    expect(before.steps).toHaveLength(2);
+  });
+
+  it("keeps one revision row per edit, in order", async () => {
+    const created = await createRecipe(ctx, {
+      ...gratin,
+      title: "Velouté de potiron",
+    });
+    await updateRecipe(ctx, created.recipe.id, { ...gratin, title: "V2" });
+    await updateRecipe(ctx, created.recipe.id, { ...gratin, title: "V3" });
+
+    const revisions = await withUser(ctx.userId, (tx) =>
+      tx
+        .select()
+        .from(recipeRevision)
+        .where(eq(recipeRevision.recipeId, created.recipe.id)),
+    );
+
+    // Two edits, two rows, numbered 1 and 2: the unique constraint on
+    // (recipe, revision) is what stops two concurrent edits both claiming the
+    // same number, and this is the shape it protects.
+    expect(revisions.map((row) => row.revision).sort()).toEqual([1, 2]);
   });
 });
 
@@ -116,7 +191,9 @@ describe("recipe search", () => {
   it("filters on attended time, not on total time", async () => {
     // The gratin has 20 minutes of attended time and 50 of total.
     const found = await searchRecipes(ctx, { maxActiveTimeMin: 25 });
-    expect(found.recipes.some((row) => row.title.includes("Gratin"))).toBe(true);
+    expect(found.recipes.some((row) => row.title.includes("Gratin"))).toBe(
+      true,
+    );
   });
 
   it("filters by tag", async () => {
@@ -127,7 +204,10 @@ describe("recipe search", () => {
 
 describe("recipe deletion", () => {
   it("soft deletes, so history stays readable, and hides it from search", async () => {
-    const created = await createRecipe(ctx, { ...gratin, title: "Tarte aux poireaux" });
+    const created = await createRecipe(ctx, {
+      ...gratin,
+      title: "Tarte aux poireaux",
+    });
     await softDeleteRecipe(ctx, created.recipe.id);
 
     const found = await searchRecipes(ctx, { query: "Tarte aux poireaux" });
@@ -140,8 +220,9 @@ describe("recipe deletion", () => {
   it("refuses to delete twice", async () => {
     const created = await createRecipe(ctx, { ...gratin, title: "Quiche" });
     await softDeleteRecipe(ctx, created.recipe.id);
-    await expect(softDeleteRecipe(ctx, created.recipe.id)).rejects.toBeInstanceOf(
-      DomainError,
+    await expectDomainError(
+      softDeleteRecipe(ctx, created.recipe.id),
+      "RECIPE_NOT_FOUND",
     );
   });
 });

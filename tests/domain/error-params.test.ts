@@ -4,9 +4,9 @@ import en from "../../messages/en.json";
 import fr from "../../messages/fr.json";
 import { assertNoStrictAllergen } from "@/domain/allergens";
 import { errorMessageParams } from "@/domain/error-params";
-import { DomainError, type DomainWarning } from "@/domain/errors";
+import { DomainError } from "@/domain/errors";
 import { assertPrepOrder } from "@/domain/prep";
-import { checkTimeBudget, resolvePlannableSlot } from "@/domain/slots";
+import { assertTimeBudget, resolvePlannableSlot } from "@/domain/slots";
 
 /**
  * The coupling this file exists to protect.
@@ -20,6 +20,12 @@ import { checkTimeBudget, resolvePlannableSlot } from "@/domain/slots";
  *
  * So every case here throws the real error through the real rule, then renders
  * both catalogues with the parameters that came out.
+ *
+ * The time budget goes through `assertTimeBudget` rather than
+ * `checkTimeBudget`, which now returns its verdict instead of throwing it. The
+ * throwing wrapper is what a screen is downstream of, and keeping every case in
+ * this file shaped the same way is what makes a missing template obvious. Which
+ * branch of the verdict carries what is pinned in tests/domain/slots.test.ts.
  */
 
 const days: Record<string, string> = {
@@ -161,7 +167,7 @@ describe("refusals a screen has to reword", () => {
 
   it("a blown time budget names every number the cook needs", () => {
     const error = caught(() =>
-      checkTimeBudget({
+      assertTimeBudget({
         activeTimeMin: 75,
         slot: dinner,
         profileDefaultBudgetMin: null,
@@ -207,14 +213,19 @@ describe("refusals a screen has to reword", () => {
 
 describe("warnings a screen has to reword", () => {
   it("a tight time budget stays a warning and still names the slot", () => {
-    const warning = checkTimeBudget({
+    const warning = assertTimeBudget({
       activeTimeMin: 25,
       slot: dinner,
       profileDefaultBudgetMin: null,
       toleranceMin: 10,
-    }) as DomainWarning;
+    });
 
+    // Five minutes over a 20-minute budget, inside a 10-minute tolerance: the
+    // rule must hand back a warning rather than refuse and rather than say
+    // nothing at all.
     expect(warning?.code).toBe("TIME_BUDGET_TIGHT");
+    if (!warning) return;
+
     const text = render("warnings", warning.code, warning.details ?? {});
     expect(text).toContain("mardi dîner");
     expect(text).toContain("5 min");

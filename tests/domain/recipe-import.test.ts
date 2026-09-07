@@ -241,9 +241,9 @@ describe("the fetcher itself, before it touches the network", () => {
   it("refuses a loopback URL", async () => {
     // No request is made: the address is rejected after resolution and before
     // a socket is opened, which is the whole point.
-    await expect(safeFetch("http://127.0.0.1:3000/", "recipe-import")).rejects.toMatchObject(
-      { code: "FORBIDDEN" },
-    );
+    await expect(
+      safeFetch("http://127.0.0.1:3000/", "recipe-import"),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
   it("refuses the cloud metadata address", async () => {

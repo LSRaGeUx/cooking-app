@@ -1,11 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DomainError } from "@/domain/errors";
+import type { z } from "zod";
+import type { proposeWeekSchema } from "@/domain/schemas";
 import { agentContext } from "@/services/context";
 import { ensureUserSetup } from "@/services/onboarding-service";
 import {
   acceptPendingEntries,
   acceptPendingVersion,
   checkFeasibility,
+  getVersionEntries,
   getWeekView,
   listVersions,
   proposeWeek,
@@ -14,7 +16,7 @@ import {
 import { createAllergen, updateProfile } from "@/services/profile-service";
 import { createRecipe, searchRecipes } from "@/services/recipe-service";
 import { listMealTypes } from "@/services/slot-service";
-import { cleanupUser, testUser } from "../helpers/fixtures";
+import { cleanupUser, expectDomainError, testUser } from "../helpers";
 
 /**
  * The pitch, and the rules that make it safe to hand an agent a write.
@@ -32,7 +34,17 @@ function week(number: number) {
   return { year: 2026, week: number };
 }
 
-function entry(overrides: Record<string, unknown> = {}) {
+/**
+ * One proposed entry, typed from the schema rather than as
+ * `Record<string, unknown>`.
+ *
+ * The loose type erased everything: a typo in a key compiled, went in as an
+ * extra property, and was dropped by the parse, so a test that meant to set
+ * `dayOfWeek` and wrote `dayofWeek` asserted about Monday and passed.
+ */
+type ProposedEntry = z.input<typeof proposeWeekSchema>["entries"][number];
+
+function entry(overrides: Partial<ProposedEntry> = {}): ProposedEntry {
   return {
     dayOfWeek: 1,
     mealType: "dinner",
@@ -139,7 +151,9 @@ describe("proposing", () => {
     // The active plan is untouched, which is what makes a proposal ignorable.
     const view = await getWeekView(ctx, target);
     expect(view.activeVersion).toBeNull();
-    expect(view.pendingVersion?.versionNumber).toBe(result.version.versionNumber);
+    expect(view.pendingVersion?.versionNumber).toBe(
+      result.version.versionNumber,
+    );
   });
 
   it("keeps the rationale on every entry", async () => {
@@ -224,20 +238,15 @@ describe("optimistic concurrency", () => {
 
     const active = (await getWeekView(ctx, target)).activeVersion!;
 
-    let thrown: unknown;
-    try {
-      await proposeWeek(agent, {
+    const error = await expectDomainError(
+      proposeWeek(agent, {
         year: target.year,
         week: target.week,
         expectedBaseVersion: active.versionNumber + 5,
         entries: [entry({ dayOfWeek: 3 })],
-      });
-    } catch (error) {
-      thrown = error;
-    }
-
-    const error = thrown as DomainError;
-    expect(error.code).toBe("VERSION_CONFLICT");
+      }),
+      "VERSION_CONFLICT",
+    );
     // The current state comes back, so the agent can rebase without a human.
     expect(error.details.current).toBe(active.versionNumber);
   });
@@ -283,7 +292,6 @@ describe("reviewing a proposal", () => {
     const proposedEntries = await listVersions(ctx, target);
     expect(proposedEntries[0]?.id).toBe(pending.id);
 
-    const { getVersionEntries } = await import("@/services/plan-service");
     const entries = await getVersionEntries(ctx, pending.id);
     const monday = entries.find((row) => row.dayOfWeek === 1)!;
 
@@ -381,7 +389,9 @@ describe("direct authority", () => {
 
     expect(result.version.state).toBe("active");
     const view = await getWeekView(ctx, { year: 2026, week: 40 });
-    expect(view.activeVersion?.versionNumber).toBe(result.version.versionNumber);
+    expect(view.activeVersion?.versionNumber).toBe(
+      result.version.versionNumber,
+    );
     expect(view.pendingVersion).toBeNull();
 
     await updateProfile(ctx, { agentAuthority: "proposal" });
