@@ -112,12 +112,37 @@ TLS, and is a separate file rather than a third profile because Compose
 interpolates every service whichever profile is active.
 
 **The server never builds.** CI publishes two images per commit to GHCR, one per
-shipping target of the Dockerfile, and a deploy is `git pull`, then
-`docker compose --profile serve pull`, then `up -d --no-build --wait`. The
-profile is needed on the pull as well: without it Compose considers only the
-services in no profile, pulls the database alone, and says nothing about the two
-it skipped. The `build:` blocks stay for CI and for local work. `IMAGE_TAG` selects the build and defaults to `main`; every commit also
-gets an immutable `sha-<commit>` pair, which is what a rollback names.
+shipping target of the Dockerfile, and a deploy is three commands:
+
+```sh
+git pull
+docker compose --profile serve pull
+docker compose --profile serve up -d --no-build --wait
+```
+
+**Both compose commands need `--profile serve`, spelled out every time.**
+Without it Compose considers only the services in no profile, which is the
+database alone, and says nothing about the two it skipped. It then reports
+success: a profile-less `pull` fetches Postgres, and a profile-less `up` prints
+`✔ Container cooking-app-db-1 Healthy` and exits 0 while the application keeps
+serving whatever image it was already on. That is a deploy that looks done and
+changed nothing, and it happened for real on 7 September 2026: the symptom was a
+shipped feature appearing not to work, which sends you looking in the code. The
+only trustworthy confirmation is the `up` output naming all three services, with
+`migrate` exited and `app` healthy.
+
+The `build:` blocks stay for CI and for local work. `IMAGE_TAG` selects the
+build and defaults to `main`; every commit also gets an immutable
+`sha-<commit>` pair, which is what a rollback names.
+
+A deploy that did nothing is diagnosed by comparing the image the container runs
+against the tag on disk, because the container keeps running happily on the old
+one:
+
+```sh
+docker inspect "$(docker compose --profile serve ps -q app)" --format '{{.Image}}'
+docker image inspect ghcr.io/lsrageux/cooking-app:main-runtime --format '{{.Id}}'
+```
 
 Three things to know before touching any of it:
 
