@@ -27,6 +27,7 @@ import "dotenv/config";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
+  assertAuthSchemaReady,
   assertDatabaseReady,
   assertSiblingUrls,
   setupCommandFor,
@@ -36,27 +37,32 @@ import {
 import { DEV_TEST_HOST, devTestOrigin, devTestPort } from "./lib/dev-test.mjs";
 
 const KIND = "verify";
-const PORT = devTestPort();
-const ORIGIN = devTestOrigin();
 const fresh = process.argv.includes("--fresh");
 
-const urls = siblingUrls(KIND);
+// Inside the same guard as everything else, because devTestPort() refuses a
+// DEV_TEST_PORT that is not a port, and the message names the variable rather
+// than passing NaN on to `next dev --port`.
+let PORT;
+let ORIGIN;
 let name;
+let urls;
 try {
+  PORT = devTestPort();
+  ORIGIN = devTestOrigin();
+  urls = siblingUrls(KIND);
   name = assertSiblingUrls(KIND, urls);
-  // Refuse to serve a schema behind the migrations on disk. verify:oauth would
-  // otherwise fail somewhere in the middle with a raw Postgres error naming a
-  // column, rather than the command that fixes it.
-  if (fresh) {
-    await truncatePublicTables(urls.owner, name, setupCommandFor(KIND));
-  } else {
-    await assertDatabaseReady(urls.owner, name, setupCommandFor(KIND));
-  }
 } catch (error) {
   console.error(error.message);
   process.exit(1);
 }
 
+/**
+ * What the child serves with. Applied to this process too, and before the
+ * checks below, because one of them imports src/lib/auth.ts and that module
+ * reads DATABASE_URL at import: left alone it would check the schema of the
+ * development database and report on the wrong one. This process has nothing
+ * else to do afterwards but spawn the child with the same values.
+ */
 const env = {
   ...process.env,
   DATABASE_URL: urls.owner,
@@ -71,13 +77,36 @@ const env = {
   // not have the two servers overwriting each other's compiled output.
   NEXT_DIST_DIR: ".next-test",
 };
+Object.assign(process.env, env);
+
+try {
+  // Refuse to serve a schema behind the migrations on disk. verify:oauth would
+  // otherwise fail somewhere in the middle with a raw Postgres error naming a
+  // column, rather than the command that fixes it.
+  if (fresh) {
+    await truncatePublicTables(urls.owner, name, setupCommandFor(KIND));
+  } else {
+    await assertDatabaseReady(urls.owner, name, setupCommandFor(KIND));
+  }
+
+  // And the twelve tables Better Auth owns, which no migration in this
+  // repository describes: an upgrade of that dependency can add one, and the
+  // first sign of it would be verify:oauth failing at sign-in with a raw
+  // `relation "..." does not exist`.
+  await assertAuthSchemaReady(setupCommandFor(KIND));
+} catch (error) {
+  console.error(error.message);
+  process.exit(1);
+}
 
 console.log(
   `dev:test: ${ORIGIN}, database ${name}${fresh ? " (emptied)" : ""}, ` +
     "allowlist open, password sign-in on",
 );
 
-const next = fileURLToPath(new URL("../node_modules/.bin/next", import.meta.url));
+const next = fileURLToPath(
+  new URL("../node_modules/.bin/next", import.meta.url),
+);
 const child = spawn(
   // An explicit --port is also what stops the silent increment: next dev only
   // retries the next port when it fell back to its own default.

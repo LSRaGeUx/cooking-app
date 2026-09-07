@@ -6,6 +6,7 @@
 // Everything that decides what those databases are lives here, and only here.
 // The setup script, the dev:test server and both Vitest setup files call it, so
 // they cannot answer that question differently.
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Client } from "pg";
 
@@ -29,7 +30,8 @@ const SIBLINGS = {
     suffix: "_verify",
     prefix: "VERIFY",
     setupCommand: "npm run db:setup:verify",
-    purpose: "verify:oauth writes sign-ups, OAuth clients, recipes and plans into it",
+    purpose:
+      "verify:oauth writes sign-ups, OAuth clients, recipes and plans into it",
   },
 };
 
@@ -92,6 +94,37 @@ export function redactUrl(url) {
   return parsed.toString();
 }
 
+/**
+ * The one message every bootstrap path prints when a connection fails.
+ *
+ * `applyBootstrap` used to be called bare while `ensureDatabase` beside it had
+ * this wrapped, so the same wrong owner password produced friendly advice on
+ * one line of a script and a bare `28P01` stack trace on the next. Both go
+ * through here now, and the URL is always redacted: it is about to be printed,
+ * and it carries a credential.
+ *
+ * `what` names the step, so the reader knows which of several connections it
+ * was.
+ */
+export function connectionFailure(url, what, error) {
+  const message = error instanceof Error ? error.message : String(error);
+  const advice = {
+    // The two a developer actually hits, and the two that read as something
+    // else entirely without a sentence attached.
+    "28P01":
+      " The password in that URL is not the one the role has. bootstrap.sql " +
+      "re-applies the runtime role's password on every call, and the role is " +
+      "cluster-wide, so a sibling set up with a different APP_DATABASE_URL is " +
+      "the usual cause.",
+    "3D000": " That database does not exist yet.",
+    ECONNREFUSED: " Nothing is listening there. Try `npm run db:up`.",
+  }[codeOf(error) ?? ""];
+
+  return new Error(
+    `${what}: cannot reach ${redactUrl(url)}: ${message}${advice ?? ""}`,
+  );
+}
+
 /** Owner and runtime URLs for one sibling, honouring an explicit override. */
 export function siblingUrls(kind, env = process.env) {
   const { prefix } = sibling(kind);
@@ -149,7 +182,10 @@ export function assertSiblingUrls(kind, { owner, app }, env = process.env) {
     );
   }
 
-  for (const [variable, target] of [["DATABASE_URL", owner], ["APP_DATABASE_URL", app]]) {
+  for (const [variable, target] of [
+    ["DATABASE_URL", owner],
+    ["APP_DATABASE_URL", app],
+  ]) {
     const development = env[variable];
     if (development && targetOf(development) === targetOf(target)) {
       throw new Error(
@@ -191,7 +227,9 @@ function quoteIdentifier(name) {
 export function adminUrlFor(url, kind, fallback = "postgres") {
   const name = databaseNameOf(url);
   const { suffix } = sibling(kind);
-  const development = name.endsWith(suffix) ? name.slice(0, -suffix.length) : "";
+  const development = name.endsWith(suffix)
+    ? name.slice(0, -suffix.length)
+    : "";
   return withDatabase(url, development || fallback);
 }
 
@@ -274,30 +312,121 @@ export async function connectChecked(ownerUrl, name, setupCommand) {
  * adds one runs `npm run db:migrate`, which migrates the development database.
  * Without this the failure is a raw `column "..." does not exist`, somewhere in
  * the middle of a run, with no hint about which command fixes it.
+ *
+ * Two questions, not one. A count answers "how many" and nothing else, so a
+ * database migrated on another branch to the same depth passed while holding a
+ * different schema: switch branches, run the suite, and the failure is again a
+ * column that does not exist. Drizzle's ledger stores the sha256 of each
+ * migration's SQL, and the journal on disk names the file, so the last entry
+ * can be compared by identity as well.
+ *
+ * It does not store the tag, which is why the hash is what gets compared.
  */
 export async function assertMigrationsApplied(client, name, setupCommand) {
-  const journal = JSON.parse(
-    await readFile(
-      new URL("../../drizzle/meta/_journal.json", import.meta.url),
-      "utf8",
-    ),
+  const journalUrl = new URL(
+    "../../drizzle/meta/_journal.json",
+    import.meta.url,
   );
+  const journal = JSON.parse(await readFile(journalUrl, "utf8"));
+  const expected = journal.entries.length;
 
-  const applied = await client
-    .query("select count(*)::int as applied from drizzle.__drizzle_migrations")
+  const rows = await client
+    .query(
+      "select hash, created_at from drizzle.__drizzle_migrations order by created_at",
+    )
     // 42P01: no ledger at all, so nothing has ever been migrated here.
-    .then((result) => result.rows[0]?.applied ?? 0)
+    .then((result) => result.rows)
     .catch((error) => {
-      if (codeOf(error) === "42P01") return 0;
+      if (codeOf(error) === "42P01") return [];
       throw error;
     });
 
-  if (applied >= journal.entries.length) return;
+  if (rows.length < expected) {
+    throw new Error(
+      `the database "${name}" is ${expected - rows.length} migration(s) ` +
+        `behind the ones on disk. Run \`${setupCommand}\`.`,
+    );
+  }
+
+  const last = journal.entries[expected - 1];
+  if (!last) return;
+
+  // The same sha256 drizzle-kit writes into the ledger: the whole text of the
+  // .sql file, before it is split on statement breakpoints.
+  const sql = await readFile(
+    new URL(`../../drizzle/${last.tag}.sql`, import.meta.url),
+    "utf8",
+  );
+  const hash = createHash("sha256").update(sql).digest("hex");
+
+  if (rows.some((row) => row.hash === hash)) return;
 
   throw new Error(
-    `the database "${name}" is ${journal.entries.length - applied} migration(s) ` +
-      `behind the ones on disk. Run \`${setupCommand}\`.`,
+    `the database "${name}" has ${rows.length} migration(s) applied, which is ` +
+      `as many as there are on disk, but not the same ones: "${last.tag}" was ` +
+      "never applied to it. That is what a database migrated on another branch " +
+      `looks like. Run \`${setupCommand}\`.`,
   );
+}
+
+/**
+ * The other half of the schema, which nothing used to check at all.
+ *
+ * Better Auth owns twelve tables and migrates them with its own migrator, from
+ * the installed version of the library (see docs/07-phase-0-findings.md section
+ * 3.1). So an upgrade of that dependency can add a table or a column with no
+ * migration file anywhere in this repository, and the first sign of it is a raw
+ * `relation "..." does not exist` from inside the library, on a sign-in.
+ *
+ * `getMigrations` is the same call `scripts/auth-migrate.ts` makes, asked what
+ * it *would* do rather than told to do it, which makes it a check.
+ *
+ * It imports src/lib/auth.ts, which reads DATABASE_URL at import time, so the
+ * caller has to have pointed the environment at the database it means: there is
+ * no URL parameter here because there is nowhere to put one.
+ *
+ * That module also validates its configuration at import time and opens a pool,
+ * which is why this is deliberately not on the path of
+ * `npm test`: the suite never touches an auth table, and paying an import and a
+ * pool per run to check something it does not use is the wrong trade. The
+ * caller that needs it is `npm run dev:test`, which serves the sign-in this
+ * would break.
+ */
+export async function assertAuthSchemaReady(setupCommand) {
+  // Through tsx, not bare `node`. Node 26 strips the types out of a .ts file on
+  // its own, but it does not rewrite an extensionless relative import, and
+  // src/ is written the TypeScript way: `import { MCP_SCOPES } from "./scopes"`
+  // resolves to nothing. tsx is the loader `npm run auth:migrate` already uses
+  // for the same module, and it is a devDependency, so it is present wherever
+  // this is called from.
+  const { register } = await import("tsx/esm/api");
+  const unregister = register();
+
+  const [{ getMigrations }, { auth }] = await Promise.all([
+    import("better-auth/db/migration"),
+    import("../../src/lib/auth.ts"),
+  ]).finally(unregister);
+
+  try {
+    const plan = await getMigrations(auth.options);
+    const missing = [
+      ...plan.toBeCreated.map((table) => table.table),
+      ...plan.toBeAdded.map((table) => table.table),
+    ];
+
+    if (missing.length === 0 && plan.toBeAddedIndexes.length === 0) return;
+
+    throw new Error(
+      "the installed version of Better Auth expects schema this database does " +
+        `not have: ${[...new Set(missing)].join(", ") || "indexes only"}. ` +
+        `Run \`${setupCommand}\`, or \`npm run auth:migrate\` for the ` +
+        "development database.",
+    );
+  } finally {
+    // The module-level pool src/lib/auth.ts opens at import. Nothing else in
+    // this process uses it, and leaving it open holds the event loop.
+    await auth.options.database?.end?.();
+  }
 }
 
 /** Connect, check the schema, disconnect. For a caller with nothing else to do. */

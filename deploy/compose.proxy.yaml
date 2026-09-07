@@ -46,6 +46,29 @@ services:
       # refuse, so it is a named volume and not a temporary filesystem.
       - caddy_data:/data
       - caddy_config:/config
+    healthcheck:
+      # Caddy's admin API, which it binds to localhost:2019 inside the container
+      # by default and which nothing outside it can reach. Asking it for the
+      # running configuration proves the process is up *and* that it loaded a
+      # config, which is the failure this exists for: a Caddyfile with a syntax
+      # error makes Caddy exit, the container restart-loop, and the site go
+      # down, while `up --wait` reports the stack healthy because the only
+      # service without a healthcheck was the only public-facing one.
+      #
+      # Port 80 would be the more obvious probe and is the wrong one: the site
+      # block matches APP_DOMAIN, so a request to localhost gets a 404 and wget
+      # calls that a failure.
+      #
+      # wget is busybox's, present in the Alpine image.
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1:2019/config/ || exit 1",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     depends_on:
       app:
         condition: service_healthy

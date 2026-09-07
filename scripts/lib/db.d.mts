@@ -21,6 +21,16 @@ export function passwordOf(url: string): string;
 /** The same URL with its credential replaced, safe to print in an error. */
 export function redactUrl(url: string): string;
 
+/**
+ * The message every bootstrap path prints when a connection fails: the step,
+ * the redacted URL, and a sentence for the codes a developer actually hits.
+ */
+export function connectionFailure(
+  url: string,
+  what: string,
+  error: unknown,
+): Error;
+
 /** Owner and runtime URLs for one sibling, honouring its overrides. */
 export function siblingUrls(
   kind: SiblingKind,
@@ -69,12 +79,21 @@ export function connectChecked(
   setupCommand: string,
 ): Promise<Client>;
 
-/** Throws, naming the setup command, when the schema is behind the migrations. */
+/**
+ * Throws, naming the setup command, when the schema is behind the migrations on
+ * disk, or as deep as them but not the same ones.
+ */
 export function assertMigrationsApplied(
   client: Client,
   name: string,
   setupCommand: string,
 ): Promise<void>;
+
+/**
+ * Throws when the installed Better Auth expects tables this database does not
+ * have. Reads DATABASE_URL from the environment, because src/lib/auth.ts does.
+ */
+export function assertAuthSchemaReady(setupCommand: string): Promise<void>;
 
 /** Connect, check the schema, disconnect. */
 export function assertDatabaseReady(
