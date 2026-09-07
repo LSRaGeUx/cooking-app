@@ -5,7 +5,7 @@
 #
 #   npm run db:up                                  # the database alone, for dev
 #   docker compose --profile serve up -d --build   # build here, for CI and hacking
-#   docker compose pull && \
+#   docker compose --profile serve pull && \
 #     docker compose --profile serve up -d --no-build --wait   # a deploy
 #
 # The last one is what a server runs. `next build` wants more CPU and memory than
@@ -22,6 +22,12 @@
 # It is separate rather than a profile because Compose interpolates every service
 # in a file whichever profile is active, so a required APP_DOMAIN in here would
 # make `npm run db:up` demand a public hostname on a laptop.
+#
+# `deploy/compose.secrets.yaml` is a fourth, for a deployment that would rather
+# mount its credentials as files than put them in the environment of a container.
+# Same reason for being separate: Compose validates every secret file it is given
+# whichever profile is active, so a laptop would be asked for files it has no use
+# for.
 #
 # IMAGE_TAG selects which build to run and defaults to whatever CI last pushed
 # from main. Every CI build also publishes an immutable `sha-<commit>` tag, so a
@@ -45,6 +51,24 @@ x-logging: &logging
 # Built from the credentials rather than taken from .env directly, because these
 # point at the `db` service and the values in .env point at localhost for the
 # from-source path.
+#
+# Both passwords go into a URL here, and **Compose has no way to percent-encode
+# a value**: there is no function in the interpolation syntax, and quoting does
+# not help, because the string is parsed as a URL further down. A password
+# holding `/`, `@`, `#`, `%` or `:`, which is most of what
+# `openssl rand -base64` produces, therefore builds a URL that parses to a
+# different host or a different database, and the migrator dies with something
+# that reads like a credentials problem. So:
+#
+# - .env.example says to generate both with `openssl rand -hex 24`, which cannot
+#   produce a character that needs encoding;
+# - scripts/db-bootstrap.mjs checks the database the URL actually parses to
+#   against POSTGRES_DB before it connects, and says so when they differ.
+#
+# The alternative to both is the `_FILE` form: `secret()` in src/lib/config.ts
+# prefers `DATABASE_URL_FILE` over `DATABASE_URL`, so a deployment that mounts
+# the whole URL as a file encodes it once, by hand, and this interpolation is
+# not involved at all. deploy/compose.secrets.yaml is that path.
 x-db-env: &db_env
   DATABASE_URL: postgres://${POSTGRES_USER:-cooking}:${POSTGRES_PASSWORD:-cooking}@db:5432/${POSTGRES_DB:-cooking}
   APP_DATABASE_URL: postgres://cooking_app:${APP_DB_PASSWORD:-cooking_app}@db:5432/${POSTGRES_DB:-cooking}
@@ -54,9 +78,20 @@ x-db-env: &db_env
 # the schema out of the installed Better Auth, and the module validates its
 # configuration at import time.
 #
-# No defaults on purpose. A deployment that silently came up with a placeholder
-# secret, or with localhost as its OAuth issuer, is worse than one that refuses
-# to start: see docs/08-self-hosting.md section 3.
+# No defaults on the three that are not secrets. A deployment that silently came
+# up with localhost as its OAuth issuer is worse than one that refuses to start:
+# see docs/08-self-hosting.md section 3.
+#
+# The two secrets are the exception, and it is deliberate rather than an
+# oversight. They may arrive either as a value here or as a file named by
+# `<NAME>_FILE`, which is what deploy/compose.secrets.yaml mounts and what
+# `secret()` in src/lib/config.ts prefers. A `:?` guard on the value would
+# refuse that overlay before it could supply the file, because Compose
+# interpolates every file it is handed regardless of which one overrides which.
+# The refusal did not disappear, it moved into the application: `secret()`
+# throws "set BETTER_AUTH_SECRET or BETTER_AUTH_SECRET_FILE" at import, and the
+# migrator imports it, so `up --wait` still stops at the migrator and never
+# starts the application.
 #
 # AUTH_PASSWORD_LOGIN is deliberately absent, whatever .env says. The endpoints
 # it opens exist for `npm run verify:oauth` to drive, and a container facing the
@@ -64,11 +99,11 @@ x-db-env: &db_env
 # Google pair required here: the auth module refuses a configuration with no way
 # in at all.
 x-auth-env: &auth_env
-  BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?generate one with openssl rand -base64 32}
+  BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
   BETTER_AUTH_URL: ${BETTER_AUTH_URL:?the public https origin, not localhost}
   MCP_RESOURCE: ${MCP_RESOURCE:?the public https origin plus /api/mcp}
   GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?the Google OAuth client id, or there is no way to sign in}
-  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?the matching secret}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
 
 services:
   db:
@@ -86,16 +121,28 @@ services:
       POSTGRES_INITDB_ARGS: "--data-checksums"
     ports:
       # Loopback only. On a VPS, publishing 5432 on every interface puts the
-      # database on the public internet, and nothing outside this machine needs
-      # it: the application reaches it over the compose network, and a backup
-      # runs through `docker compose exec`.
+      # database on the public internet.
+      #
+      # Nothing on a server needs even this much: the application reaches
+      # Postgres over the compose network and a backup runs through
+      # `docker compose exec`. It is published for development, where
+      # drizzle-kit, the test suite and `npm run dev` all connect from the host,
+      # and it cannot be narrowed to the development case from inside this file:
+      # a profile applies to a service, not to one of its port mappings, and an
+      # override file appends to `ports:` rather than replacing it. Splitting it
+      # out means `npm run db:up` growing a second `-f`, which is a package.json
+      # change and is recorded as a follow-up rather than done here.
       - "127.0.0.1:5432:5432"
     volumes:
       # Postgres 18+ images place data in a major-version subdirectory, so the
       # mount goes one level up. Mounting /var/lib/postgresql/data fails to boot.
       - pgdata:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cooking} -d ${POSTGRES_DB:-cooking}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-cooking} -d ${POSTGRES_DB:-cooking}",
+        ]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -117,6 +164,17 @@ services:
     # whole `up` stops here, before the application is ever started.
     environment:
       <<: [*db_env, *auth_env]
+    # The migrator changes the schema and nothing else. It writes no file, needs
+    # no capability, and gains nothing from a setuid binary.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      # npm writes a log here when a script fails, which is exactly the run
+      # whose output matters.
+      - /tmp
     depends_on:
       db:
         condition: service_healthy
@@ -139,6 +197,26 @@ services:
       # looks healthy, and lets nobody in, including you. Refusing at `up` is
       # the louder failure and the message carries the fix.
       ALLOWED_EMAILS: ${ALLOWED_EMAILS:?comma separated addresses allowed to hold an account}
+    # Standalone Next binds a port and talks to Postgres. It needs no Linux
+    # capability at all, so it is given none, and it may not acquire privileges
+    # through a setuid binary it happens to find in the image. Both are one line
+    # each and neither has anything to do with the application's own code, which
+    # is what makes them worth having: they hold when the code is wrong.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Nothing under /app is written to at run time. The two directories that are
+    # get a temporary filesystem of their own, so a compromise cannot leave
+    # anything behind that survives a restart.
+    read_only: true
+    tmpfs:
+      - /tmp
+      # Next's own cache directory. Standalone output does not write to it in
+      # this application, which uses no ISR and no next/image, but the framework
+      # creates it and the failure mode of getting that wrong is a 500 on a page
+      # nobody tested.
+      - /app/.next/cache
     ports:
       # Loopback only: TLS is terminated by the reverse proxy in front, whether
       # that is deploy/compose.proxy.yaml or something already on the machine.
@@ -152,7 +230,11 @@ services:
       # /api/health runs `select 1` on the runtime pool, so an application that
       # is listening but cannot reach Postgres reports unhealthy instead of
       # serving an error on every screen. wget is busybox's, present in Alpine.
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1",
+        ]
       interval: 30s
       timeout: 5s
       retries: 3

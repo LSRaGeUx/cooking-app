@@ -5,9 +5,33 @@ on:
     branches: [main]
   pull_request:
 
+# One run of this workflow per ref at a time, and never cancelled.
+#
+# Cancelling is the wrong default here because of the publish job. Two pushes to
+# main land minutes apart, both build, and nothing orders them: the older commit
+# can finish last and overwrite `main-runtime` with older code, while its own
+# summary reports success and the newer run's does too. Serialising the ref
+# makes the last push the last image. `cancel-in-progress: false` rather than
+# true for the same reason: a cancelled publish can have pushed one of its two
+# tags already.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+# The floor for every job. GITHUB_TOKEN otherwise carries whatever the
+# repository default is, which is write access to everything on a repository
+# that has never been narrowed. Only `publish` needs more, and it asks for
+# exactly what it needs and nothing else.
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    # Nothing here takes five minutes. Without a limit the default is six hours,
+    # which is what a hung Postgres service container or a watch-mode test would
+    # spend before anyone noticed.
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -35,9 +59,15 @@ jobs:
       AUTH_PASSWORD_LOGIN: "true"
 
     steps:
-      - uses: actions/checkout@v5
+      # Third-party actions are pinned by commit, not by tag. A tag is a moving
+      # pointer that the action's own maintainer can repoint, so `@v5` is a
+      # standing grant of arbitrary code execution in a job that holds a token.
+      # The version is in the comment because a digest tells a human nothing;
+      # refresh both together with
+      # `gh api repos/<owner>/<repo>/commits/<tag> --jq .sha`.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -45,7 +75,8 @@ jobs:
       - run: npm ci
 
       # Constraint 1 from CLAUDE.md. Fails the build if any LLM client reaches
-      # the lockfile, which is the only way the zero-LLM rule stays true.
+      # the lockfile, or if any file in src/ names a model provider's host,
+      # which is what calling one without a dependency looks like.
       - name: No LLM dependency
         run: npm run check:deps
 
@@ -57,9 +88,21 @@ jobs:
       # from the two above, so nothing extra goes in the env block.
       - run: npm run db:setup:test
 
+      # The same order as `npm run verify`, so a green CI and a green laptop
+      # mean the same thing.
+      - run: npm run format:check
+      - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+      # Its own step, because a shell script is the one thing in this repository
+      # that no other check reads. `set -eu` without pipefail, an unquoted
+      # expansion, a `find` whose failure is swallowed by the loop reading it:
+      # all three shipped in scripts/backup.sh at one time or another, and all
+      # three are what this catches. shellcheck is preinstalled on the runner.
+      - name: The backup script
+        run: shellcheck scripts/backup.sh
 
   # The container path, end to end, because none of it can fail on a laptop
   # running `npm run dev` and all of it fails on a server. Three defects shipped
@@ -71,9 +114,12 @@ jobs:
   # the stack actually comes up and answers.
   deploy:
     runs-on: ubuntu-latest
+    # A build plus an `up --wait` plus six curls. The limit is here for the
+    # `--wait`, which blocks on a healthcheck and has no timeout of its own.
+    timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       # Compose reads .env, so the values go in a file rather than the env
       # block. None of them is a real credential: nothing here reaches Google,
@@ -90,6 +136,24 @@ jobs:
           GOOGLE_CLIENT_SECRET=ci-client-secret
           ALLOWED_EMAILS=ci@example.test
           ENV
+
+      # The reverse proxy is the only public-facing service in a real
+      # deployment, and its configuration is a file this repository ships. A
+      # syntax error in it is currently found on the VPS, after a `git pull`,
+      # with the proxy restart-looping and the site down. Caddy validates its
+      # own config, so it can be found here instead.
+      #
+      # Both variables are supplied because the file interpolates them and an
+      # empty site address is itself a parse error, which would make this step
+      # fail for a reason that has nothing to do with the change under test.
+      - name: The Caddyfile parses
+        run: |
+          docker run --rm \
+            -e APP_DOMAIN=ci.example.test \
+            -e ACME_EMAIL=ci@example.test \
+            -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            docker.io/library/caddy:2-alpine \
+            caddy validate --config /etc/caddy/Caddyfile
 
       # --wait blocks until the database reports healthy, the migrator exits
       # zero and the application's own healthcheck passes, so a failure here is
@@ -152,6 +216,8 @@ jobs:
     needs: [verify, deploy]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # Two amd64 images, cross-built, with a cold cache on the first run of a day.
+    timeout-minutes: 30
 
     permissions:
       contents: read
@@ -161,7 +227,7 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       # GHCR rejects an uppercase path, and both github.repository and
       # github.repository_owner carry the account's real capitalisation.
@@ -171,9 +237,9 @@ jobs:
           echo "repo=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
           echo "sha=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -186,7 +252,7 @@ jobs:
       # Each gets a moving `main-*` tag, which is what compose.yaml defaults to,
       # and an immutable `sha-<commit>-*` one, which is what a rollback names.
       - name: Runtime image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           target: runtime
@@ -199,7 +265,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Migrator image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           target: migrator

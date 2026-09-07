@@ -6,6 +6,11 @@
 .git
 .github
 .next
+# `npm run dev:test` builds here, and `npm run test:coverage` reports here.
+# Neither is build input, and both are large enough to slow every build on a
+# machine that has run them once.
+.next-test
+coverage
 node_modules
 npm-debug.log*
 tsconfig.tsbuildinfo

@@ -19,9 +19,9 @@ import {
   adminUrlFor,
   applyBootstrap,
   assertSiblingUrls,
+  connectionFailure,
   ensureDatabase,
   passwordOf,
-  redactUrl,
   siblingUrls,
 } from "./lib/db.mjs";
 
@@ -78,20 +78,29 @@ let state;
 try {
   state = await ensureDatabase(adminUrl, name);
 } catch (error) {
-  console.error(
-    `${kind}-db: cannot reach the instance that should hold ${name} via ` +
-      `${redactUrl(adminUrl)}: ${error.message}`,
-  );
+  console.error(connectionFailure(adminUrl, `${kind}-db`, error).message);
   process.exit(1);
 }
 console.log(`${kind}-db: database ${name} ${state}`);
 
-await applyBootstrap(urls.owner, password);
+// The same wrapping as the line above, and as scripts/db-bootstrap.mjs. This
+// call used to be bare, so the wrong owner password produced advice on one line
+// and a raw 28P01 stack trace on the next.
+try {
+  await applyBootstrap(urls.owner, password);
+} catch (error) {
+  console.error(connectionFailure(urls.owner, `${kind}-db`, error).message);
+  process.exit(1);
+}
 console.log(`${kind}-db: role cooking_app and grants are in place`);
 
 // Both migrators read DATABASE_URL, so pointing them at the sibling is a matter
 // of the environment they are spawned with rather than a second config.
-const env = { ...process.env, DATABASE_URL: urls.owner, APP_DATABASE_URL: urls.app };
+const env = {
+  ...process.env,
+  DATABASE_URL: urls.owner,
+  APP_DATABASE_URL: urls.app,
+};
 
 run("drizzle-kit", ["migrate"], env);
 run("tsx", ["scripts/auth-migrate.ts"], env);
@@ -99,7 +108,9 @@ run("tsx", ["scripts/auth-migrate.ts"], env);
 console.log(`${kind}-db: ready`);
 
 function run(binary, args, env) {
-  const executable = fileURLToPath(new URL(`../node_modules/.bin/${binary}`, import.meta.url));
+  const executable = fileURLToPath(
+    new URL(`../node_modules/.bin/${binary}`, import.meta.url),
+  );
   const result = spawnSync(executable, args, { stdio: "inherit", env });
   if (result.status !== 0) {
     console.error(`${kind}-db: ${binary} ${args.join(" ")} failed`);

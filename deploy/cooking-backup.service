@@ -18,8 +18,24 @@ Description=Dump the cooking-app database
 Documentation=file:/srv/cooking-app/scripts/backup.sh
 # The dump goes through `docker compose exec`, so there is no point starting
 # before the container engine is up.
+#
+# `After=` and not `Requires=`. An ordering dependency on a unit that does not
+# exist is simply nothing to wait for; a requirement on one is a unit that
+# refuses to start. This file documents COMPOSE_CMD=podman-compose below as a
+# supported configuration, and a Podman host has no docker.service, so
+# `Requires=docker.service` made the timer fail on exactly the machines that
+# line is for. `network-online.target` is the requirement that is true either
+# way: the engine has to be able to reach the container's network.
+#
+# On a Podman host, add the engine's own ordering with a drop-in rather than
+# editing this file:
+#
+#   sudo systemctl edit cooking-backup.service
+#   [Unit]
+#   After=podman.socket
+After=network-online.target
 After=docker.service
-Requires=docker.service
+Wants=network-online.target
 
 [Service]
 Type=oneshot

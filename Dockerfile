@@ -10,12 +10,36 @@
 
 # Tracks .nvmrc. Alpine because there is no native dependency in the tree: pg
 # and linkedom are pure JavaScript.
-ARG NODE_IMAGE=node:26.3-alpine
+#
+# Pinned by digest, not by tag. `node:26.3-alpine` is republished whenever its
+# Alpine base gets a patch, so the same commit rebuilt a month later is a
+# different image, and "it worked in CI" stops meaning anything. The digest is
+# the multi-arch index, so it still resolves to amd64 in CI and arm64 on a
+# developer's Mac. The tag stays in the comment because a digest tells a human
+# nothing:
+#
+#   node:26.3-alpine   # readable name of the digest below
+#
+# Refresh it deliberately, with:
+#
+#   podman pull node:26.3-alpine
+#   podman image inspect node:26.3-alpine --format '{{index .RepoDigests 0}}'
+#
+# and check the digest that comes back is the index rather than one platform's
+# manifest: `podman manifest inspect <digest>` has to succeed.
+ARG NODE_IMAGE=node@sha256:a2dc166a387cc6ca1e62d0c8e265e49ca985d6e60abc9fe6e6c3d6ce8e63f606
 
 FROM ${NODE_IMAGE} AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+# --ignore-scripts: `npm ci` otherwise runs the install and postinstall script of
+# every package in the tree, transitively, as part of the build. Nothing here
+# needs one. The packages that ship a native binary (esbuild, unrs-resolver,
+# @parcel/watcher) get it from a per-platform optional dependency rather than by
+# compiling in a postinstall, so they still work. If a future dependency really
+# does need its script, add that one package back with
+# `npm rebuild <package>` rather than dropping the flag for the whole tree.
+RUN npm ci --ignore-scripts
 
 FROM ${NODE_IMAGE} AS build
 WORKDIR /app
@@ -47,11 +71,32 @@ ENV NODE_ENV=production \
 RUN npm run build
 
 # Schema changes. Runs once per deploy, then exits.
+#
+# It is published to the registry beside the runtime image, so it is treated the
+# same way: not root, and carrying only what it runs. What that is:
+#
+#   package.json      the three scripts below, and `type: module`
+#   tsconfig.json     the `@/*` paths, which src/db/schema imports through
+#   drizzle.config.ts where the schema and the migration folder are
+#   drizzle/         the migrations themselves, and their journal
+#   scripts/         the three entry points
+#   src/db           the schema, and bootstrap.sql
+#   src/domain       imported by the schema for the vocabulary types
+#   src/lib          scripts/auth-migrate.ts imports src/lib/auth.ts
+#
+# Everything else the old `COPY . .` brought in, which is to say the whole
+# application, the tests and the documentation, was surface with nothing to do.
 FROM ${NODE_IMAGE} AS migrator
 WORKDIR /app
 ENV NODE_ENV=production
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY --from=deps --chown=node:node /app/node_modules ./node_modules
+COPY --chown=node:node package.json tsconfig.json drizzle.config.ts ./
+COPY --chown=node:node drizzle ./drizzle
+COPY --chown=node:node scripts ./scripts
+COPY --chown=node:node src/db ./src/db
+COPY --chown=node:node src/domain ./src/domain
+COPY --chown=node:node src/lib ./src/lib
+USER node
 # Bootstrap creates the least-privileged runtime role, then Drizzle migrates the
 # domain tables and Better Auth migrates its own twelve. Order matters: see
 # docs/07-phase-0-findings.md section 3.1.
