@@ -39,25 +39,27 @@ export interface CurrentUser {
  * owns the user table and its lifecycle, and an idempotent ensure cannot be
  * skipped by a user that appeared some other way.
  */
-export const requireUser = cache(async (): Promise<{
-  user: CurrentUser;
-  ctx: ServiceContext;
-}> => {
-  const session = await getCurrentSession();
-  if (!session?.user) redirect("/login");
+export const requireUser = cache(
+  async (): Promise<{
+    user: CurrentUser;
+    ctx: ServiceContext;
+  }> => {
+    const session = await getCurrentSession();
+    if (!session?.user) redirect("/login");
 
-  const access = checkAccess(session.user.email);
-  if (!access.allowed) redirect(`/login?error=${access.code}`);
+    const access = checkAccess(session.user.email);
+    if (!access.allowed) redirect(`/login?error=${access.code}`);
 
-  const ctx = userContext(session.user.id);
-  await ensureUserSetup(ctx);
+    const ctx = userContext(session.user.id);
+    await ensureUserSetup(ctx);
 
-  return {
-    user: {
-      id: session.user.id,
-      email: session.user.email,
-      name: session.user.name,
-    },
-    ctx,
-  };
-});
+    return {
+      user: {
+        id: session.user.id,
+        email: session.user.email,
+        name: session.user.name,
+      },
+      ctx,
+    };
+  },
+);

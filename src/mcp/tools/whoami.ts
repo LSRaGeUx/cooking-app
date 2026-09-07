@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpCallerContext } from "../server";
+import { toolJson } from "../serializers";
 import { runTool } from "../tool-runner";
 
 /**
@@ -34,18 +35,14 @@ export function registerWhoami(
           // The floor the endpoint already enforces. Named here anyway so the
           // tool states its own requirement rather than inheriting it silently.
           requiredScopes: ["profile:read"],
-          payloadSummary: { scopes: [...caller.scopes].length },
+          payloadSummary: { scopes: caller.scopes.size },
         },
         async () =>
-          JSON.stringify(
-            {
-              userId: caller.userId,
-              clientId: caller.clientId ?? null,
-              scopes: [...caller.scopes].sort(),
-            },
-            null,
-            2,
-          ),
+          toolJson({
+            user_id: caller.userId,
+            client_id: caller.clientId,
+            scopes: [...caller.scopes].sort(),
+          }),
       ),
   );
 }

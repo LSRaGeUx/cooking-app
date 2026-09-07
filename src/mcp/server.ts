@@ -16,10 +16,20 @@ import { registerRecipeWrites } from "./tools/recipe-writes";
 import { registerSearchRecipes } from "./tools/search-recipes";
 import { registerUpdateSlot } from "./tools/update-slot";
 import { registerWhoami } from "./tools/whoami";
+import { version as packageVersion } from "../../package.json";
 
 export interface McpCallerContext {
   userId: string;
-  clientId: string | undefined;
+  /**
+   * `null`, never `undefined`, when the token names no registered client.
+   *
+   * One value used to be spelled three ways along one path: `string |
+   * undefined` here, `string | null` in `ServiceContext`, `string | undefined`
+   * again in the audit input, with a `?? null` in `tool-runner` bridging them.
+   * Two spellings of absence on a field that decides what a write is attributed
+   * to is one too many.
+   */
+  clientId: string | null;
   scopes: ReadonlySet<string>;
 }
 
@@ -30,7 +40,10 @@ export interface McpCallerContext {
 export function buildServer(ctx: McpCallerContext): McpServer {
   const server = new McpServer({
     name: "cooking-app",
-    version: "0.0.0",
+    // Read from package.json rather than hardcoded. It was pinned at "0.0.0",
+    // which an MCP client displays and reports, so every release looked like the
+    // same unreleased build.
+    version: packageVersion,
   });
 
   registerWhoami(server, ctx);
@@ -50,7 +63,9 @@ export function buildServer(ctx: McpCallerContext): McpServer {
   registerImportRecipe(server, ctx);
 
   registerResources(server, ctx);
-  registerPrompts(server, ctx);
+  // No caller: the prompts are static text and steer the agent rather than read
+  // anything of the user's, so the parameter was taken and never used.
+  registerPrompts(server);
 
   return server;
 }

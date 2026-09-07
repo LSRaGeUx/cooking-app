@@ -2,6 +2,12 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { loadHistory, loadSignals } from "@/services/history-service";
 import type { McpCallerContext } from "../server";
+import {
+  serializeBudgetSuggestion,
+  serializeHistoryWeek,
+  serializeSignal,
+  toolJson,
+} from "../serializers";
 import { runTool } from "../tool-runner";
 
 /**
@@ -54,42 +60,17 @@ export function registerGetHistory(
           const history = await loadHistory(ctx, weeks_back);
           const { signals, budgetSuggestions } = await loadSignals(ctx);
 
-          return JSON.stringify(
-            {
-              weeks: history.map((week) => ({
-                year: week.year,
-                week: week.week,
-                meals: week.entries.map((entry) => ({
-                  day_of_week: entry.dayOfWeek,
-                  recipe_title: entry.recipeTitle,
-                  servings: entry.servings,
-                  outcome: entry.outcome,
-                  rating: entry.rating,
-                  swapped_for: entry.swappedFor,
-                  took_longer: entry.tookLonger,
-                  note: entry.note,
-                })),
-              })),
-              unresolved_signals: signals.map((signal) => ({
-                code: signal.code,
-                message: signal.message,
-                details: signal.details,
-              })),
-              // Surfaced so an agent can raise it in conversation. It must not
-              // change the setting itself: a time budget belongs to the person
-              // whose evenings it describes.
-              budget_suggestions: budgetSuggestions.map((suggestion) => ({
-                day_of_week: suggestion.dayOfWeek,
-                meal_type_label: suggestion.mealTypeLabel,
-                current_budget_min: suggestion.currentBudgetMin,
-                suggested_budget_min: suggestion.suggestedBudgetMin,
-                overruns: `${suggestion.overrunCount}/${suggestion.observedCount}`,
-              })),
-              note: "Un repas sans `outcome` n'a pas été jugé. Ce n'est pas un échec.",
-            },
-            null,
-            2,
-          );
+          return toolJson({
+            weeks: history.map(serializeHistoryWeek),
+            unresolved_signals: signals.map(serializeSignal),
+            // Surfaced so an agent can raise it in conversation. It must not
+            // change the setting itself: a time budget belongs to the person
+            // whose evenings it describes.
+            budget_suggestions: budgetSuggestions.map(
+              serializeBudgetSuggestion,
+            ),
+            note: "Un repas sans `outcome` n'a pas été jugé. Ce n'est pas un échec.",
+          });
         },
       ),
   );

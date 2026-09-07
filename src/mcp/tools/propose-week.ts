@@ -1,7 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { proposeWeekSchema } from "@/domain/schemas";
+import { formatIsoWeek } from "@/domain/week";
 import { proposeWeek } from "@/services/plan-service";
+import { proposeWeekParamsSchema, toProposeWeekInput } from "../schemas";
 import type { McpCallerContext } from "../server";
+import { serializeWarning, toolJson } from "../serializers";
 import { runTool } from "../tool-runner";
 
 /**
@@ -33,7 +36,7 @@ export function registerProposeWeek(
         "l'application, et sans lui il ne sait pas où aller regarder.\n\n" +
         "Cet appel remplace la semaine entière. Pour changer un seul repas, " +
         "utilisez `update_slot`.",
-      inputSchema: proposeWeekSchema.shape,
+      inputSchema: proposeWeekParamsSchema.shape,
     },
     async (args) =>
       runTool(
@@ -43,34 +46,37 @@ export function registerProposeWeek(
           direction: "write",
           requiredScopes: ["plan:write"],
           payloadSummary: {
-            week: `${args.year}-W${args.week}`,
-            entries: args.entries.length,
-            newRecipes: args.newRecipes.length,
+            week: formatIsoWeek({ year: args.year, week: args.week }),
+            entries: args.entries,
+            newRecipes: args.new_recipes,
           },
         },
         async (ctx) => {
-          const result = await proposeWeek(ctx, args);
-          return JSON.stringify(
-            {
-              version_id: result.version.id,
-              version_number: result.version.versionNumber,
-              state: result.version.state,
-              review_url: result.reviewUrl,
-              entries: result.entries.length,
-              // Written, but the user will see them flagged. Say so in your
-              // reply rather than letting them find out on the screen.
-              warnings: result.warnings.map((warning) => ({
-                code: warning.code,
-                message: warning.message,
-              })),
-              next_step:
-                result.version.state === "pending"
-                  ? "La proposition attend la validation de l'utilisateur. Donnez-lui review_url."
-                  : "La semaine est active. Donnez review_url à l'utilisateur pour qu'il la voie.",
-            },
-            null,
-            2,
+          // Parsed through the domain schema, not merely mapped into its shape.
+          // `inputSchema` gets the snake_case shape, and the SDK rebuilds its own
+          // object from a shape, which drops the object-level `superRefine` that
+          // `isoWeekSchema` carries: without this line `2027-W53` passed the tool
+          // and was refused several layers down, in a message about a plan rather
+          // than about a week that does not exist.
+          const input = proposeWeekSchema.parse(
+            toProposeWeekInput(proposeWeekParamsSchema.parse(args)),
           );
+          const result = await proposeWeek(ctx, input);
+          return toolJson({
+            version_id: result.version.id,
+            version_number: result.version.versionNumber,
+            state: result.version.state,
+            review_url: result.reviewUrl,
+            entries: result.entries.length,
+            // Written, but the user will see them flagged. Say so in your
+            // reply rather than letting them find out on the screen. The
+            // details bag names the parts, so it travels with them.
+            warnings: result.warnings.map(serializeWarning),
+            next_step:
+              result.version.state === "pending"
+                ? "La proposition attend la validation de l'utilisateur. Donnez-lui review_url."
+                : "La semaine est active. Donnez review_url à l'utilisateur pour qu'il la voie.",
+          });
         },
       ),
   );

@@ -1,7 +1,9 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { formatIsoWeek } from "@/domain/week";
 import { linkPrep } from "@/services/prep-service";
 import type { McpCallerContext } from "../server";
+import { serializeWarning, toolJson } from "../serializers";
 import { runTool } from "../tool-runner";
 
 /**
@@ -29,11 +31,30 @@ export function registerLinkPrep(
         "de la source sont augmentées de ce qui est tiré, et la liste de " +
         "courses ne compte ses ingrédients qu'une fois.",
       inputSchema: {
-        year: z.number().int().min(1970).max(9999),
-        week: z.number().int().min(1).max(53),
+        year: z
+          .number()
+          .int()
+          .min(1970)
+          .max(9999)
+          .describe(
+            "L'année ISO de la semaine, toujours explicite. Elle peut différer " +
+              "de l'année civile pour les semaines de fin décembre et de début " +
+              "janvier.",
+          ),
+        week: z
+          .number()
+          .int()
+          .min(1)
+          .max(53)
+          .describe(
+            "Le numéro de semaine ISO. Les deux repas liés doivent appartenir " +
+              "à cette semaine.",
+          ),
         source_entry_id: z
           .uuid()
-          .describe("Le repas qui est réellement cuisiné, tel que renvoyé par `get_week`."),
+          .describe(
+            "Le repas qui est réellement cuisiné, tel que renvoyé par `get_week`.",
+          ),
         dependent_entry_id: z
           .uuid()
           .describe("Le repas qui n'est qu'un réchauffage ou un assemblage."),
@@ -62,7 +83,7 @@ export function registerLinkPrep(
           direction: "write",
           requiredScopes: ["plan:write"],
           payloadSummary: {
-            week: `${args.year}-W${args.week}`,
+            week: formatIsoWeek({ year: args.year, week: args.week }),
             source: args.source_entry_id,
           },
         },
@@ -80,18 +101,11 @@ export function registerLinkPrep(
             },
           );
 
-          return JSON.stringify(
-            {
-              link_id: result.link.id,
-              servings_drawn: result.link.servingsDrawn,
-              warnings: result.warnings.map((warning) => ({
-                code: warning.code,
-                message: warning.message,
-              })),
-            },
-            null,
-            2,
-          );
+          return toolJson({
+            link_id: result.link.id,
+            servings_drawn: result.link.servingsDrawn,
+            warnings: result.warnings.map(serializeWarning),
+          });
         },
       ),
   );

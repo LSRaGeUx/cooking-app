@@ -5,8 +5,11 @@ import {
   addPantryItems,
   listPantry,
   removePantryItem,
+  restorePantryItem,
 } from "@/services/pantry-service";
+import { pantryItemParamsSchema, toPantryItemInput } from "../schemas";
 import type { McpCallerContext } from "../server";
+import { serializePantryItem, toolJson } from "../serializers";
 import { runTool } from "../tool-runner";
 
 /**
@@ -16,6 +19,12 @@ import { runTool } from "../tool-runner";
  * because "I've got half a cabbage left" arrives in chat, not in a form. The
  * description says so, and says what the lists are not: no quantities, no stock
  * accounting, nothing to reconcile.
+ *
+ * Removal is a soft delete and has a counterpart, `restore_pantry_item`. Rule 6
+ * says nothing an agent does is irreversible, and the pantry is where it matters
+ * most in practice: a use-soon item can be the thing an allergen note or a
+ * whole week's plan was built around, and an agent that misheard "the cabbage is
+ * gone" must be able to put it back rather than ask the user to retype it.
  */
 export function registerPantryTools(
   server: McpServer,
@@ -33,7 +42,7 @@ export function registerPantryTools(
         "la justification. Les produits toujours en stock n'ont pas besoin " +
         "d'être achetés, ils sont retirés de la liste de courses.\n\n" +
         "Une liste vide ne veut pas dire des placards vides, seulement que rien " +
-        "n'a été saisi.",
+        "n'a été saisi. Les produits retirés n'apparaissent pas ici.",
       inputSchema: {},
     },
     async () =>
@@ -46,19 +55,15 @@ export function registerPantryTools(
         },
         async (ctx) => {
           const items = await listPantry(ctx);
-          return JSON.stringify(
-            {
-              staples: items
-                .filter((item) => item.kind === "staple")
-                .map(serialize),
-              use_soon: items
-                .filter((item) => item.kind === "use_soon")
-                .map(serialize),
-              note: "Une liste vide signifie « rien de saisi », pas « placard vide ».",
-            },
-            null,
-            2,
-          );
+          return toolJson({
+            staples: items
+              .filter((item) => item.kind === "staple")
+              .map(serializePantryItem),
+            use_soon: items
+              .filter((item) => item.kind === "use_soon")
+              .map(serializePantryItem),
+            note: "Une liste vide signifie « rien de saisi », pas « placard vide ».",
+          });
         },
       ),
   );
@@ -76,7 +81,11 @@ export function registerPantryTools(
         "volontaire, la tenue de stock est ce qui fait abandonner ce genre de " +
         "fonctionnalité.",
       inputSchema: {
-        items: z.array(pantryItemInputSchema).min(1).max(20),
+        items: z
+          .array(pantryItemParamsSchema)
+          .min(1)
+          .max(20)
+          .describe("Un ou plusieurs produits, ajoutés en une fois."),
       },
     },
     async (args) =>
@@ -89,8 +98,11 @@ export function registerPantryTools(
           payloadSummary: { count: args.items.length },
         },
         async (ctx) => {
-          const created = await addPantryItems(ctx, args.items);
-          return JSON.stringify({ added: created.map(serialize) }, null, 2);
+          const inputs = args.items.map((item) =>
+            pantryItemInputSchema.parse(toPantryItemInput(item)),
+          );
+          const created = await addPantryItems(ctx, inputs);
+          return toolJson({ added: created.map(serializePantryItem) });
         },
       ),
   );
@@ -101,8 +113,18 @@ export function registerPantryTools(
       title: "Retirer des placards",
       description:
         "Retire un produit des placards, par exemple parce qu'il a été " +
-        "consommé ou jeté.",
-      inputSchema: { item_id: z.uuid() },
+        "consommé ou jeté.\n\n" +
+        "Le produit n'est pas supprimé, seulement retiré : il disparaît de " +
+        "`get_pantry` et de la liste de courses, et `restore_pantry_item` le " +
+        "remet en place à l'identique. Retirez donc sans hésiter ce que la " +
+        "personne vous dit avoir fini, l'erreur se corrige.",
+      inputSchema: {
+        item_id: z
+          .uuid()
+          .describe(
+            "Identifiant du produit, tel que renvoyé par `get_pantry`.",
+          ),
+      },
     },
     async (args) =>
       runTool(
@@ -115,24 +137,41 @@ export function registerPantryTools(
         },
         async (ctx) => {
           await removePantryItem(ctx, args.item_id);
-          return JSON.stringify({ removed: args.item_id }, null, 2);
+          return toolJson({
+            removed: args.item_id,
+            note: "Retiré, pas supprimé. `restore_pantry_item` le remet en place.",
+          });
         },
       ),
   );
-}
 
-function serialize(item: {
-  id: string;
-  name: string;
-  quantityNote: string | null;
-  expiresOn: string | null;
-  source: string;
-}) {
-  return {
-    id: item.id,
-    name: item.name,
-    quantity_note: item.quantityNote,
-    expires_on: item.expiresOn,
-    source: item.source,
-  };
+  server.registerTool(
+    "restore_pantry_item",
+    {
+      title: "Remettre un produit dans les placards",
+      description:
+        "Annule un retrait : le produit revient dans les placards avec son " +
+        "nom, sa quantité et sa date limite d'origine.\n\n" +
+        "À utiliser dès que la personne vous corrige, plutôt que de rajouter le " +
+        "produit avec `add_pantry_items`, ce qui en créerait un second et " +
+        "perdrait sa date limite.",
+      inputSchema: {
+        item_id: z.uuid().describe("Identifiant du produit retiré à remettre."),
+      },
+    },
+    async (args) =>
+      runTool(
+        caller,
+        {
+          name: "restore_pantry_item",
+          direction: "write",
+          requiredScopes: ["pantry:write"],
+          payloadSummary: { itemId: args.item_id },
+        },
+        async (ctx) => {
+          const restored = await restorePantryItem(ctx, args.item_id);
+          return toolJson({ restored: serializePantryItem(restored) });
+        },
+      ),
+  );
 }

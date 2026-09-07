@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { composeProfileSnapshot } from "@/services/snapshot-service";
 import type { McpCallerContext } from "../server";
+import { toolJson } from "../serializers";
 import { runTool } from "../tool-runner";
 
 /**
@@ -54,9 +55,7 @@ export function registerGetProfileSnapshot(
             // heuristic is meant to measure.
             markReferenced: true,
           });
-          return format === "json"
-            ? JSON.stringify(snapshot, null, 2)
-            : markdown;
+          return format === "json" ? toolJson(snapshot) : markdown;
         },
       ),
   );
