@@ -62,9 +62,17 @@ Requires Node (see `.nvmrc`) and Podman.
 cp .env.example .env        # then set BETTER_AUTH_SECRET
 npm ci
 npm run db:setup            # container, roles, migrations, auth tables, side databases
-npm run verify              # dep check, typecheck, tests
-npm run dev
+npm run verify              # dep check, format check, lint, typecheck, tests
+npm run dev                 # loopback only, on port 3000
 ```
+
+`verify` is the gate CI runs, and its five steps are also available on their own:
+`check:deps`, `format:check`, `lint`, `typecheck` and `test`. `npm run format`
+writes the formatting rather than checking it, `npm run lint:fix` does the same
+for the fixable lint rules, and `npm run test:coverage` runs the suite with a
+coverage report. `npm run dev` binds `127.0.0.1` on purpose, so a development
+server with an open allowlist is not reachable from the network it happens to be
+on; reaching it from a phone on the same LAN is a deliberate act, not a default.
 
 Running your own instance for real, rather than trying it, needs a server with a
 hostname pointed at it and nothing on it but Docker. The images are built by CI,
@@ -110,11 +118,24 @@ authenticated `whoami`, and a check that an unauthenticated call is still refuse
 with RFC 9728 discovery.
 
 The MCP endpoint is at `/api/mcp`, and the app's Agent screen walks you through
-connecting a client to it. It exposes read tools (`get_profile_snapshot`,
-`search_recipes`, `get_recipe`, `get_week`), write tools (`check_feasibility`,
-`propose_week`, `update_slot`, `create_recipe`, `update_recipe`, `record_facts`,
-`retire_fact`), resources for the profile, slots, recipe index and any planned
-week, and two prompts that carry the recommended call sequence.
+connecting a client to it. It exposes twenty tools, eight resources and two
+prompts that carry the recommended call sequence.
+
+The tools read (`whoami`, `get_profile_snapshot`, `search_recipes`, `get_recipe`,
+`get_week`, `get_history`, `get_pantry`, `check_feasibility`) and write
+(`propose_week`, `update_slot`, `create_recipe`, `update_recipe`,
+`import_recipe_from_url`, `record_facts`, `retire_fact`, `restore_fact`,
+`add_pantry_items`, `remove_pantry_item`, `restore_pantry_item`, `link_prep`).
+`check_feasibility` sits with the reads because it takes exactly what
+`propose_week` takes and writes nothing: it is how an agent iterates against the
+validation rules before committing to them. The three restore tools are there
+because nothing an agent does may be irreversible.
+
+Every parameter on the surface is snake_case, at every depth, and carries a
+description. Resources and tools return the same shape for the same entity, so a
+week read from `cooking://plan/current` can be handed straight to `link_prep`.
+Full surface, error taxonomy and the reasoning in
+[`docs/03-agent-interface.md`](docs/03-agent-interface.md).
 
 ## What makes it different
 

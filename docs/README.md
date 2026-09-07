@@ -9,17 +9,17 @@ agent the user already pays for. Marginal cost per user tends to zero.
 
 ## Read in this order
 
-| Doc | What it settles |
-|---|---|
-| [00-vision.md](00-vision.md) | Problem, differentiator, cost model, scope in and out, risks |
-| [01-functional-spec.md](01-functional-spec.md) | Vocabulary, core loop, every feature's rules, screens, edge cases |
-| [02-data-model.md](02-data-model.md) | Entities, columns, invariants, tenancy, the v2 household path |
-| [03-agent-interface.md](03-agent-interface.md) | MCP transport, auth, resources, tools, the profile snapshot, error taxonomy |
-| [04-tech-spec.md](04-tech-spec.md) | Stack argument, architecture, security, recorded decisions |
-| [05-roadmap.md](05-roadmap.md) | Ten phases, each shippable alone |
-| [06-open-questions.md](06-open-questions.md) | Assumptions, questions, unknowns to resolve by experiment |
-| [07-phase-0-findings.md](07-phase-0-findings.md) | What the phase 0 spike proved, and the six things the spec got wrong |
-| [08-self-hosting.md](08-self-hosting.md) | Running your own instance: requirements, configuration, backups, upgrades, troubleshooting |
+| Doc                                              | What it settles                                                                            |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| [00-vision.md](00-vision.md)                     | Problem, differentiator, cost model, scope in and out, risks                               |
+| [01-functional-spec.md](01-functional-spec.md)   | Vocabulary, core loop, every feature's rules, screens, edge cases                          |
+| [02-data-model.md](02-data-model.md)             | Entities, columns, invariants, tenancy, the v2 household path                              |
+| [03-agent-interface.md](03-agent-interface.md)   | MCP transport, auth, resources, tools, the profile snapshot, error taxonomy                |
+| [04-tech-spec.md](04-tech-spec.md)               | Stack argument, architecture, security, recorded decisions                                 |
+| [05-roadmap.md](05-roadmap.md)                   | Ten phases, each shippable alone, then what shipped after them and what is deferred        |
+| [06-open-questions.md](06-open-questions.md)     | Assumptions, questions, unknowns to resolve by experiment                                  |
+| [07-phase-0-findings.md](07-phase-0-findings.md) | What the phase 0 spike proved, and the six things the spec got wrong                       |
+| [08-self-hosting.md](08-self-hosting.md)         | Running your own instance: requirements, configuration, backups, upgrades, troubleshooting |
 
 ## The five decisions that shape everything
 
@@ -43,7 +43,7 @@ maintain a deep structured profile plus an atomic fact store. The strict
 allergen block, slot state validation and slot time budgets are enforced in the
 service layer that both the UI and the MCP endpoint call.
 
-An agent can connect, read and write: twelve tools, eight resources and two
+An agent can connect, read and write: twenty tools, eight resources and two
 prompts behind OAuth 2.1, with per-tool scopes, immediate revocation, a
 per-client rate limit and an activity log. It proposes a week, the user reviews
 it slot by slot against what is planned today, and accepts all of it, part of
@@ -63,3 +63,11 @@ empty states that say what to do next, a week grid a keyboard can operate slot
 by slot, data export and real account deletion, an English translation with a
 test that stops the two catalogues drifting, and
 [08-self-hosting.md](08-self-hosting.md) for operators.
+
+A full code quality audit ran on 7 September 2026, once there was a whole product
+to read rather than a phase to finish. It found three user-visible bugs, in the
+strict allergen matcher, in the French decimal comma and in prep links on an
+agent proposal, and all three were found by reading rather than by the suite. The
+record is at the end of [05-roadmap.md](05-roadmap.md); the decisions it produced
+are in [04-tech-spec.md](04-tech-spec.md) section 7, and what it identified and
+deliberately left alone is in [06-open-questions.md](06-open-questions.md).

@@ -10,22 +10,25 @@ plans their week.
 behaviour that contradicts it. If the spec is wrong, change the spec in the same
 change as the code, and say so.
 
-| Doc | Settles |
-|---|---|
-| `docs/00-vision.md` | Scope in and out, cost model, risks |
-| `docs/01-functional-spec.md` | Vocabulary, feature rules, screens, edge cases |
-| `docs/02-data-model.md` | Entities, invariants, tenancy |
-| `docs/03-agent-interface.md` | MCP tools, resources, snapshot, error taxonomy |
-| `docs/04-tech-spec.md` | Stack, architecture, security, recorded decisions |
-| `docs/05-roadmap.md` | Phases. Check which one is current before proposing work |
-| `docs/06-open-questions.md` | Assumptions and unknowns. Add to it, do not silently assume |
+| Doc                           | Settles                                                                                      |
+| ----------------------------- | -------------------------------------------------------------------------------------------- |
+| `docs/00-vision.md`           | Scope in and out, cost model, risks                                                          |
+| `docs/01-functional-spec.md`  | Vocabulary, feature rules, screens, edge cases                                               |
+| `docs/02-data-model.md`       | Entities, invariants, tenancy                                                                |
+| `docs/03-agent-interface.md`  | MCP tools, resources, snapshot, error taxonomy                                               |
+| `docs/04-tech-spec.md`        | Stack, architecture, security, recorded decisions                                            |
+| `docs/05-roadmap.md`          | Phases. Check which one is current before proposing work                                     |
+| `docs/06-open-questions.md`   | Assumptions and unknowns. Add to it, do not silently assume                                  |
 | `docs/07-phase-0-findings.md` | What phase 0 proved about OAuth, MCP, RLS, and Postgres 18. Read before touching any of them |
 
 ## Constraints that must never be broken
 
-1. **No server-side LLM call.** No LLM SDK may enter the dependency tree. CI
-   enforces this with an allowlist check. Any feature that seems to need an LLM
-   gets restructured as a tool the user's agent calls.
+1. **No server-side LLM call.** No LLM SDK may enter the dependency tree.
+   `npm run check:deps` enforces it in CI: a denylist of known clients checked
+   against the lockfile, plus a scan of `src/` for provider hostnames, so a
+   `fetch` to an API with no SDK is caught too. It fails when the lockfile
+   parses to nothing rather than passing vacuously. Any feature that seems to
+   need an LLM gets restructured as a tool the user's agent calls.
 2. **Strict allergens are an absolute block.** No path, UI or MCP, may assign a
    recipe containing an allergen marked strict. Server-enforced and tested. No
    override.
@@ -47,11 +50,21 @@ Node per `.nvmrc`, Postgres 18 in a container via Podman.
 
 ```sh
 npm run db:setup     # container up, all three databases, role bootstrap, migrators
-npm run verify       # check:deps, typecheck, test
-npm run dev
+npm run verify       # check:deps, format:check, lint, typecheck, test
+npm run dev          # binds 127.0.0.1, see below
 npm run dev:test     # the same server on the test database, port 3100
 npm run verify:oauth # needs `npm run dev:test` running: the agent connection path
+npm run lint         # eslint. Also `lint:fix`
+npm run format       # prettier. Also `format:check`, which `verify` runs
+npm run test:coverage
 ```
+
+`npm run dev` binds loopback. `AUTH_PASSWORD_LOGIN` plus an empty
+`ALLOWED_EMAILS` is an unauthenticated sign-up door, and on all interfaces that
+door is on the network. Mobile testing goes through the iOS Simulator, which
+shares the Mac's network stack and reaches `localhost` verbatim, so nothing is
+lost. Testing from a real phone over Wi-Fi never worked anyway: see the
+deferred item in `docs/05-roadmap.md`.
 
 `npm run verify` needs only Postgres, so it stays CI-runnable. Anything needing
 an HTTP server goes in a script, not in Vitest.
@@ -162,16 +175,37 @@ Three things to know before touching any of it:
 and brings the stack up before a third publishes anything. Neither of those
 failures can happen on a laptop, so do not trust `npm run dev` as evidence that
 a deployment change works.
-`docs/05-roadmap.md` under *Deployment* has the three defects that motivated it.
+`docs/05-roadmap.md` under _Deployment_ has the three defects that motivated it.
 
 ## Conventions
 
 - TypeScript strict. Zod schemas are the single source of truth for validation,
-  MCP tool JSON Schema, and form types.
+  MCP tool JSON Schema, and form types. A service or action boundary that takes
+  a hand-written TypeScript interface and validates by hand is a defect: types
+  do not exist at runtime, and a server action is a public HTTP endpoint.
+- **Every environment variable is read in `src/lib/config.ts` and nowhere else.**
+  ESLint fails on `process.env` elsewhere in `src/`. A `?? "localhost"` fallback
+  written at the point of use applies in production too. `secret()` there reads
+  the `<NAME>_FILE` form, so a deployment can mount secrets as files.
+- **No non-null assertions in `src/`.** ESLint fails on them. `firstRow` in
+  `src/db/rows.ts` replaces `rows[0]!` after a `.returning()`; elsewhere
+  destructure and narrow.
+- `exactOptionalPropertyTypes` is off on purpose: it breaks better-auth's own
+  plugin types. `noPropertyAccessFromIndexSignature` is off pending typed error
+  details. Both are recorded in `docs/04-tech-spec.md`.
 - MCP tools live one per file in `src/mcp/tools/`, holding the Zod schema, the
   description, and the handler together. **Tool and parameter descriptions are
   product copy.** They are the only way to steer an agent we do not run, so
   review them as carefully as behaviour.
+- **Every MCP parameter is snake_case, at every depth.** Two conventions used to
+  coexist, because a tool that spread a domain schema inherited camelCase, and an
+  agent that learned one spelling got a validation error from the next tool.
+  Spreading a schema's `.shape` also drops its object-level refinements, so a
+  tool that needs one parses the mapped object through the real schema in its
+  handler.
+- **One serializer per entity, in `src/mcp/serializers.ts`,** used by both the
+  tools and the resources. The resources used to return raw rows, which leaked
+  `user_id`.
 - Error messages returned to agents must be actionable by a model: a code, a
   reason, and the valid alternatives. Not `400 invalid slot`.
 - UI copy is French and always externalized through `next-intl`. No hardcoded

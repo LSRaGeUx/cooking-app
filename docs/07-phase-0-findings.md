@@ -26,15 +26,15 @@ carrying the RFC 9728 `WWW-Authenticate` header.
 
 Verified working, headlessly, against a real server:
 
-| Step | Result |
-|---|---|
-| Unauthenticated MCP call returns a 401 with `WWW-Authenticate` naming the resource metadata URL and the required scope | OK |
-| RFC 9728 protected resource metadata resolves and names the authorization server | OK |
-| RFC 8414 authorization server metadata resolves with `registration_endpoint`, PKCE `S256`, and all 13 scopes | OK |
-| Dynamic client registration accepts a cold client and issues a `client_id` | OK |
-| `/oauth2/authorize` with a session redirects to the consent page | OK |
-| `/oauth2/authorize` without a session redirects to the login page | OK |
-| Consent POST, code exchange, and a real `whoami` call with a live token | **Closed in phase 1.** `npm run verify:oauth` walks registration, authorize, login, consent, token exchange and an authenticated `whoami` against a running server |
+| Step                                                                                                                   | Result                                                                                                                                                             |
+| ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Unauthenticated MCP call returns a 401 with `WWW-Authenticate` naming the resource metadata URL and the required scope | OK                                                                                                                                                                 |
+| RFC 9728 protected resource metadata resolves and names the authorization server                                       | OK                                                                                                                                                                 |
+| RFC 8414 authorization server metadata resolves with `registration_endpoint`, PKCE `S256`, and all 13 scopes           | OK                                                                                                                                                                 |
+| Dynamic client registration accepts a cold client and issues a `client_id`                                             | OK                                                                                                                                                                 |
+| `/oauth2/authorize` with a session redirects to the consent page                                                       | OK                                                                                                                                                                 |
+| `/oauth2/authorize` without a session redirects to the login page                                                      | OK                                                                                                                                                                 |
+| Consent POST, code exchange, and a real `whoami` call with a live token                                                | **Closed in phase 1.** `npm run verify:oauth` walks registration, authorize, login, consent, token exchange and an authenticated `whoami` against a running server |
 
 **Verdict: the stack decision in `04-tech-spec.md` holds.** The OAuth plumbing
 that would have been weeks of hand-rolling on the JVM was configuration here.
@@ -55,14 +55,14 @@ Better Auth mounts everything under `/api/auth`, so the issuer is
 `http://host/api/auth`. The three discovery conventions do not agree on where to
 look, and the difference is not cosmetic:
 
-| Convention | Path | Needs a rewrite |
-|---|---|---|
-| RFC 8414, OAuth AS metadata | `{host}/.well-known/oauth-authorization-server{issuer path}` | **Yes** |
-| RFC 9728, protected resource metadata | `{host}/.well-known/oauth-protected-resource{resource path}` | **Yes** |
-| OpenID Connect Discovery | `{issuer}/.well-known/openid-configuration` | No, answered natively |
+| Convention                            | Path                                                         | Needs a rewrite       |
+| ------------------------------------- | ------------------------------------------------------------ | --------------------- |
+| RFC 8414, OAuth AS metadata           | `{host}/.well-known/oauth-authorization-server{issuer path}` | **Yes**               |
+| RFC 9728, protected resource metadata | `{host}/.well-known/oauth-protected-resource{resource path}` | **Yes**               |
+| OpenID Connect Discovery              | `{issuer}/.well-known/openid-configuration`                  | No, answered natively |
 
-RFC 8414 and 9728 insert the well-known segment *before* the path; OIDC appends
-it *after*. An initial attempt added rewrites for the bare root paths and for
+RFC 8414 and 9728 insert the well-known segment _before_ the path; OIDC appends
+it _after_. An initial attempt added rewrites for the bare root paths and for
 OIDC discovery. All of them were dead config: the bare root paths are not what
 any conforming client requests, and OIDC already resolves. They were removed
 rather than shipped.
@@ -93,7 +93,7 @@ user_id = nullif(current_setting('app.user_id', true), '')::uuid
 Once a transaction-scoped `SET LOCAL` has committed, a custom GUC with no
 session-level value resets to the **empty string**, not to null, and `''::uuid`
 raises `22P02 invalid input syntax`. The first unscoped query on a fresh
-connection returns zero rows as intended; the first one on a *reused* connection
+connection returns zero rows as intended; the first one on a _reused_ connection
 throws. This was caught by the phase 0 test, which is the whole argument for
 writing that test before the code that depends on it.
 
@@ -151,14 +151,14 @@ between calls, so scaling horizontally needs no shared session store.
 
 ## 4. Exit criteria
 
-| Criterion | Status |
-|---|---|
-| OAuth AS with dynamic client registration reachable and conforming | Met, verified by curl against the live server |
-| Streamable HTTP MCP endpoint with a `whoami` tool | Built. Token-authenticated call awaits the login and consent UI |
-| RLS proven: unscoped query returns zero rows, cross-user write refused | Met, 4 passing tests against real Postgres |
-| CI fails on any LLM dependency | Met, 639 packages scanned |
-| French i18n with no hardcoded strings | Met for the three scaffold screens |
-| Typecheck and production build clean | Met |
+| Criterion                                                              | Status                                                          |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------- |
+| OAuth AS with dynamic client registration reachable and conforming     | Met, verified by curl against the live server                   |
+| Streamable HTTP MCP endpoint with a `whoami` tool                      | Built. Token-authenticated call awaits the login and consent UI |
+| RLS proven: unscoped query returns zero rows, cross-user write refused | Met, 4 passing tests against real Postgres                      |
+| CI fails on any LLM dependency                                         | Met, 639 packages scanned                                       |
+| French i18n with no hardcoded strings                                  | Met for the three scaffold screens                              |
+| Typecheck and production build clean                                   | Met                                                             |
 
 ## 5. What phase 1 inherits
 
