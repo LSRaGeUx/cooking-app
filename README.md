@@ -14,10 +14,12 @@ comes from the agent you already pay for, connected over MCP.
 ![TypeScript strict](https://img.shields.io/badge/typescript-strict-2a5bd7)
 ![Tests](https://img.shields.io/badge/tests-621-2f7d4f)
 ![No LLM dependency](https://img.shields.io/badge/server--side%20LLM%20calls-none-c8371f)
+![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-8a8e99)
 
 [What it is](#what-it-is) · [How it works](#how-it-works) ·
-[Run your own](#run-your-own) · [Connect an agent](#connect-an-agent) ·
-[How it is built](#how-it-is-built) · [Docs](docs/README.md)
+[The live instance](#the-live-instance) · [Run your own](#run-your-own) ·
+[Connect an agent](#connect-an-agent) · [How it is built](#how-it-is-built) ·
+[Docs](docs/README.md)
 
 </div>
 
@@ -73,6 +75,27 @@ dish. Rejections are kept with your reason and fed back.
 revertible. Facts are retired, not deleted, and can be restored. Pantry
 removals and recipe deletions are soft for thirty days. Agent written facts
 arrive `unconfirmed` and only a human confirms one.
+
+## The live instance
+
+There is one running at **[cooking.yanadam.fr](https://cooking.yanadam.fr)**.
+
+It is my own kitchen, not a product launch. It exists for two reasons: so I can
+plan a week from whatever device I have on me, and so the way it is built can be
+shown to someone rather than described.
+
+**Access is per account and closed by default.** There is no sign up page, and
+an address that is not on the instance allowlist cannot create an account even
+after a successful Google sign in, because proving who you are is not the same
+as being allowed in. If you want to look around, open an issue and ask, and be
+aware of what you are asking for: this is a personal tool exposed to the
+internet, not a multi-tenant service with a support rota. Every account shares
+one Postgres instance, separated by row-level security and a `user_id` predicate
+on every query, which is tested, but it has an audience of one and is budgeted
+like it.
+
+If you want it for real, run your own. That is the supported path and the next
+section is how.
 
 ## What you get
 
@@ -285,5 +308,16 @@ everything it found, which is recorded under _Audit_ in
 
 ## Licence
 
-Not yet chosen, which means **all rights reserved by default**. If you want to
-run, fork or contribute to this, open an issue and ask.
+**[PolyForm Noncommercial 1.0.0](LICENSE.md).** Read it, run it, change it,
+fork it, host your own copy, share your changes, for any noncommercial purpose.
+That explicitly includes personal use, hobby projects, study and research, and
+use by a charity, a school or a public body whatever their funding.
+
+**Commercial use needs written permission from me.** Open an issue and ask.
+
+One honest caveat about a word that gets used loosely. This licence is
+_source-available_, not _open source_: the Open Source Definition does not allow
+a restriction on the field of use, so any noncommercial clause sits outside it
+by definition. Everything else people usually mean by open source does hold
+here. Nothing is hidden, forks are welcome, and the specification in `docs/` is
+public precisely so the thing can be learned from.
