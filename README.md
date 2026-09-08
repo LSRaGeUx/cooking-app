@@ -1,180 +1,289 @@
+<div align="center">
+
+<img src="public/icon.svg" width="88" height="88" alt="">
+
 # Cooking App
 
-A self-hosted weekly cooking planner whose real asset is a deep, structured
-profile of the cook, exposed to the user's own AI agent over MCP so that agent
-can propose a genuinely personalized cooking week.
+**A weekly cooking planner that your own AI agent plans for you.**
 
-**The application never calls an LLM.** Intelligence comes from whatever agent
-the user already pays for (Claude Desktop, Claude Code, any MCP-capable client).
-Marginal cost per user tends to zero.
+Self-hosted. The application never calls a language model. The intelligence
+comes from the agent you already pay for, connected over MCP.
 
-## Status
+[![CI](https://github.com/LSRaGeUx/cooking-app/actions/workflows/ci.yml/badge.svg)](https://github.com/LSRaGeUx/cooking-app/actions/workflows/ci.yml)
+![Node](https://img.shields.io/badge/node-26.3-5b8266)
+![TypeScript strict](https://img.shields.io/badge/typescript-strict-2a5bd7)
+![Tests](https://img.shields.io/badge/tests-621-2f7d4f)
+![No LLM dependency](https://img.shields.io/badge/server--side%20LLM%20calls-none-c8371f)
 
-**All ten phases complete.** The product as pitched, with the loop closed. You can configure your weekly grid, build a recipe
-library, plan a week by hand, shop from a grocery list generated out of it, and
-maintain the profile and fact store that make the planning personal. Plan
-versions are immutable and revertible, and the strict allergen block, slot state
-validation and per-slot time budgets are enforced in the service layer both
-entry points share.
+[What it is](#what-it-is) · [How it works](#how-it-works) ·
+[Run your own](#run-your-own) · [Connect an agent](#connect-an-agent) ·
+[How it is built](#how-it-is-built) · [Docs](docs/README.md)
 
-Paste one URL into an MCP client, approve the consent screen, and say "plan my
-week". Your agent reads a deep profile of you, proposes a week, and hands back a
-link. You see it slot by slot against what is planned today, with the reason for
-each dish and the facts it cited, and you accept all of it, part of it, or none
-of it with a reason that is kept and fed back.
+</div>
 
-Afterwards you say what actually happened, in one screen for the whole week and
-never through a modal. That feeds cook rates, rotation ages and slot overruns
-back into search, into the profile an agent reads, and into a suggestion when a
-time budget stops matching your kitchen.
+---
 
-Access is per client, scoped, rate limited, logged, and revocable with immediate
-effect. Nothing an agent does is irreversible.
+## What it is
 
-The profile snapshot, the exact document a connected agent reads, is also
-viewable in the app in both Markdown and JSON. Reading it is the fastest way to
-judge whether the context is any good.
+Most meal planners hold recipes. This one holds a **structured, durable profile
+of one cook**: allergens with severity, diet, equipment, how much active cooking
+each slot of the week can absorb, and an open store of facts about what that
+person actually likes, avoids and does.
 
-Regenerating the grocery list merges rather than wipes: what you already ticked
-off stays ticked, lines you added by hand survive, and the screen tells you what
-moved.
+That profile is exposed over the Model Context Protocol, so a general purpose
+agent can read it, plan a week against it, and write back what it learned. You
+approve or reject the result slot by slot.
 
-It installs as an app, and the grocery list is the one screen that works with no
-signal: a tick that cannot reach the server is queued and replayed rather than
-reverted, and the screen says how many are waiting. The week grid is operable
-from a keyboard slot by slot, recipes carry a photo, and the interface exists in
-French and English with a test that stops the two catalogues drifting apart.
+**No language model runs on the server, and none ever will.** There is no API
+key to buy and no per user inference cost. A dependency check in CI fails the
+build if an LLM client so much as enters the lockfile. Any feature that seems to
+need a model gets restructured as a tool your agent calls instead.
 
-You can take everything out in one JSON file, and delete the account for real.
+The application is fully usable with no agent connected. Plan the week by hand
+and it is an ordinary, pleasant planner. Connect an agent and it becomes the
+thing it was built for.
 
-Phase 0 closed alongside phase 1: the login and consent screens shipped, so the
-OAuth 2.1 flow now runs end to end into an authenticated MCP call. See
-[`docs/07-phase-0-findings.md`](docs/07-phase-0-findings.md).
+## How it works
 
-Full specs live in [`docs/`](docs/README.md). Start with
-[`docs/README.md`](docs/README.md), then read in numbered order.
-
-## Getting started
-
-Requires Node (see `.nvmrc`) and Podman.
-
-```sh
-cp .env.example .env        # then set BETTER_AUTH_SECRET
-npm ci
-npm run db:setup            # container, roles, migrations, auth tables, side databases
-npm run verify              # dep check, format check, lint, typecheck, tests
-npm run dev                 # loopback only, on port 3000
+```mermaid
+sequenceDiagram
+    autonumber
+    actor You
+    participant Agent as Your agent
+    participant App as Cooking App
+    You->>Agent: "plan my week"
+    Agent->>App: get_profile_snapshot
+    App-->>Agent: allergens, budgets, equipment, facts, history
+    Agent->>App: check_feasibility (writes nothing)
+    App-->>Agent: refusals and warnings, with the valid alternatives
+    Agent->>App: propose_week (a rationale required per meal)
+    App-->>Agent: a review link
+    Agent-->>You: "here is the week, and why"
+    You->>App: accept all of it, part of it, or none
+    App-->>App: a new immutable version, the old one kept
+    You->>App: afterwards, what actually happened
+    App-->>App: cook rates, rotation age, slot overruns, back into the profile
 ```
 
-`verify` is the gate CI runs, and its five steps are also available on their own:
-`check:deps`, `format:check`, `lint`, `typecheck` and `test`. `npm run format`
-writes the formatting rather than checking it, `npm run lint:fix` does the same
-for the fixable lint rules, and `npm run test:coverage` runs the suite with a
-coverage report. `npm run dev` binds `127.0.0.1` on purpose, so a development
-server with an open allowlist is not reachable from the network it happens to be
-on; reaching it from a phone on the same LAN is a deliberate act, not a default.
+Every meal an agent proposes must say why it is there and cite the facts that
+drove it, so when the week is wrong you can correct the cause rather than the
+dish. Rejections are kept with your reason and fed back.
 
-Running your own instance for real, rather than trying it, needs a server with a
-hostname pointed at it and nothing on it but Docker. The images are built by CI,
-so the server only pulls:
+**Nothing an agent does is irreversible.** Plan versions are immutable and
+revertible. Facts are retired, not deleted, and can be restored. Pantry
+removals and recipe deletions are soft for thirty days. Agent written facts
+arrive `unconfirmed` and only a human confirms one.
+
+## What you get
+
+|                   |                                                                                                                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **The week**      | A seven day grid of the meal types you define, drag and drop, fully operable from a keyboard, with a per slot budget for active cooking time that the server enforces.          |
+| **Recipes**       | Your own library, with photos, revisions on every edit, and import from a URL by reading the schema.org data already in the page.                                               |
+| **Groceries**     | Generated from the plan for a shopping cycle, merged rather than wiped on regeneration: what you ticked stays ticked, hand added lines survive, and the screen says what moved. |
+| **Safety**        | Allergens with severity. A `strict` allergen is an absolute block on every write path, UI and agent alike, with no override anywhere.                                           |
+| **The profile**   | The exact document your agent reads, viewable in the app as Markdown or JSON. Reading it is the fastest way to judge whether the context is any good.                           |
+| **Feedback**      | One screen for the whole week, never a modal. It feeds search ranking, rotation, and a suggestion when a time budget stops matching your kitchen.                               |
+| **Prep**          | Declare that Sunday's cooking feeds Tuesday's dinner. The shopping scales the session once instead of buying twice.                                                             |
+| **Offline**       | Installs to the home screen. The grocery list is the one screen that works with no signal: a tick that cannot reach the server is queued and replayed, never silently reverted. |
+| **Your data**     | Export everything as one JSON file. Delete the account for real, across every table.                                                                                            |
+| **Two languages** | French and English, with a test that fails when the two catalogues drift apart.                                                                                                 |
+
+## Run your own
+
+This is the path that matters: the product is something you host. You need a
+machine with Docker and a hostname pointed at it. **The server never builds.**
+CI publishes an image per commit, so a deploy is a pull.
 
 ```sh
-cp .env.example .env        # then fill in the six values it refuses to start without
+git clone https://github.com/LSRaGeUx/cooking-app.git && cd cooking-app
+cp .env.example .env          # fill in the values it refuses to start without
 echo "$GHCR_TOKEN" | docker login ghcr.io -u <you> --password-stdin
+
 docker compose -f compose.yaml -f deploy/compose.proxy.yaml --profile serve pull
 docker compose -f compose.yaml -f deploy/compose.proxy.yaml \
   --profile serve up -d --no-build --wait
 ```
 
-That migrates, starts the application, and gets a certificate from Let's
-Encrypt. Leave the overlay file out if the machine already has a proxy on ports
-80 and 443, and leave it out until DNS resolves to the machine either way, since
-failed Let's Encrypt challenges count against the rate limit for that hostname.
-[`docs/08-self-hosting.md`](docs/08-self-hosting.md) covers configuration, the
+That migrates the database, starts the application, and gets a certificate from
+Let's Encrypt. Then open your hostname, sign in, and you land on the current
+week, seeded with three meal types and a starter ingredient vocabulary so
+grocery merging and allergen matching work from your first recipe.
+
+> [!IMPORTANT]
+> **`--profile serve` on both commands, every time.** Without it Compose
+> considers only the services in no profile, which is the database alone, and
+> then reports success: the application keeps serving whatever image it was
+> already on. That is a deploy that looks finished and changed nothing, and it
+> has happened here for real. The only trustworthy confirmation is the `up`
+> output naming all three services.
+
+Leave the proxy overlay out if the machine already terminates TLS on ports 80
+and 443, and leave it out until DNS actually resolves to the machine either way,
+since failed Let's Encrypt challenges count against that hostname's rate limit.
+
+Secrets can be mounted as files rather than passed as environment, through
+`deploy/compose.secrets.yaml`, which keeps them out of `docker inspect`.
+
+[**docs/08-self-hosting.md**](docs/08-self-hosting.md) covers configuration, the
 registry token, the two database roles, TLS, backups, upgrades, rollback and
 troubleshooting.
 
-Then open http://localhost:3000, create an account, and you land on the current
-week. A new account is seeded with three meal types, dinner planned every day,
-and a starter ingredient vocabulary so grocery merging and allergen derivation
-work from the first recipe.
+## Develop on it
 
-`npm run verify` needs only Postgres. The agent connection path needs a running
-server, so it has its own check:
+Node per `.nvmrc`, and Podman or Docker for PostgreSQL 18.
 
 ```sh
-npm run dev:test            # in one terminal
-npm run verify:oauth        # in another
+cp .env.example .env          # then set BETTER_AUTH_SECRET
+npm ci
+npm run db:setup              # container, roles, migrations, auth tables, side databases
+npm run verify                # deps, format, lint, typecheck, tests
+npm run dev                   # http://127.0.0.1:3000
 ```
 
-`dev:test`, not `dev`: the script signs up, registers OAuth clients and writes a
-plan, and `dev:test` is the server that puts all of that in `cooking_verify`
-rather than in yours. It serves on port 3100, loopback only, and runs happily
-alongside `npm test`, which has a database of its own.
+`verify` is exactly what CI runs, and each step stands alone: `check:deps`,
+`format:check`, `lint`, `typecheck`, `test`. Also `format`, `lint:fix` and
+`test:coverage`.
 
-That walks what a real MCP client does: cold dynamic client registration, an
-authorization request with PKCE, login, consent, the code exchange, an
-authenticated `whoami`, and a check that an unauthenticated call is still refused
-with RFC 9728 discovery.
+`npm run dev` binds loopback deliberately. A development server with an open
+allowlist and password sign in is an unauthenticated sign up door, and it has no
+business on whatever network the laptop is on.
 
-The MCP endpoint is at `/api/mcp`, and the app's Agent screen walks you through
-connecting a client to it. It exposes twenty tools, eight resources and two
-prompts that carry the recommended call sequence.
+`verify` needs nothing but Postgres, so it stays runnable in CI. The agent
+connection path needs a real HTTP server, so it has a check of its own:
 
-The tools read (`whoami`, `get_profile_snapshot`, `search_recipes`, `get_recipe`,
-`get_week`, `get_history`, `get_pantry`, `check_feasibility`) and write
-(`propose_week`, `update_slot`, `create_recipe`, `update_recipe`,
-`import_recipe_from_url`, `record_facts`, `retire_fact`, `restore_fact`,
-`add_pantry_items`, `remove_pantry_item`, `restore_pantry_item`, `link_prep`).
+```sh
+npm run dev:test              # in one terminal, port 3100, its own database
+npm run verify:oauth          # in another
+```
+
+That walks what a real MCP client does, in order: cold dynamic client
+registration, an authorization request with PKCE, login, consent, the code
+exchange, an authenticated call, scope enforcement, revocation taking effect
+before the token expires, and a final check that an unauthenticated call is
+still refused with RFC 9728 discovery.
+
+## Connect an agent
+
+The endpoint is `/api/mcp`, and the app's Agent screen walks a client through
+connecting to it. Paste one URL, approve the consent screen, and say "plan my
+week".
+
+**Twenty tools, eight resources, two prompts** carrying the recommended call
+sequence.
+
+<table>
+<tr><th align="left">Read</th><th align="left">Write</th></tr>
+<tr valign="top"><td>
+
+`whoami`<br>
+`get_profile_snapshot`<br>
+`search_recipes`<br>
+`get_recipe`<br>
+`get_week`<br>
+`get_history`<br>
+`get_pantry`<br>
+`check_feasibility`
+
+</td><td>
+
+`propose_week`<br>
+`update_slot`<br>
+`create_recipe`<br>
+`update_recipe`<br>
+`import_recipe_from_url`<br>
+`record_facts`<br>
+`retire_fact` · `restore_fact`<br>
+`add_pantry_items` · `remove_pantry_item` · `restore_pantry_item`<br>
+`link_prep`
+
+</td></tr>
+</table>
+
 `check_feasibility` sits with the reads because it takes exactly what
-`propose_week` takes and writes nothing: it is how an agent iterates against the
-validation rules before committing to them. The three restore tools are there
+`propose_week` takes and writes nothing. It is how an agent iterates against the
+validation rules before committing to them. The three restore tools exist
 because nothing an agent does may be irreversible.
 
-Every parameter on the surface is snake_case, at every depth, and carries a
-description. Resources and tools return the same shape for the same entity, so a
-week read from `cooking://plan/current` can be handed straight to `link_prep`.
-Full surface, error taxonomy and the reasoning in
-[`docs/03-agent-interface.md`](docs/03-agent-interface.md).
+Access is per client: scoped, rate limited, audited, and revocable with
+immediate effect rather than whenever the token happens to expire.
 
-## What makes it different
+Every parameter is snake_case at every depth and carries a description, and a
+test fails if one does not. Tools and resources return the same shape for the
+same entity, so a week read from `cooking://plan/current` can be handed straight
+to `link_prep`.
 
-The differentiator is not the calendar grid. It is a durable, structured,
-agent-readable and agent-writable context store about one cook, plus a tool
-surface precise enough that a general-purpose agent can plan against it and
-write results back.
+Full surface, the error taxonomy, and the reasoning behind both:
+[**docs/03-agent-interface.md**](docs/03-agent-interface.md).
 
-- **Structured profile** for things needing enforcement: allergens with
-  severity, diet, equipment, per-slot time budgets.
-- **Open fact store** the agent reads and writes, with category, polarity,
-  confidence, source, and status. Agent-written facts enter unconfirmed and the
-  user reviews them.
-- **Immutable plan versions.** Every agent action is diffable and revertible.
-- **Required rationale** on every agent-proposed meal, citing the facts that
-  drove it, so the user can correct the cause rather than the dish.
+## How it is built
 
-## Stack
+TypeScript end to end. Next.js, PostgreSQL 18, Drizzle, Better Auth acting as a
+full OAuth 2.1 provider, the MCP TypeScript SDK, Zod as the single source of
+validation, next-intl, dnd-kit, and linkedom for reading recipes out of a page.
 
-TypeScript end to end. Next.js, PostgreSQL 18, Drizzle, Better Auth acting as an
-OAuth 2.1 provider, the MCP TypeScript SDK, Zod as the single source of
-validation, next-intl for the French and English copy, dnd-kit for the week
-grid, and linkedom for reading schema.org recipes out of a page. Reasoning
-and the rejected alternatives are in
-[`docs/04-tech-spec.md`](docs/04-tech-spec.md).
+```mermaid
+flowchart TD
+    UI["Web UI<br/>src/app, src/components"]
+    MCP["MCP endpoint<br/>src/mcp, 20 tools"]
+    SVC["One service layer<br/>src/services"]
+    DOM["Domain rules, no I/O<br/>src/domain"]
+    DB[("PostgreSQL 18<br/>row-level security")]
 
-Layout: `src/domain` holds pure rules with no I/O, `src/services` is the one
-service layer both entry points call, `src/app` is the UI plus the MCP and
-auth routes, `src/db` is the Drizzle schema and the tenancy-scoped client.
+    UI --> SVC
+    MCP --> SVC
+    SVC --> DOM
+    SVC --> DB
+```
 
-## Non-negotiable constraints
+That shape is the point, not an accident. **A rule may not exist in only one
+entry point**, so no business logic lives in a route handler, a server action or
+a React component. A lint rule enforces it: the UI and MCP layers cannot import
+the database at all.
 
-1. No server-side LLM call, ever. Enforced in CI by a dependency allowlist.
-2. Strict allergens are a hard block on every write path, UI and MCP alike.
-3. One service layer behind both the UI and the MCP endpoint. No rule lives in
-   only one of them.
-4. Nothing an agent does is irreversible.
-5. The app is fully usable with no agent connected.
+Every query against a user owned table is scoped by `user_id` in the query
+itself, with row-level security as a second line rather than the only one. A
+query that forgets the scope returns zero rows instead of another tenant's, and
+a test enumerates every such table to keep that true as tables are added.
+
+The decisions, including the alternatives that were rejected and why, are in
+[**docs/04-tech-spec.md**](docs/04-tech-spec.md).
+
+### The five constraints
+
+1. **No server-side LLM call, ever.** Enforced in CI against the lockfile and by
+   scanning the source for provider hostnames.
+2. **Strict allergens are an absolute block** on every write path, with no
+   override on any of them.
+3. **One service layer** behind both the UI and the agent surface.
+4. **Nothing an agent does is irreversible.**
+5. **The app is fully usable with no agent connected.**
+
+## Docs
+
+The specification is the source of truth and it is kept current with the code.
+Start at [**docs/README.md**](docs/README.md), then read in order.
+
+|                                                    |                                                             |
+| -------------------------------------------------- | ----------------------------------------------------------- |
+| [00-vision](docs/00-vision.md)                     | Scope in and out, the cost model, the risks                 |
+| [01-functional-spec](docs/01-functional-spec.md)   | Vocabulary, feature rules, screens, edge cases              |
+| [02-data-model](docs/02-data-model.md)             | Entities, invariants, tenancy                               |
+| [03-agent-interface](docs/03-agent-interface.md)   | Tools, resources, the snapshot, the error taxonomy          |
+| [04-tech-spec](docs/04-tech-spec.md)               | Stack, architecture, security, recorded decisions           |
+| [05-roadmap](docs/05-roadmap.md)                   | The phases, all shipped, and what each one settled          |
+| [06-open-questions](docs/06-open-questions.md)     | Assumptions, unknowns, and the known gaps                   |
+| [07-phase-0-findings](docs/07-phase-0-findings.md) | What the spike proved about OAuth, MCP, RLS and Postgres 18 |
+| [08-self-hosting](docs/08-self-hosting.md)         | Running it for real                                         |
+
+## Status
+
+All ten phases shipped, and the loop is closed end to end. The most recent work
+was a full code quality audit of the repository and the remediation of
+everything it found, which is recorded under _Audit_ in
+[docs/05-roadmap.md](docs/05-roadmap.md).
 
 ## Licence
 
-Not yet chosen.
+Not yet chosen, which means **all rights reserved by default**. If you want to
+run, fork or contribute to this, open an issue and ask.
