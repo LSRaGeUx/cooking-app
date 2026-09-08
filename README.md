@@ -16,10 +16,15 @@ comes from the agent you already pay for, connected over MCP.
 ![No LLM dependency](https://img.shields.io/badge/server--side%20LLM%20calls-none-c8371f)
 ![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-8a8e99)
 
-[What it is](#what-it-is) · [How it works](#how-it-works) ·
+[What it is](#what-it-is) · [How it works](#how-it-works) · [Screens](#screens) ·
 [The live instance](#the-live-instance) · [Run your own](#run-your-own) ·
 [Connect an agent](#connect-an-agent) · [How it is built](#how-it-is-built) ·
 [Docs](docs/README.md)
+
+<img src="docs/screenshots/semaine.jpg" alt="The week screen: a seven day grid, one column per day, meals coloured by recipe across breakfast, lunch and dinner rows" width="100%">
+
+<sub>Week 37. Fourteen meals, 258 minutes of active cooking, planned by an agent
+over MCP. Breakfast is a `sauté` slot, so nothing may fill it.</sub>
 
 </div>
 
@@ -75,6 +80,40 @@ dish. Rejections are kept with your reason and fed back.
 revertible. Facts are retired, not deleted, and can be restored. Pantry
 removals and recipe deletions are soft for thirty days. Agent written facts
 arrive `unconfirmed` and only a human confirms one.
+
+## Screens
+
+Real screens from a real week, not mockups. The interface is French.
+
+### Facts, and who wrote them
+
+![The facts screen, showing one agent written fact awaiting confirmation next to a confirmed one](docs/screenshots/faits.jpg)
+
+The rule above, on screen. The first fact was written by an agent, so it carries
+`NON CONFIRMÉ` and does nothing until a human presses **Confirmer**. The second
+was written by the cook and is already in force. An agent may propose anything;
+it may not decide that you believe it.
+
+### The document your agent reads
+
+![The profile preview screen, rendering the cook's profile as Markdown with a JSON toggle](docs/screenshots/profil.jpg)
+
+Not a settings page. This is the composed context an agent receives about the
+cook, in the exact form it is sent, as Markdown or JSON. Absolute constraints
+first, since a strict allergen is the one thing no path may override, then
+preferences with a confidence, then the shape of the week. Reading it is the
+fastest way to judge whether the context is any good, which is why it is a
+screen rather than an export.
+
+### Groceries
+
+![The grocery list for a shopping cycle, grouped by aisle, with 36 of 47 lines ticked](docs/screenshots/courses.jpg)
+
+Built from the plan for a shopping cycle and grouped by aisle. Regeneration
+merges rather than wipes: 36 of 47 lines are already ticked and stay ticked, and
+the banner says the plan has moved since this list was generated rather than
+quietly rewriting it under you. The colour strip on each line is the meal the
+line was bought for.
 
 ## The live instance
 
