@@ -37,7 +37,7 @@
   "dependencies": {
     "@better-auth/mcp": "^1.7.2",
     "@dnd-kit/core": "^6.3.1",
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.32.0",
     "better-auth": "^1.7.2",
     "drizzle-orm": "^0.45.2",
     "jose": "^6.2.12",
